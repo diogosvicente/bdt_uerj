@@ -1,49 +1,69 @@
 import 'package:flutter/material.dart';
-import '../services/bdt_service.dart';
 import '../services/auth_service.dart';
+import '../services/bdt_service.dart';
+import '../models/bdt_resumo.dart';
+import '../widgets/app_scaffold.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
-  Future<void> _abrirBdt(BuildContext context) async {
-    final bdtId = await BdtService.abrirBDT();
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
 
-    if (!context.mounted) return;
+class _HomePageState extends State<HomePage> {
+  late Future<List<BdtResumo>> future;
 
-    if (bdtId != null) {
-      Navigator.pushNamed(context, "/bdt", arguments: bdtId);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Não foi possível abrir o BDT do dia."),
-        ),
-      );
-    }
+  @override
+  void initState() {
+    super.initState();
+    future = BdtService.listarDoDia();
   }
 
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _reload() async {
+    setState(() => future = BdtService.listarDoDia());
+  }
+
+  Future<void> _logout() async {
     await AuthService.logout();
-    if (!context.mounted) return;
+    if (!mounted) return;
     Navigator.pushReplacementNamed(context, "/login");
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("BDT UERJ"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _logout(context),
-          ),
-        ],
-      ),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () => _abrirBdt(context),
-          child: const Text("Abrir BDT do Dia"),
-        ),
+    return AppScaffold(
+      showBackButton: false,
+      title: "BDT e-Prefeitura",
+      subtitle: "Hoje",
+      onRefresh: _reload,
+      onLogout: _logout,
+      body: FutureBuilder<List<BdtResumo>>(
+        future: future,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final items = snap.data ?? [];
+          if (items.isEmpty) {
+            return const Center(child: Text("Nenhum BDT encontrado para hoje."));
+          }
+
+          return ListView.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 0),
+            itemBuilder: (context, i) {
+              final b = items[i];
+              return ListTile(
+                title: Text(b.titulo),
+                subtitle: Text(b.subtitulo),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pushNamed(context, "/bdt", arguments: b.id),
+              );
+            },
+          );
+        },
       ),
     );
   }
