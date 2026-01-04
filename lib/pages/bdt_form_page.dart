@@ -36,10 +36,12 @@ class _BdtFormPageState extends State<BdtFormPage> {
   List<Map<String, dynamic>> manutencoes = [];
 
   // ====== input formatters ======
-  final _decimal2 =
-      FilteringTextInputFormatter.allow(RegExp(r'^\d*([.,]\d{0,2})?$'));
-  final _decimal1 =
-      FilteringTextInputFormatter.allow(RegExp(r'^\d*([.,]\d{0,1})?$'));
+  final _decimal2 = FilteringTextInputFormatter.allow(
+    RegExp(r'^\d*([.,]\d{0,2})?$'),
+  );
+  final _decimal1 = FilteringTextInputFormatter.allow(
+    RegExp(r'^\d*([.,]\d{0,1})?$'),
+  );
 
   @override
   void dispose() {
@@ -86,6 +88,12 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final t = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(base),
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
     );
     if (t == null) return null;
 
@@ -95,9 +103,19 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
   Future<void> _pickTime(TextEditingController c) async {
     final now = TimeOfDay.now();
-    final picked = await showTimePicker(context: context, initialTime: now);
-    if (picked == null) return;
 
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: now,
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked == null) return;
     c.text = "${_two(picked.hour)}:${_two(picked.minute)}";
   }
 
@@ -142,7 +160,8 @@ class _BdtFormPageState extends State<BdtFormPage> {
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
 
-    final abResolved = ab ?? await BdtService.listarAbastecimentos(bdtId: bdtId);
+    final abResolved =
+        ab ?? await BdtService.listarAbastecimentos(bdtId: bdtId);
     final manResolved = man ?? await BdtService.listarManutencoes(bdtId: bdtId);
 
     if (!mounted) return;
@@ -196,18 +215,24 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final isEdit = existing != null;
     final id = isEdit ? (int.tryParse(existing!['id'].toString()) ?? 0) : 0;
 
-    final dataHoraCtrl =
-        TextEditingController(text: (existing?['data_hora'] ?? '').toString());
-    final odoCtrl =
-        TextEditingController(text: (existing?['odometro_km'] ?? '').toString());
-    final litrosCtrl =
-        TextEditingController(text: (existing?['litros'] ?? '').toString());
-    final valorCtrl =
-        TextEditingController(text: (existing?['valor_total'] ?? '').toString());
-    final notaCtrl =
-        TextEditingController(text: (existing?['nota_fiscal'] ?? '').toString());
-    final obsCtrl =
-        TextEditingController(text: (existing?['observacoes'] ?? '').toString());
+    final dataHoraCtrl = TextEditingController(
+      text: (existing?['data_hora'] ?? '').toString(),
+    );
+    final odoCtrl = TextEditingController(
+      text: (existing?['odometro_km'] ?? '').toString(),
+    );
+    final litrosCtrl = TextEditingController(
+      text: (existing?['litros'] ?? '').toString(),
+    );
+    final valorCtrl = TextEditingController(
+      text: (existing?['valor_total'] ?? '').toString(),
+    );
+    final notaCtrl = TextEditingController(
+      text: (existing?['nota_fiscal'] ?? '').toString(),
+    );
+    final obsCtrl = TextEditingController(
+      text: (existing?['observacoes'] ?? '').toString(),
+    );
 
     String? tipo = (existing?['tipo_combustivel'] ?? '').toString();
     if (tipo != null && tipo.trim().isEmpty) tipo = null;
@@ -227,7 +252,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      isEdit ? "Editar abastecimento" : "Adicionar abastecimento",
+                      isEdit
+                          ? "Editar abastecimento"
+                          : "Adicionar abastecimento",
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 16,
@@ -239,7 +266,8 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       tooltip: "Excluir",
                       onPressed: () async {
                         final ok = await _confirmDelete(
-                            "Excluir este abastecimento?");
+                          "Excluir este abastecimento?",
+                        );
                         if (!ok) return;
 
                         final bdtId =
@@ -254,9 +282,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(delOk
-                                ? "Abastecimento excluído."
-                                : "Falha ao excluir."),
+                            content: Text(
+                              delOk
+                                  ? "Abastecimento excluído."
+                                  : "Falha ao excluir.",
+                            ),
                           ),
                         );
 
@@ -272,8 +302,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
                 controller: dataHoraCtrl,
                 readOnly: true,
                 onTap: () async {
-                  final picked =
-                      await _pickDateTimeString(initial: dataHoraCtrl.text);
+                  final picked = await _pickDateTimeString(
+                    initial: dataHoraCtrl.text,
+                  );
                   if (picked != null) dataHoraCtrl.text = picked;
                 },
                 decoration: const InputDecoration(
@@ -369,8 +400,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
                     "observacoes": obsCtrl.text.trim(),
                   };
 
-                  data.removeWhere((k, v) =>
-                      v == null || (v is String && v.trim().isEmpty));
+                  data.removeWhere(
+                    (k, v) => v == null || (v is String && v.trim().isEmpty),
+                  );
 
                   final ok = isEdit
                       ? await BdtService.atualizarAbastecimento(
@@ -387,9 +419,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(ok
-                          ? "Abastecimento salvo."
-                          : "Falha ao salvar abastecimento."),
+                      content: Text(
+                        ok
+                            ? "Abastecimento salvo."
+                            : "Falha ao salvar abastecimento.",
+                      ),
                     ),
                   );
 
@@ -399,8 +433,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
                   }
                 },
                 icon: const Icon(Icons.save),
-                label:
-                    Text(isEdit ? "Salvar alterações" : "Adicionar abastecimento"),
+                label: Text(
+                  isEdit ? "Salvar alterações" : "Adicionar abastecimento",
+                ),
               ),
             ],
           ),
@@ -418,20 +453,26 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final id = isEdit ? (int.tryParse(existing!['id'].toString()) ?? 0) : 0;
 
     final inicioCtrl = TextEditingController(
-        text: (existing?['data_hora_inicio'] ?? '').toString());
+      text: (existing?['data_hora_inicio'] ?? '').toString(),
+    );
     final fimCtrl = TextEditingController(
-        text: (existing?['data_hora_fim'] ?? '').toString());
-    final odoCtrl =
-        TextEditingController(text: (existing?['odometro_km'] ?? '').toString());
-    final descCtrl =
-        TextEditingController(text: (existing?['descricao'] ?? '').toString());
-    final obsCtrl =
-        TextEditingController(text: (existing?['observacoes'] ?? '').toString());
+      text: (existing?['data_hora_fim'] ?? '').toString(),
+    );
+    final odoCtrl = TextEditingController(
+      text: (existing?['odometro_km'] ?? '').toString(),
+    );
+    final descCtrl = TextEditingController(
+      text: (existing?['descricao'] ?? '').toString(),
+    );
+    final obsCtrl = TextEditingController(
+      text: (existing?['observacoes'] ?? '').toString(),
+    );
 
     bool houveGasto =
         (existing?['houve_gasto'] == true || existing?['houve_gasto'] == 1);
-    final valorCtrl =
-        TextEditingController(text: (existing?['valor_gasto'] ?? '').toString());
+    final valorCtrl = TextEditingController(
+      text: (existing?['valor_gasto'] ?? '').toString(),
+    );
 
     await showModalBottomSheet(
       context: context,
@@ -461,13 +502,14 @@ class _BdtFormPageState extends State<BdtFormPage> {
                         IconButton(
                           tooltip: "Excluir",
                           onPressed: () async {
-                            final ok =
-                                await _confirmDelete("Excluir esta manutenção?");
+                            final ok = await _confirmDelete(
+                              "Excluir esta manutenção?",
+                            );
                             if (!ok) return;
 
-                            final bdtId = ModalRoute.of(context)!
-                                .settings
-                                .arguments as int;
+                            final bdtId =
+                                ModalRoute.of(context)!.settings.arguments
+                                    as int;
 
                             final delOk = await BdtService.excluirManutencao(
                               bdtId: bdtId,
@@ -478,9 +520,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(delOk
-                                    ? "Manutenção excluída."
-                                    : "Falha ao excluir."),
+                                content: Text(
+                                  delOk
+                                      ? "Manutenção excluída."
+                                      : "Falha ao excluir.",
+                                ),
                               ),
                             );
 
@@ -496,8 +540,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
                     controller: inicioCtrl,
                     readOnly: true,
                     onTap: () async {
-                      final picked =
-                          await _pickDateTimeString(initial: inicioCtrl.text);
+                      final picked = await _pickDateTimeString(
+                        initial: inicioCtrl.text,
+                      );
                       if (picked != null) inicioCtrl.text = picked;
                     },
                     decoration: const InputDecoration(
@@ -511,8 +556,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
                     controller: fimCtrl,
                     readOnly: true,
                     onTap: () async {
-                      final picked =
-                          await _pickDateTimeString(initial: fimCtrl.text);
+                      final picked = await _pickDateTimeString(
+                        initial: fimCtrl.text,
+                      );
                       if (picked != null) fimCtrl.text = picked;
                     },
                     decoration: const InputDecoration(
@@ -571,15 +617,13 @@ class _BdtFormPageState extends State<BdtFormPage> {
                   const SizedBox(height: 14),
                   FilledButton.icon(
                     onPressed: () async {
-                      final bdtId = ModalRoute.of(context)!
-                          .settings
-                          .arguments as int;
+                      final bdtId =
+                          ModalRoute.of(context)!.settings.arguments as int;
 
                       if (descCtrl.text.trim().isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content:
-                                Text("Informe a descrição da manutenção."),
+                            content: Text("Informe a descrição da manutenção."),
                           ),
                         );
                         return;
@@ -595,8 +639,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
                         "observacoes": obsCtrl.text.trim(),
                       };
 
-                      data.removeWhere((k, v) =>
-                          v == null || (v is String && v.trim().isEmpty));
+                      data.removeWhere(
+                        (k, v) =>
+                            v == null || (v is String && v.trim().isEmpty),
+                      );
 
                       final ok = isEdit
                           ? await BdtService.atualizarManutencao(
@@ -613,9 +659,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(ok
-                              ? "Manutenção salva."
-                              : "Falha ao salvar manutenção."),
+                          content: Text(
+                            ok
+                                ? "Manutenção salva."
+                                : "Falha ao salvar manutenção.",
+                          ),
                         ),
                       );
 
@@ -625,8 +673,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       }
                     },
                     icon: const Icon(Icons.save),
-                    label:
-                        Text(isEdit ? "Salvar alterações" : "Adicionar manutenção"),
+                    label: Text(
+                      isEdit ? "Salvar alterações" : "Adicionar manutenção",
+                    ),
                   ),
                 ],
               ),
@@ -674,8 +723,8 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
     // erro do backend
     if (payload != null && payload!['success'] != true) {
-      final msg =
-          (payload!['message'] ?? 'Erro ao carregar formulário.').toString();
+      final msg = (payload!['message'] ?? 'Erro ao carregar formulário.')
+          .toString();
       return AppScaffold(
         title: "Formulário do BDT",
         subtitle: "BDT #$bdtId",
@@ -704,7 +753,6 @@ class _BdtFormPageState extends State<BdtFormPage> {
                 const SizedBox(height: 12),
 
                 // ✅ sem trechos aqui
-
                 _cardAbastecimentos(),
                 const SizedBox(height: 12),
 
@@ -746,8 +794,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Identificação",
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            const Text(
+              "Identificação",
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: garagemCtrl,
@@ -779,8 +829,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Horários e odômetro",
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            const Text(
+              "Horários e odômetro",
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 12),
             _rowHoraOdo(
               title: "Recolhimento",
@@ -820,8 +872,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
             Row(
               children: [
                 const Expanded(
-                  child: Text("Abastecimentos",
-                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  child: Text(
+                    "Abastecimentos",
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => _openAbastecimentoSheet(),
@@ -832,8 +886,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
             ),
             const SizedBox(height: 10),
             if (abastecimentos.isEmpty)
-              Text("Nenhum abastecimento lançado.",
-                  style: Theme.of(context).textTheme.bodySmall)
+              Text(
+                "Nenhum abastecimento lançado.",
+                style: Theme.of(context).textTheme.bodySmall,
+              )
             else
               ListView.separated(
                 shrinkWrap: true,
@@ -881,8 +937,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
             Row(
               children: [
                 const Expanded(
-                  child: Text("Manutenções",
-                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  child: Text(
+                    "Manutenções",
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => _openManutencaoSheet(),
@@ -893,8 +951,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
             ),
             const SizedBox(height: 10),
             if (manutencoes.isEmpty)
-              Text("Nenhuma manutenção lançada.",
-                  style: Theme.of(context).textTheme.bodySmall)
+              Text(
+                "Nenhuma manutenção lançada.",
+                style: Theme.of(context).textTheme.bodySmall,
+              )
             else
               ListView.separated(
                 shrinkWrap: true,
@@ -940,8 +1000,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
             Row(
               children: [
                 const Expanded(
-                  child: Text("Acidentes",
-                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  child: Text(
+                    "Acidentes",
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
                 OutlinedButton.icon(
                   onPressed: null,
@@ -970,8 +1032,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Outras observações",
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            const Text(
+              "Outras observações",
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: outrasObsCtrl,

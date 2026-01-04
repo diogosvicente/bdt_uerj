@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+
 import 'pages/login_page.dart';
 import 'pages/home_page.dart';
 import 'pages/bdt_page.dart';
@@ -16,6 +18,27 @@ class BdtUerjApp extends StatelessWidget {
     return MaterialApp(
       title: 'BDT UERJ',
       debugShowCheckedModeBanner: false,
+
+      locale: const Locale('pt', 'BR'),
+      supportedLocales: const [
+        Locale('pt', 'BR'),
+        Locale('en', 'US'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+
+      // ✅ FORÇA 24H NO APP TODO (inclusive showTimePicker)
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(alwaysUse24HourFormat: true),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+
       initialRoute: "/login",
       routes: {
         "/login": (_) => const LoginPage(),
@@ -23,6 +46,7 @@ class BdtUerjApp extends StatelessWidget {
         "/bdt": (_) => const BdtPage(),
         "/bdt_form": (_) => const BdtFormPage(),
       },
+
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: Colors.blue,

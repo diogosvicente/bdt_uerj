@@ -28,6 +28,40 @@ class _BdtPageState extends State<BdtPage> {
   // Load
   // =========================
 
+  Future<void> _openBdtActionsSheet(int bdtId) async {
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_note),
+                title: const Text("Formulário"),
+                subtitle: const Text("Informações do BDT"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.pushNamed(context, "/bdt_form", arguments: bdtId);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.add_road),
+                title: const Text("Trecho extra"),
+                subtitle: const Text("Cadastrar origem e destino"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Future.microtask(() => _openTrechoExtraSheet(bdtId));
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _load(int bdtId) async {
     final res = await BdtService.detalhes(bdtId);
     if (!mounted) return;
@@ -98,6 +132,58 @@ class _BdtPageState extends State<BdtPage> {
       trechoId: trechoId,
       interval: const Duration(seconds: 5),
     );
+  }
+
+  Future<bool> _deleteTrechoExtra({
+    required int bdtId,
+    required int trechoId,
+    required String origem,
+    required String destino,
+  }) async {
+    // não deixa excluir se estiver enviando GPS nesse trecho extra
+    final bool isTrackingThis =
+        (trackingAgendaId == 0 && trackingTrechoId == trechoId);
+
+    if (isTrackingThis) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Finalize o trecho (pare o GPS) antes de excluir."),
+        ),
+      );
+      return false;
+    }
+
+    final confirmed = await _confirmDialog(
+      title: "Excluir trecho extra?",
+      message: "$origem → $destino\n\nEssa ação não pode ser desfeita.",
+      cancelText: "Cancelar",
+      confirmText: "Sim, excluir",
+    );
+
+    if (!confirmed) return false;
+
+    setState(() => busyTrechoId = trechoId);
+    try {
+      final ok = await BdtService.excluirTrechoExtra(
+        bdtId: bdtId,
+        trechoId: trechoId,
+      );
+
+      if (!mounted) return false;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok ? "Trecho extra excluído." : "Falha ao excluir trecho extra.",
+          ),
+        ),
+      );
+
+      if (ok) await _load(bdtId);
+      return ok;
+    } finally {
+      if (mounted) setState(() => busyTrechoId = null);
+    }
   }
 
   void _stopTracking() {
@@ -198,7 +284,7 @@ class _BdtPageState extends State<BdtPage> {
     return res ?? false;
   }
 
-  Widget _fabActions(int bdtId) {
+  /*Widget _fabActions(int bdtId) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -218,7 +304,7 @@ class _BdtPageState extends State<BdtPage> {
         ),
       ],
     );
-  }
+  }*/
 
   Future<void> _openTrechoExtraSheet(int bdtId) async {
     final origemCtrl = TextEditingController();
@@ -426,9 +512,18 @@ class _BdtPageState extends State<BdtPage> {
       initial = TimeOfDay(hour: hh, minute: mm);
     }
 
-    final picked = await showTimePicker(context: context, initialTime: initial);
-    if (picked == null) return;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
+    );
 
+    if (picked == null) return;
     c.text = '${_two(picked.hour)}:${_two(picked.minute)}';
   }
 
@@ -526,152 +621,305 @@ class _BdtPageState extends State<BdtPage> {
 
     final odoCtrl = TextEditingController(text: _odoSaidaFromTrecho(trecho));
 
-    await showModalBottomSheet(
+    final odoFocus = FocusNode();
+    String? odoError;
+    String? formError;
+
+    // ✅ NOVO: banner de progresso destacado
+    bool showProgress = false;
+    String progressMsg = 'Enviando...';
+
+    // ✅ controla se o sheet ainda está aberto
+    bool sheetOpen = true;
+
+    final sheetFuture = showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) {
         final pad = MediaQuery.of(ctx).viewInsets.bottom;
-        final bool isBusyThis = (busyTrechoId == trechoId);
+        final bool isBusyThis = (busyTrechoId == trechoId) || showProgress;
 
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Iniciar trecho',
-                style: Theme.of(
-                  ctx,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: horaCtrl,
-                      readOnly: true,
-                      onTap: () => _pickHm(horaCtrl),
-                      decoration: const InputDecoration(
-                        labelText: 'Hora saída (HH:MM)',
-                        border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.schedule),
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            void clearErrors() {
+              if (odoError != null || formError != null) {
+                setLocal(() {
+                  odoError = null;
+                  formError = null;
+                });
+              }
+            }
+
+            Widget progressBanner() {
+              final cs = Theme.of(ctx).colorScheme;
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: cs.primaryContainer,
+                  border: Border.all(color: cs.primary.withOpacity(.25)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Aguarde…',
+                            style: TextStyle(
+                              color: cs.onPrimaryContainer,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            progressMsg,
+                            style: TextStyle(
+                              color: cs.onPrimaryContainer,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'O GPS será ativado automaticamente em seguida.',
+                            style: TextStyle(
+                              color: cs.onPrimaryContainer.withOpacity(.85),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Iniciar trecho',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: odoCtrl,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        labelText: 'Odômetro saída',
-                        border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+
+                  // ✅ NOVO: banner visível mesmo com o botão fora da tela
+                  if (showProgress) ...[
+                    progressBanner(),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (formError != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: Theme.of(ctx).colorScheme.errorContainer,
+                      ),
+                      child: Text(
+                        formError!,
+                        style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.onErrorContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: horaCtrl,
+                          readOnly: true,
+                          onTap: isBusyThis ? null : () => _pickHm(horaCtrl),
+                          decoration: const InputDecoration(
+                            labelText: 'Hora saída (HH:MM)',
+                            border: OutlineInputBorder(),
+                            suffixIcon: Icon(Icons.schedule),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: odoCtrl,
+                          focusNode: odoFocus,
+                          enabled: !isBusyThis,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onChanged: (_) {
+                            if (odoError != null || formError != null) {
+                              setLocal(() {
+                                odoError = null;
+                                formError = null;
+                              });
+                            }
+                          },
+                          decoration: InputDecoration(
+                            labelText: 'Odômetro saída',
+                            border: const OutlineInputBorder(),
+                            errorText: odoError,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: isBusyThis ? null : () => Navigator.pop(ctx),
-                      child: const Text('Cancelar'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: isBusyThis
-                          ? null
-                          : () async {
-                              if (odoCtrl.text.trim().isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Informe o odômetro de saída.',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
 
-                              final confirmed = await _confirmDialog(
-                                title: 'Iniciar trecho?',
-                                message:
-                                    'Tem certeza que deseja iniciar este trecho?\n\n'
-                                    'Hora de saída: ${horaCtrl.text.trim()}\n'
-                                    'Odômetro: ${odoCtrl.text.trim()}',
-                                cancelText: 'Não',
-                                confirmText: 'Sim, iniciar',
-                              );
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: isBusyThis
+                              ? null
+                              : () => Navigator.pop(ctx),
+                          child: const Text('Cancelar'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: isBusyThis
+                              ? null
+                              : () async {
+                                  clearErrors();
 
-                              if (!confirmed) return;
+                                  if (odoCtrl.text.trim().isEmpty) {
+                                    setLocal(() {
+                                      odoError = 'Informe o odômetro de saída.';
+                                    });
+                                    FocusScope.of(ctx).requestFocus(odoFocus);
+                                    return;
+                                  }
 
-                              setState(() => busyTrechoId = trechoId);
-                              try {
-                                final ok = await BdtService.iniciarTrecho(
-                                  bdtId: bdtId,
-                                  agendaId: (agendaId > 0) ? agendaId : null,
-                                  trechoId: trechoId,
-                                );
-
-                                if (!mounted) return;
-
-                                if (ok) {
-                                  await BdtService.atualizarTrechoExecucao(
-                                    bdtId: bdtId,
-                                    trechoId: trechoId,
-                                    data: {
-                                      "datahora_saida": _apiDateTimeFromHm(
-                                        horaCtrl.text.trim(),
-                                      ),
-                                      "odometro_saida": odoCtrl.text.trim(),
-                                    },
+                                  final confirmed = await _confirmDialog(
+                                    title: 'Iniciar trecho?',
+                                    message:
+                                        'Tem certeza que deseja iniciar este trecho?\n\n'
+                                        'Hora de saída: ${horaCtrl.text.trim()}\n'
+                                        'Odômetro: ${odoCtrl.text.trim()}',
+                                    cancelText: 'Não',
+                                    confirmText: 'Sim, iniciar',
                                   );
+                                  if (!confirmed) return;
 
-                                  _startTracking(bdtId, agendaId, trechoId);
-                                }
+                                  if (!mounted || !sheetOpen) return;
 
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      ok
-                                          ? 'Trecho iniciado.'
-                                          : 'Falha ao iniciar trecho.',
-                                    ),
+                                  // ✅ NOVO: mostra banner de progresso IMEDIATAMENTE
+                                  setLocal(() {
+                                    showProgress = true;
+                                    progressMsg =
+                                        'Iniciando trecho no servidor…';
+                                  });
+
+                                  setState(() => busyTrechoId = trechoId);
+                                  try {
+                                    final ok = await BdtService.iniciarTrecho(
+                                      bdtId: bdtId,
+                                      agendaId: (agendaId > 0)
+                                          ? agendaId
+                                          : null,
+                                      trechoId: trechoId,
+                                    );
+
+                                    if (!mounted || !sheetOpen) return;
+
+                                    if (ok) {
+                                      setLocal(() {
+                                        progressMsg =
+                                            'Salvando dados do trecho…';
+                                      });
+
+                                      await BdtService.atualizarTrechoExecucao(
+                                        bdtId: bdtId,
+                                        trechoId: trechoId,
+                                        data: {
+                                          "datahora_saida": _apiDateTimeFromHm(
+                                            horaCtrl.text.trim(),
+                                          ),
+                                          "odometro_saida": odoCtrl.text.trim(),
+                                        },
+                                      );
+
+                                      if (!mounted || !sheetOpen) return;
+
+                                      setLocal(() {
+                                        progressMsg = 'Ativando GPS…';
+                                      });
+
+                                      _startTracking(bdtId, agendaId, trechoId);
+
+                                      Navigator.pop(ctx);
+                                      ScaffoldMessenger.of(context)
+                                        ..clearSnackBars()
+                                        ..showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Trecho iniciado.'),
+                                          ),
+                                        );
+                                      await _load(bdtId);
+                                    } else {
+                                      setLocal(() {
+                                        showProgress = false; // ✅ para o banner
+                                        formError = 'Falha ao iniciar trecho.';
+                                      });
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => busyTrechoId = null);
+                                    }
+                                  }
+                                },
+                          icon: isBusyThis
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
                                   ),
-                                );
-
-                                Navigator.pop(ctx);
-                                await _load(bdtId);
-                              } finally {
-                                if (mounted)
-                                  setState(() => busyTrechoId = null);
-                              }
-                            },
-                      icon: isBusyThis
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.play_arrow),
-                      label: const Text('Iniciar'),
-                    ),
+                                )
+                              : const Icon(Icons.play_arrow),
+                          label: const Text('Iniciar'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
+
+    sheetFuture.whenComplete(() => sheetOpen = false);
+    await sheetFuture;
+
+    await Future.delayed(const Duration(milliseconds: 350));
+    horaCtrl.dispose();
+    odoCtrl.dispose();
+    odoFocus.dispose();
   }
 
   Future<void> _openFinalizarTrechoSheet({
@@ -706,7 +954,13 @@ class _BdtPageState extends State<BdtPage> {
 
     final odoCtrl = TextEditingController(text: _odoChegadaFromTrecho(trecho));
 
-    await showModalBottomSheet(
+    final odoFocus = FocusNode();
+    String? odoError;
+    String? formError;
+
+    bool sheetOpen = true;
+
+    final sheetFuture = showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -714,143 +968,209 @@ class _BdtPageState extends State<BdtPage> {
         final pad = MediaQuery.of(ctx).viewInsets.bottom;
         final bool isBusyThis = (busyTrechoId == trechoId);
 
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Finalizar trecho',
-                style: Theme.of(
-                  ctx,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 12),
-              Row(
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            void clearErrors() {
+              if (odoError != null || formError != null) {
+                setLocal(() {
+                  odoError = null;
+                  formError = null;
+                });
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: horaCtrl,
-                      readOnly: true,
-                      onTap: () => _pickHm(horaCtrl),
-                      decoration: const InputDecoration(
-                        labelText: 'Hora chegada (HH:MM)',
-                        border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.schedule),
+                  Text(
+                    'Finalizar trecho',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  if (formError != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: Theme.of(ctx).colorScheme.errorContainer,
+                      ),
+                      child: Text(
+                        formError!,
+                        style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.onErrorContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: odoCtrl,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        labelText: 'Odômetro chegada',
-                        border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                  ],
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: horaCtrl,
+                          readOnly: true,
+                          onTap: () => _pickHm(horaCtrl),
+                          decoration: const InputDecoration(
+                            labelText: 'Hora chegada (HH:MM)',
+                            border: OutlineInputBorder(),
+                            suffixIcon: Icon(Icons.schedule),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: odoCtrl,
+                          focusNode: odoFocus,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onChanged: (_) {
+                            if (odoError != null || formError != null) {
+                              setLocal(() {
+                                odoError = null;
+                                formError = null;
+                              });
+                            }
+                          },
+                          decoration: InputDecoration(
+                            labelText: 'Odômetro chegada',
+                            border: const OutlineInputBorder(),
+                            errorText: odoError,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: isBusyThis ? null : () => Navigator.pop(ctx),
-                      child: const Text('Cancelar'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: isBusyThis
-                          ? null
-                          : () async {
-                              if (odoCtrl.text.trim().isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Informe o odômetro de chegada.',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
 
-                              final confirmed = await _confirmDialog(
-                                title: 'Finalizar trecho?',
-                                message:
-                                    'Tem certeza que deseja finalizar este trecho?\n\n'
-                                    'Hora de chegada: ${horaCtrl.text.trim()}\n'
-                                    'Odômetro: ${odoCtrl.text.trim()}',
-                                cancelText: 'Não',
-                                confirmText: 'Sim, finalizar',
-                              );
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: isBusyThis
+                              ? null
+                              : () => Navigator.pop(ctx),
+                          child: const Text('Cancelar'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: isBusyThis
+                              ? null
+                              : () async {
+                                  clearErrors();
 
-                              if (!confirmed) return;
+                                  if (odoCtrl.text.trim().isEmpty) {
+                                    setLocal(() {
+                                      odoError =
+                                          'Informe o odômetro de chegada.';
+                                    });
+                                    FocusScope.of(ctx).requestFocus(odoFocus);
+                                    return;
+                                  }
 
-                              setState(() => busyTrechoId = trechoId);
-                              try {
-                                final ok = await BdtService.finalizarTrecho(
-                                  bdtId: bdtId,
-                                  trechoId: trechoId,
-                                );
-
-                                if (!mounted) return;
-
-                                if (ok) {
-                                  await BdtService.atualizarTrechoExecucao(
-                                    bdtId: bdtId,
-                                    trechoId: trechoId,
-                                    data: {
-                                      "datahora_chegada": _apiDateTimeFromHm(
-                                        horaCtrl.text.trim(),
-                                      ),
-                                      "odometro_chegada": odoCtrl.text.trim(),
-                                    },
+                                  final confirmed = await _confirmDialog(
+                                    title: 'Finalizar trecho?',
+                                    message:
+                                        'Tem certeza que deseja finalizar este trecho?\n\n'
+                                        'Hora de chegada: ${horaCtrl.text.trim()}\n'
+                                        'Odômetro: ${odoCtrl.text.trim()}',
+                                    cancelText: 'Não',
+                                    confirmText: 'Sim, finalizar',
                                   );
+                                  if (!confirmed) return;
 
-                                  _stopTracking();
-                                }
+                                  if (!mounted || !sheetOpen) return;
 
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      ok
-                                          ? 'Trecho finalizado.'
-                                          : 'Falha ao finalizar trecho.',
-                                    ),
+                                  setState(() => busyTrechoId = trechoId);
+                                  try {
+                                    final ok = await BdtService.finalizarTrecho(
+                                      bdtId: bdtId,
+                                      trechoId: trechoId,
+                                    );
+
+                                    if (!mounted || !sheetOpen) return;
+
+                                    if (ok) {
+                                      await BdtService.atualizarTrechoExecucao(
+                                        bdtId: bdtId,
+                                        trechoId: trechoId,
+                                        data: {
+                                          "datahora_chegada":
+                                              _apiDateTimeFromHm(
+                                                horaCtrl.text.trim(),
+                                              ),
+                                          "odometro_chegada": odoCtrl.text
+                                              .trim(),
+                                        },
+                                      );
+
+                                      if (!mounted || !sheetOpen) return;
+
+                                      _stopTracking();
+
+                                      Navigator.pop(ctx); // fecha primeiro
+                                      ScaffoldMessenger.of(context)
+                                        ..clearSnackBars()
+                                        ..showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Trecho finalizado.'),
+                                          ),
+                                        );
+                                      await _load(bdtId);
+                                    } else {
+                                      setLocal(() {
+                                        formError =
+                                            'Falha ao finalizar trecho.';
+                                      });
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => busyTrechoId = null);
+                                    }
+                                  }
+                                },
+                          icon: isBusyThis
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
                                   ),
-                                );
-
-                                Navigator.pop(ctx);
-                                await _load(bdtId);
-                              } finally {
-                                if (mounted)
-                                  setState(() => busyTrechoId = null);
-                              }
-                            },
-                      icon: isBusyThis
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.flag),
-                      label: const Text('Finalizar'),
-                    ),
+                                )
+                              : const Icon(Icons.flag),
+                          label: const Text('Finalizar'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
+
+    sheetFuture.whenComplete(() => sheetOpen = false);
+    await sheetFuture;
+
+    await Future.delayed(const Duration(milliseconds: 350));
+    horaCtrl.dispose();
+    odoCtrl.dispose();
+    odoFocus.dispose();
   }
 
   Future<void> _openTrechoEditor({
@@ -1075,7 +1395,9 @@ class _BdtPageState extends State<BdtPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Editar trecho da agenda',
+                          agendaId > 0
+                              ? 'Editar trecho da agenda'
+                              : 'Editar trecho extra',
                           style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                           ),
@@ -1284,6 +1606,9 @@ class _BdtPageState extends State<BdtPage> {
     final ok = payload != null && payload!['success'] == true;
     final bdt = ok ? (payload!['bdt'] as Map<String, dynamic>) : null;
     final agendas = ok ? (payload!['agendas'] as List<dynamic>) : const [];
+    final trechosExtras = ok
+        ? (payload!['trechos_extras'] as List<dynamic>? ?? const [])
+        : const [];
 
     final titulo = bdt != null
         ? "BDT ${bdt['ano']}/${bdt['numero']}"
@@ -1300,7 +1625,12 @@ class _BdtPageState extends State<BdtPage> {
         title: "BDT",
         subtitle: subtitle,
         onRefresh: () => _load(bdtId),
-        floatingActionButton: _fabActions(bdtId),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () =>
+              Navigator.pushNamed(context, "/bdt_form", arguments: bdtId),
+          icon: const Icon(Icons.edit_note),
+          label: const Text("Formulário"),
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -1337,10 +1667,9 @@ class _BdtPageState extends State<BdtPage> {
       subtitle: subtitle,
       onRefresh: () => _load(bdtId),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () =>
-            Navigator.pushNamed(context, "/bdt_form", arguments: bdtId),
+        onPressed: () => _openBdtActionsSheet(bdtId),
         icon: const Icon(Icons.edit_note),
-        label: const Text("Formulário"),
+        label: const Text("Ações"),
       ),
       body: (payload == null)
           ? const Center(child: CircularProgressIndicator())
@@ -1381,6 +1710,255 @@ class _BdtPageState extends State<BdtPage> {
                             visualDensity: VisualDensity.compact,
                           ),
                         ],
+                      ),
+                    ),
+                  ),
+                if (trechosExtras.isNotEmpty)
+                  Card(
+                    margin: const EdgeInsets.only(top: 12),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Theme(
+                      data: Theme.of(
+                        context,
+                      ).copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        childrenPadding: const EdgeInsets.fromLTRB(
+                          12,
+                          0,
+                          12,
+                          12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        collapsedShape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        title: const Text(
+                          "Trechos extras",
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(
+                          "${trechosExtras.length} trecho(s)",
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        children: trechosExtras.map((t) {
+                          final tt = (t is Map<String, dynamic>)
+                              ? t
+                              : Map<String, dynamic>.from(t as Map);
+
+                          const int agendaId = 0; // ✅ extra
+                          final int trechoId =
+                              int.tryParse(tt['id'].toString()) ?? 0;
+                          final String status =
+                              (tt['exec_status'] ?? 'pendente').toString();
+
+                          final origem = (tt['origem'] ?? '').toString();
+                          final destino = (tt['destino'] ?? '').toString();
+
+                          final horaSaida = _fmtTimeOnly(
+                            tt['inicio_real'] ?? tt['datahora_saida'],
+                          );
+                          final odoSaida = _odoSaidaFromTrecho(tt);
+
+                          final horaChegada = _fmtTimeOnly(
+                            tt['fim_real'] ?? tt['datahora_chegada'],
+                          );
+                          final odoChegada = _odoChegadaFromTrecho(tt);
+
+                          final bool isBusyThis = (busyTrechoId == trechoId);
+                          final bool hasAnyBusy = (busyTrechoId != null);
+
+                          final bool isTrackingThis =
+                              (trackingAgendaId == agendaId &&
+                              trackingTrechoId == trechoId);
+                          final bool canDelete =
+                              !hasAnyBusy &&
+                              status != 'em_andamento' &&
+                              !isTrackingThis;
+
+                          Widget mainButton;
+
+                          if (isBusyThis) {
+                            mainButton = const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            );
+                          } else if (status == 'em_andamento') {
+                            final bool canFinish =
+                                !hasAnyBusy && (!isTracking || isTrackingThis);
+
+                            mainButton = FilledButton(
+                              onPressed: canFinish
+                                  ? () => _openFinalizarTrechoSheet(
+                                      bdtId: bdtId,
+                                      agendaId: agendaId, // ✅ 0
+                                      trecho: tt,
+                                    )
+                                  : null,
+                              child: const Text("Finalizar"),
+                            );
+                          } else if (status == 'pendente') {
+                            final bool canStart =
+                                !hasAnyBusy && (!isTracking || isTrackingThis);
+
+                            mainButton = OutlinedButton(
+                              onPressed: canStart
+                                  ? () => _openIniciarTrechoSheet(
+                                      bdtId: bdtId,
+                                      agendaId: agendaId, // ✅ 0
+                                      trecho: tt,
+                                    )
+                                  : null,
+                              child: const Text("Iniciar"),
+                            );
+                          } else {
+                            mainButton = const Icon(Icons.check_circle_outline);
+                          }
+
+                          return Container(
+                            margin: const EdgeInsets.only(top: 10),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outlineVariant,
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Icon(_statusIcon(status)),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "$origem → $destino",
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 6,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          Chip(
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            backgroundColor: _chipBg(
+                                              context,
+                                              status,
+                                            ),
+                                            label: Text(
+                                              _statusLabel(status),
+                                              style: TextStyle(
+                                                color: _chipFg(context, status),
+                                              ),
+                                            ),
+                                          ),
+                                          if (isTrackingThis)
+                                            Chip(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              avatar: const Icon(
+                                                Icons.gps_fixed,
+                                                size: 16,
+                                              ),
+                                              label: const Text("GPS enviando"),
+                                            ),
+                                          if (isTracking &&
+                                              !isTrackingThis &&
+                                              status == 'pendente')
+                                            const Chip(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              label: Text(
+                                                "Aguardando finalizar",
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      if (horaSaida.isNotEmpty ||
+                                          odoSaida.isNotEmpty ||
+                                          horaChegada.isNotEmpty ||
+                                          odoChegada.isNotEmpty)
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              "Saída: ${horaSaida.isEmpty ? '--:--' : horaSaida} • Odo: ${odoSaida.isEmpty ? '-' : odoSaida}",
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
+                                            ),
+                                            Text(
+                                              "Chegada: ${horaChegada.isEmpty ? '--:--' : horaChegada} • Odo: ${odoChegada.isEmpty ? '-' : odoChegada}",
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
+                                            ),
+                                          ],
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  children: [
+                                    mainButton,
+                                    const SizedBox(height: 6),
+                                    IconButton(
+                                      tooltip: "Editar",
+                                      onPressed: isBusyThis
+                                          ? null
+                                          : () => _openTrechoEditor(
+                                              bdtId: bdtId,
+                                              agendaId: agendaId, // ✅ 0
+                                              trecho: tt,
+                                            ),
+                                      icon: const Icon(Icons.edit),
+                                    ),
+                                    IconButton(
+                                      tooltip: "Excluir",
+                                      onPressed: (isBusyThis || !canDelete)
+                                          ? null
+                                          : () => _deleteTrechoExtra(
+                                              bdtId: bdtId,
+                                              trechoId: trechoId,
+                                              origem: origem,
+                                              destino: destino,
+                                            ),
+                                      icon: const Icon(Icons.delete_outline),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ),
                   ),
@@ -1433,11 +2011,6 @@ class _BdtPageState extends State<BdtPage> {
                             : null,
                         children: trechos.map((t) {
                           final tt = t as Map<String, dynamic>;
-                          // dentro do map dos trechos, antes de ler odoSaida:
-                          debugPrint('TRECHO KEYS: ${tt.keys}');
-                          debugPrint(
-                            'TRECHO EXEC: ${tt['execucao'] ?? tt['trecho_execucao']}',
-                          );
 
                           final int trechoId =
                               int.tryParse(tt['id'].toString()) ?? 0;

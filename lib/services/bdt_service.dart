@@ -135,16 +135,29 @@ class BdtService {
     required int bdtId,
     required String origem,
     required String destino,
+    int? agendaId, // opcional
   }) async {
     final usuarioId = await _userId();
 
-    final res = await ApiClient.post("transporte/api/bdt/trechos/create", {
+    // ✅ rota nova (se existir no backend)
+    var res = await ApiClient.post("transporte/api/bdt/trecho/extra/criar", {
       "bdt_id": bdtId,
       "usuario_id": usuarioId,
-      "fk_agenda": null, // ✅ extra
       "origem": origem,
       "destino": destino,
+      if (agendaId != null) "agenda_id": agendaId,
     });
+
+    // ✅ fallback rota antiga (se seu routes ainda usa trechos/create)
+    if (res == null || res["success"] != true) {
+      res = await ApiClient.post("transporte/api/bdt/trechos/create", {
+        "bdt_id": bdtId,
+        "usuario_id": usuarioId,
+        "fk_agenda": agendaId, // null => extra
+        "origem": origem,
+        "destino": destino,
+      });
+    }
 
     return res != null && res["success"] == true;
   }
@@ -339,6 +352,21 @@ class BdtService {
       "bdt_id": bdtId,
       "usuario_id": usuarioId,
       "manutencao_id": manutencaoId,
+    });
+
+    return res != null && res["success"] == true;
+  }
+
+  static Future<bool> excluirTrechoExtra({
+    required int bdtId,
+    required int trechoId,
+  }) async {
+    final usuarioId = await _userId();
+
+    final res = await ApiClient.post("transporte/api/bdt/trechos/delete", {
+      "bdt_id": bdtId,
+      "usuario_id": usuarioId,
+      "trecho_id": trechoId,
     });
 
     return res != null && res["success"] == true;
