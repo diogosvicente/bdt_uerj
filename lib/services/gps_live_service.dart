@@ -7,7 +7,7 @@ class GpsLiveService {
 
   static void start({
     required int bdtId,
-    required int agendaId,
+    int? agendaId, // ✅ agora pode ser null (trecho extra)
     required int trechoId,
     Duration interval = const Duration(seconds: 5),
   }) {
@@ -19,7 +19,7 @@ class GpsLiveService {
 
       await BdtService.enviarLocalizacao(
         bdtId: bdtId,
-        agendaId: agendaId,
+        agendaId: (agendaId != null && agendaId > 0) ? agendaId : null,
         trechoId: trechoId,
         loc: loc,
       );

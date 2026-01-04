@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'pages/login_page.dart';
 import 'pages/home_page.dart';
 import 'pages/bdt_page.dart';
+import 'pages/bdt_form_page.dart';
 
 void main() {
   runApp(const BdtUerjApp());
@@ -20,6 +21,7 @@ class BdtUerjApp extends StatelessWidget {
         "/login": (_) => const LoginPage(),
         "/home": (_) => const HomePage(),
         "/bdt": (_) => const BdtPage(),
+        "/bdt_form": (_) => const BdtFormPage(),
       },
       theme: ThemeData(
         useMaterial3: true,
