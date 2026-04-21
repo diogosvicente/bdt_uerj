@@ -371,4 +371,34 @@ class BdtService {
 
     return res != null && res["success"] == true;
   }
+
+  // ==========================================================
+  // Reabertura de BDT
+  // Backend: POST transporte/api/bdt/reabrir
+  // Regras:
+  //   - Só BDTs com status Encerrado (3) ou Cancelado (4)
+  //   - Justificativa obrigatória (mínimo 10 caracteres)
+  //   - Origem gravada como "mobile" no histórico (o backend força)
+  //
+  // Retorna um Map com { "success": bool, "message": String?, payload... }
+  // para que a UI mostre o motivo da falha (permissão, status inválido, etc).
+  // ==========================================================
+  static Future<Map<String, dynamic>> reabrirBdt({
+    required int bdtId,
+    required String justificativa,
+  }) async {
+    final usuarioId = await _userId();
+
+    final res = await ApiClient.post("transporte/api/bdt/reabrir", {
+      "bdt_id": bdtId,
+      "usuario_id": usuarioId,
+      "justificativa": justificativa.trim(),
+    });
+
+    if (res == null) {
+      return {"success": false, "message": "Falha de comunicação."};
+    }
+    // ApiClient já padroniza a resposta com success/message
+    return Map<String, dynamic>.from(res);
+  }
 }

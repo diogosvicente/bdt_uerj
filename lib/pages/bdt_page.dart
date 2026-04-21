@@ -29,6 +29,14 @@ class _BdtPageState extends State<BdtPage> {
   // =========================
 
   Future<void> _openBdtActionsSheet(int bdtId) async {
+    // Lê o status atual a partir do payload carregado (se disponível)
+    int statusAtual = 0;
+    if (payload != null && payload!['success'] == true && payload!['bdt'] is Map) {
+      final bdtMap = payload!['bdt'] as Map;
+      statusAtual = int.tryParse((bdtMap['id_status_atual'] ?? 0).toString()) ?? 0;
+    }
+    final bool podeReabrir = statusAtual == 3 || statusAtual == 4;
+
     await showModalBottomSheet(
       context: context,
       showDragHandle: true,
@@ -55,8 +63,149 @@ class _BdtPageState extends State<BdtPage> {
                   Future.microtask(() => _openTrechoExtraSheet(bdtId));
                 },
               ),
+              if (podeReabrir)
+                ListTile(
+                  leading: const Icon(
+                    Icons.restart_alt,
+                    color: Colors.orange,
+                  ),
+                  title: const Text(
+                    "Reabrir BDT",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    statusAtual == 3
+                        ? "BDT atualmente Encerrado"
+                        : "BDT atualmente Cancelado",
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Future.microtask(() => _openReabrirBdtSheet(bdtId));
+                  },
+                ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  /// Dialog de reabertura: coleta justificativa obrigatória (>=10 chars)
+  /// e chama a API. Em caso de sucesso, recarrega a tela.
+  Future<void> _openReabrirBdtSheet(int bdtId) async {
+    final ctrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool enviando = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dctx) {
+        return StatefulBuilder(
+          builder: (dctx, setDialogState) {
+            return AlertDialog(
+              title: Row(
+                children: const [
+                  Icon(Icons.restart_alt, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Text("Reabrir BDT"),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        "Informe o motivo da reabertura. A ação ficará registrada no histórico com seu usuário, data/hora e origem (mobile).",
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: ctrl,
+                        minLines: 3,
+                        maxLines: 6,
+                        maxLength: 500,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: "Justificativa *",
+                          helperText: "Mínimo 10 caracteres",
+                        ),
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.length < 10) {
+                            return "Justificativa obrigatória (mínimo 10 caracteres).";
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: enviando ? null : () => Navigator.pop(dctx),
+                  child: const Text("Cancelar"),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.black,
+                  ),
+                  onPressed: enviando
+                      ? null
+                      : () async {
+                          if (!(formKey.currentState?.validate() ?? false)) {
+                            return;
+                          }
+                          setDialogState(() => enviando = true);
+
+                          final res = await BdtService.reabrirBdt(
+                            bdtId: bdtId,
+                            justificativa: ctrl.text,
+                          );
+
+                          if (!mounted) return;
+
+                          Navigator.pop(dctx);
+
+                          final ok = res['success'] == true;
+                          final msg = (res['message'] ??
+                                  (ok
+                                      ? 'BDT reaberto com sucesso.'
+                                      : 'Falha ao reabrir BDT.'))
+                              .toString();
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(msg),
+                              backgroundColor: ok ? Colors.green : Colors.red,
+                            ),
+                          );
+
+                          if (ok) {
+                            await _load(bdtId);
+                          }
+                        },
+                  icon: enviando
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.black,
+                          ),
+                        )
+                      : const Icon(Icons.restart_alt),
+                  label: const Text("Confirmar reabertura"),
+                ),
+              ],
+            );
+          },
         );
       },
     );
