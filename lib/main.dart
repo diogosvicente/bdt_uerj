@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'api/ssl_bootstrap.dart';
 import 'pages/login_page.dart';
 import 'pages/home_page.dart';
 import 'pages/bdt_page.dart';
 import 'pages/bdt_form_page.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Carrega a CA da RNP no truststore ANTES de qualquer requisição HTTPS.
+  // Sem isso, o cert de https://www.e-prefeitura.uerj.br é rejeitado
+  // com HandshakeException: CERTIFICATE_VERIFY_FAILED (CA não confiável).
+  await SslBootstrap.install();
+
   runApp(const BdtUerjApp());
 }
 
