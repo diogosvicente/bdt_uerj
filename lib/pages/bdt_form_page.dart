@@ -12,24 +12,27 @@ class BdtFormPage extends StatefulWidget {
 
 class _BdtFormPageState extends State<BdtFormPage> {
   Map<String, dynamic>? payload;
-  bool saving = false;
 
   bool _loadedOnce = false;
 
-  // ====== campos do BDT (o que já existia) ======
-  final garagemCtrl = TextEditingController();
-  final localEmbarqueCtrl = TextEditingController();
+  // ====== Marcos da Jornada (substitui os antigos campos do BDT) ======
+  // Chaves esperadas pelo backend: 'partida' | 'apresentacao' | 'embarque_passageiro'
+  // Cada entrada guarda o timestamp já registrado (vindo do BDT) e nome de quem
+  // registrou (quando vier do endpoint /jornada/estado).
+  final Map<String, String?> _marcoDatahora = {
+    'partida': null,
+    'apresentacao': null,
+    'embarque_passageiro': null,
+  };
+  final Map<String, String?> _marcoAutor = {
+    'partida': null,
+    'apresentacao': null,
+    'embarque_passageiro': null,
+  };
+  String? _registrandoMarco; // chave do marco em progresso (lock visual)
 
-  final recolhHoraCtrl = TextEditingController();
-  final recolhOdoCtrl = TextEditingController();
-
-  final partidaHoraCtrl = TextEditingController();
-  final partidaOdoCtrl = TextEditingController();
-
-  final usoHoraCtrl = TextEditingController();
-  final usoOdoCtrl = TextEditingController();
-
-  final outrasObsCtrl = TextEditingController();
+  // status do BDT — só permite registrar marco em 2 (Em andamento) ou 5 (Reaberto)
+  int? _bdtStatus;
 
   // ====== listas operacionais (sem trechos aqui) ======
   List<Map<String, dynamic>> abastecimentos = [];
@@ -43,17 +46,22 @@ class _BdtFormPageState extends State<BdtFormPage> {
     RegExp(r'^\d*([.,]\d{0,1})?$'),
   );
 
+  // labels visíveis dos marcos
+  static const Map<String, String> _marcoLabel = {
+    'partida': 'Partida',
+    'apresentacao': 'Apresentação',
+    'embarque_passageiro': 'Embarque do passageiro',
+  };
+
+  // ícones por marco
+  static const Map<String, IconData> _marcoIcone = {
+    'partida': Icons.flag_outlined,
+    'apresentacao': Icons.front_hand_outlined,
+    'embarque_passageiro': Icons.directions_walk,
+  };
+
   @override
   void dispose() {
-    garagemCtrl.dispose();
-    localEmbarqueCtrl.dispose();
-    recolhHoraCtrl.dispose();
-    recolhOdoCtrl.dispose();
-    partidaHoraCtrl.dispose();
-    partidaOdoCtrl.dispose();
-    usoHoraCtrl.dispose();
-    usoOdoCtrl.dispose();
-    outrasObsCtrl.dispose();
     super.dispose();
   }
 
@@ -101,24 +109,6 @@ class _BdtFormPageState extends State<BdtFormPage> {
     return _fmtApiDateTime(dt);
   }
 
-  Future<void> _pickTime(TextEditingController c) async {
-    final now = TimeOfDay.now();
-
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: now,
-      builder: (context, child) {
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked == null) return;
-    c.text = "${_two(picked.hour)}:${_two(picked.minute)}";
-  }
-
   // =========================
   // Load
   // =========================
@@ -129,25 +119,50 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
     setState(() => payload = res);
 
-    final ok = res != null && res['success'] == true;
+    final ok = res['success'] == true;
     if (!ok) return;
 
     final bdt = (res['bdt'] as Map<String, dynamic>? ?? {});
 
-    // campos do BDT
-    garagemCtrl.text = (bdt['garagem'] ?? '').toString();
-    localEmbarqueCtrl.text = (bdt['local_embarque'] ?? '').toString();
+    // status atual do BDT (para liberar registro de marcos)
+    final dynamic rawStatus = bdt['id_status_atual'] ?? bdt['status_atual'];
+    _bdtStatus = rawStatus is int
+        ? rawStatus
+        : int.tryParse((rawStatus ?? '').toString());
 
-    recolhHoraCtrl.text = (bdt['recolhimento_hora'] ?? '').toString();
-    recolhOdoCtrl.text = (bdt['recolhimento_odometro'] ?? '').toString();
+    // marcos diretos a partir das colunas do BDT
+    _marcoDatahora['partida'] =
+        (bdt['datahora_partida'] ?? '').toString().isEmpty
+        ? null
+        : bdt['datahora_partida'].toString();
+    _marcoDatahora['apresentacao'] =
+        (bdt['datahora_apresentacao'] ?? '').toString().isEmpty
+        ? null
+        : bdt['datahora_apresentacao'].toString();
+    _marcoDatahora['embarque_passageiro'] =
+        (bdt['datahora_embarque_passageiro'] ?? '').toString().isEmpty
+        ? null
+        : bdt['datahora_embarque_passageiro'].toString();
 
-    partidaHoraCtrl.text = (bdt['partida_hora'] ?? '').toString();
-    partidaOdoCtrl.text = (bdt['partida_odometro'] ?? '').toString();
-
-    usoHoraCtrl.text = (bdt['uso_hora'] ?? '').toString();
-    usoOdoCtrl.text = (bdt['uso_odometro'] ?? '').toString();
-
-    outrasObsCtrl.text = (bdt['outras_observacoes'] ?? '').toString();
+    // Busca o estado canônico dos marcos (timestamps + assinaturas).
+    // Falha aqui é silenciosa: já temos fallback nos timestamps acima.
+    final est = await BdtService.estadoJornada(bdtId);
+    if (est != null && est['marcos'] is Map) {
+      final marcos = Map<String, dynamic>.from(est['marcos'] as Map);
+      for (final k in _marcoDatahora.keys) {
+        final entry = marcos[k];
+        if (entry is Map) {
+          final dh = entry['datahora'];
+          if (dh != null && dh.toString().isNotEmpty) {
+            _marcoDatahora[k] = dh.toString();
+          }
+          final ass = entry['assinatura'];
+          if (ass is Map) {
+            _marcoAutor[k] = (ass['criado_por_nome'] ?? '').toString();
+          }
+        }
+      }
+    }
 
     // listas (se vierem no detalhes, usa; senão busca via endpoints específicos)
     final ab = (res['abastecimentos'] as List<dynamic>?)
@@ -172,38 +187,112 @@ class _BdtFormPageState extends State<BdtFormPage> {
   }
 
   // =========================
-  // Save BDT campos principais
+  // Marcos da Jornada
   // =========================
 
-  Future<void> _saveBdtCampos(int bdtId) async {
-    setState(() => saving = true);
-    try {
-      final ok = await BdtService.salvarCamposBdt(
-        bdtId: bdtId,
-        campos: {
-          "garagem": garagemCtrl.text.trim(),
-          "local_embarque": localEmbarqueCtrl.text.trim(),
-          "recolhimento_hora": recolhHoraCtrl.text.trim(),
-          "recolhimento_odometro": recolhOdoCtrl.text.trim(),
-          "partida_hora": partidaHoraCtrl.text.trim(),
-          "partida_odometro": partidaOdoCtrl.text.trim(),
-          "uso_hora": usoHoraCtrl.text.trim(),
-          "uso_odometro": usoOdoCtrl.text.trim(),
-          "outras_observacoes": outrasObsCtrl.text.trim(),
-        },
+  bool get _bdtPermiteMarcos {
+    final s = _bdtStatus;
+    // Backend só aceita marcos em status 2 (Em andamento) e 5 (Reaberto).
+    return s == 2 || s == 5;
+  }
+
+  /// Permite registrar somente em ordem (partida → apresentacao → embarque_passageiro).
+  /// A ordem também é validada no backend; aqui é só UX.
+  bool _marcoLiberado(String marco) {
+    switch (marco) {
+      case 'partida':
+        return true;
+      case 'apresentacao':
+        return _marcoDatahora['partida'] != null;
+      case 'embarque_passageiro':
+        return _marcoDatahora['apresentacao'] != null;
+    }
+    return false;
+  }
+
+  Future<void> _registrarMarco(int bdtId, String marco) async {
+    if (!_bdtPermiteMarcos) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'O BDT precisa estar Em andamento ou Reaberto para registrar marcos.',
+          ),
+        ),
       );
-
-      if (!mounted) return;
-
+      return;
+    }
+    if (!_marcoLiberado(marco)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok ? "BDT salvo com sucesso." : "Falha ao salvar BDT."),
+          content: Text(
+            'Registre os marcos anteriores antes de "${_marcoLabel[marco]}".',
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Pergunta observação opcional
+    final obsCtrl = TextEditingController();
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Registrar marco: ${_marcoLabel[marco]}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Será gravado o horário atual e seu nome como assinante.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: obsCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Observação (opcional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Registrar'),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return;
+
+    setState(() => _registrandoMarco = marco);
+    try {
+      final res = await BdtService.registrarMarcoJornada(
+        bdtId: bdtId,
+        marco: marco,
+        observacao: obsCtrl.text.trim(),
+      );
+      if (!mounted) return;
+
+      final ok = res['success'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Marco "${_marcoLabel[marco]}" registrado.'
+                : (res['message']?.toString() ?? 'Falha ao registrar marco.'),
+          ),
         ),
       );
 
-      if (ok) Navigator.of(context).maybePop();
+      if (ok) await _load(bdtId);
     } finally {
-      if (mounted) setState(() => saving = false);
+      if (mounted) setState(() => _registrandoMarco = null);
     }
   }
 
@@ -747,9 +836,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
               children: [
-                _cardIdentificacao(),
-                const SizedBox(height: 12),
-                _cardHorariosOdo(),
+                _cardMarcosJornada(bdtId),
                 const SizedBox(height: 12),
 
                 // ✅ sem trechos aqui
@@ -760,22 +847,6 @@ class _BdtFormPageState extends State<BdtFormPage> {
                 const SizedBox(height: 12),
 
                 _cardAcidentesPlaceholder(),
-                const SizedBox(height: 12),
-
-                _cardOutrasObs(),
-                const SizedBox(height: 14),
-
-                FilledButton.icon(
-                  onPressed: saving ? null : () => _saveBdtCampos(bdtId),
-                  icon: saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save),
-                  label: const Text("Salvar BDT"),
-                ),
               ],
             ),
     );
@@ -785,7 +856,13 @@ class _BdtFormPageState extends State<BdtFormPage> {
   // Cards
   // =========================
 
-  Widget _cardIdentificacao() {
+  Widget _cardMarcosJornada(int bdtId) {
+    final marcos = <String>[
+      'partida',
+      'apresentacao',
+      'embarque_passageiro',
+    ];
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -795,69 +872,101 @@ class _BdtFormPageState extends State<BdtFormPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "Identificação",
+              "Marcos da Jornada",
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: garagemCtrl,
-              decoration: const InputDecoration(
-                labelText: "Garagem",
-                border: OutlineInputBorder(),
-              ),
+            const SizedBox(height: 4),
+            Text(
+              _bdtPermiteMarcos
+                  ? "Registre cada marco no momento em que ocorrer. A ordem é obrigatória."
+                  : "O BDT precisa estar Em andamento ou Reaberto para registrar marcos.",
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: localEmbarqueCtrl,
-              decoration: const InputDecoration(
-                labelText: "Local de embarque",
-                border: OutlineInputBorder(),
-              ),
-            ),
+            const SizedBox(height: 8),
+            for (int i = 0; i < marcos.length; i++) ...[
+              _rowMarco(bdtId, marcos[i]),
+              if (i < marcos.length - 1) const Divider(height: 18),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _cardHorariosOdo() {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Horários e odômetro",
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 12),
-            _rowHoraOdo(
-              title: "Recolhimento",
-              horaCtrl: recolhHoraCtrl,
-              odoCtrl: recolhOdoCtrl,
-              onPickHora: () => _pickTime(recolhHoraCtrl),
-            ),
-            const SizedBox(height: 12),
-            _rowHoraOdo(
-              title: "Partida",
-              horaCtrl: partidaHoraCtrl,
-              odoCtrl: partidaOdoCtrl,
-              onPickHora: () => _pickTime(partidaHoraCtrl),
-            ),
-            const SizedBox(height: 12),
-            _rowHoraOdo(
-              title: "Uso",
-              horaCtrl: usoHoraCtrl,
-              odoCtrl: usoOdoCtrl,
-              onPickHora: () => _pickTime(usoHoraCtrl),
-            ),
-          ],
+  Widget _rowMarco(int bdtId, String marco) {
+    final dh = _marcoDatahora[marco];
+    final autor = _marcoAutor[marco];
+    final jaRegistrado = dh != null && dh.isNotEmpty;
+    final emProgresso = _registrandoMarco == marco;
+    final liberado = _marcoPodeRegistrar(marco);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(
+          _marcoIcone[marco],
+          size: 28,
+          color: jaRegistrado
+              ? Colors.green
+              : (liberado
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).disabledColor),
         ),
-      ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _marcoLabel[marco] ?? marco,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                jaRegistrado
+                    ? "${_fmtDatahoraBr(dh)}${(autor != null && autor.isNotEmpty) ? ' • $autor' : ''}"
+                    : (liberado ? "Aguardando registro" : "Bloqueado"),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        if (jaRegistrado)
+          const Padding(
+            padding: EdgeInsets.only(left: 8),
+            child: Icon(Icons.check_circle, color: Colors.green),
+          )
+        else
+          FilledButton.tonalIcon(
+            onPressed: (emProgresso || !liberado)
+                ? null
+                : () => _registrarMarco(bdtId, marco),
+            icon: emProgresso
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.play_arrow, size: 18),
+            label: const Text("Registrar"),
+          ),
+      ],
     );
+  }
+
+  bool _marcoPodeRegistrar(String marco) {
+    return _bdtPermiteMarcos && _marcoLiberado(marco);
+  }
+
+  /// "2026-05-13 14:30:00" → "13/05/2026 14:30".
+  /// Aceita também ISO "2026-05-13T14:30:00".
+  String _fmtDatahoraBr(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    final norm = raw.replaceFirst('T', ' ');
+    final dt = DateTime.tryParse(norm);
+    if (dt == null) return raw;
+    return "${_two(dt.day)}/${_two(dt.month)}/${dt.year} "
+        "${_two(dt.hour)}:${_two(dt.minute)}";
   }
 
   Widget _cardAbastecimentos() {
@@ -1023,74 +1132,4 @@ class _BdtFormPageState extends State<BdtFormPage> {
     );
   }
 
-  Widget _cardOutrasObs() {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Outras observações",
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: outrasObsCtrl,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: "Outras observações",
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _rowHoraOdo({
-    required String title,
-    required TextEditingController horaCtrl,
-    required TextEditingController odoCtrl,
-    required VoidCallback onPickHora,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: horaCtrl,
-                readOnly: true,
-                onTap: onPickHora,
-                decoration: const InputDecoration(
-                  labelText: "Hora (HH:MM)",
-                  border: OutlineInputBorder(),
-                  suffixIcon: Icon(Icons.schedule),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: odoCtrl,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: "Odômetro",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 }

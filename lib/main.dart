@@ -6,6 +6,7 @@ import 'pages/login_page.dart';
 import 'pages/home_page.dart';
 import 'pages/bdt_page.dart';
 import 'pages/bdt_form_page.dart';
+import 'services/background_location_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +15,11 @@ Future<void> main() async {
   // Sem isso, o cert de https://www.e-prefeitura.uerj.br é rejeitado
   // com HandshakeException: CERTIFICATE_VERIFY_FAILED (CA não confiável).
   await SslBootstrap.install();
+
+  // Registra o foreground service Android responsável por enviar coordenadas
+  // mesmo com tela bloqueada / app em background. Não inicia automaticamente —
+  // só sobe quando um trecho é iniciado (GpsLiveService.start).
+  await BackgroundLocationService.init();
 
   runApp(const BdtUerjApp());
 }

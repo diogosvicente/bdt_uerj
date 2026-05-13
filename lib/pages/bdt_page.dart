@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/bdt_service.dart';
 import '../services/gps_live_service.dart';
+import '../services/location_service.dart';
 import '../widgets/app_scaffold.dart';
 import 'package:flutter/services.dart';
 
@@ -265,6 +266,15 @@ class _BdtPageState extends State<BdtPage> {
     _stopTracking();
   }
 
+  /// Inicia o foreground service de GPS.
+  ///
+  /// Mantém-se **síncrono** de propósito: ele só atualiza o state local e
+  /// dispara o serviço em background com `fire-and-forget`. O pedido de
+  /// permissão "O tempo todo" é feito uma vez no carregamento da página
+  /// (`_requestBackgroundPermissionOnce`), nunca no meio do fluxo de UI —
+  /// caso contrário o picker do Android suspende a Activity enquanto há um
+  /// bottom sheet aberto, e quando volta o widget tree já desmontou o sheet,
+  /// gerando o assert `_dependents.isEmpty is not true`.
   void _startTracking(int bdtId, int agendaId, int trechoId) {
     if (trackingAgendaId == agendaId && trackingTrechoId == trechoId) return;
 
@@ -275,12 +285,35 @@ class _BdtPageState extends State<BdtPage> {
       trackingTrechoId = trechoId;
     });
 
+    // ignore: discarded_futures
     GpsLiveService.start(
       bdtId: bdtId,
       agendaId: agendaId,
       trechoId: trechoId,
       interval: const Duration(seconds: 5),
     );
+  }
+
+  /// Pede a permissão de localização "O tempo todo" UMA vez por sessão de
+  /// página, fora de qualquer fluxo de bottom sheet/dialog para não conflitar
+  /// com widgets em remoção.
+  bool _bgPermissionAsked = false;
+  Future<void> _requestBackgroundPermissionOnce() async {
+    if (_bgPermissionAsked) return;
+    _bgPermissionAsked = true;
+
+    final ok = await LocationService.ensureBackgroundPermission();
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Sem a permissão "O tempo todo" o GPS pode parar quando você sair do app.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   Future<bool> _deleteTrechoExtra({
@@ -336,6 +369,7 @@ class _BdtPageState extends State<BdtPage> {
   }
 
   void _stopTracking() {
+    // ignore: discarded_futures
     GpsLiveService.stop();
 
     if (trackingAgendaId != null || trackingTrechoId != null) {
@@ -1019,6 +1053,7 @@ class _BdtPageState extends State<BdtPage> {
 
                                       _startTracking(bdtId, agendaId, trechoId);
 
+                                      if (!mounted) return;
                                       Navigator.pop(ctx);
                                       ScaffoldMessenger.of(context)
                                         ..clearSnackBars()
@@ -1736,6 +1771,14 @@ class _BdtPageState extends State<BdtPage> {
 
     final int bdtId = ModalRoute.of(context)!.settings.arguments as int;
     _load(bdtId);
+
+    // Adia o pedido de permissão para o próximo frame: evita disparar o
+    // picker do Android no mesmo tick em que a página está sendo construída.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // ignore: discarded_futures
+      _requestBackgroundPermissionOnce();
+    });
   }
 
   @override

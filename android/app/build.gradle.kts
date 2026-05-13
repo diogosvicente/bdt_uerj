@@ -13,6 +13,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // ✅ Necessário pelo flutter_local_notifications (usa java.time)
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -28,6 +30,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // multidex pode ser necessário em projetos com muitos plugins
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -37,8 +41,23 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    // ✅ Força CMake 3.31.6 (NDK 28+ requer este patch — o 3.22.1 antigo
+    //    passa flags --no-rosegment/--no-undefined-version que o lld do
+    //    NDK 28 rejeita, quebrando o build com CXX1429).
+    externalNativeBuild {
+        cmake {
+            version = "3.31.6"
+        }
+    }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // ✅ Backport de APIs Java 8+ (java.time, etc.) para minSdk antigos —
+    // exigido pelo flutter_local_notifications quando isCoreLibraryDesugaringEnabled = true.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

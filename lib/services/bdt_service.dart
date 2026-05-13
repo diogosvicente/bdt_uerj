@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import '../api/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bdt_resumo.dart';
@@ -28,8 +30,10 @@ class BdtService {
         .toList();
   }
 
-  /// Detalhes completos do BDT
-  static Future<Map<String, dynamic>?> detalhes(int bdtId) async {
+  /// Detalhes completos do BDT.
+  /// Sempre retorna Map (o ApiClient padroniza erros como Map com
+  /// `success:false`).
+  static Future<Map<String, dynamic>> detalhes(int bdtId) async {
     final usuarioId = await _userId();
 
     return await ApiClient.post("transporte/api/bdt/detalhes", {
@@ -97,7 +101,14 @@ class BdtService {
 
     final Map<String, dynamic>? resolvedLoc =
         loc ?? await LocationService.getLocPayload();
-    if (resolvedLoc == null) return false;
+    if (resolvedLoc == null) {
+      _log('enviarLocalizacao: SEM POSIÇÃO (loc=null)');
+      return false;
+    }
+
+    if (usuarioId <= 0) {
+      _log('enviarLocalizacao: usuario_id inválido ($usuarioId) — sem login?');
+    }
 
     final payload = <String, dynamic>{
       "bdt_id": bdtId,
@@ -108,23 +119,79 @@ class BdtService {
     };
 
     final res = await ApiClient.post("transporte/api/bdt/localizacao", payload);
-    return res != null && res["success"] == true;
+    final ok = res["success"] == true;
+    final httpStatus = res["http_status"];
+    final msg = res["message"] ?? res["status"];
+    _log(
+      'enviarLocalizacao: ${ok ? "OK" : "FALHA"} '
+      'http=$httpStatus bdt=$bdtId trecho=$trechoId msg=$msg',
+    );
+    return ok;
   }
 
-  /// Salva campos do formulário do BDT (baseado no papel)
-  static Future<bool> salvarCamposBdt({
+  static void _log(String msg) {
+    developer.log(msg, name: 'BDT-SVC');
+    // ignore: avoid_print
+    print('[BDT-SVC] $msg');
+  }
+
+  // ==========================================================
+  // MARCOS DA JORNADA (substitui o antigo bdt/salvar)
+  // Marcos válidos no backend: partida | apresentacao | embarque_passageiro
+  // ==========================================================
+
+  /// Marcos válidos aceitos pelo backend (BdtJornadaService::ORDEM).
+  static const List<String> marcosValidos = <String>[
+    "partida",
+    "apresentacao",
+    "embarque_passageiro",
+  ];
+
+  /// Registra um marco da jornada. O backend grava origem="mobile"
+  /// automaticamente — não enviar campo "origem".
+  static Future<Map<String, dynamic>> registrarMarcoJornada({
     required int bdtId,
-    required Map<String, dynamic> campos,
+    required String marco,
+    String? observacao,
   }) async {
     final usuarioId = await _userId();
 
-    final res = await ApiClient.post("transporte/api/bdt/salvar", {
+    final payload = <String, dynamic>{
+      "bdt_id": bdtId,
+      "marco": marco,
+      "usuario_id": usuarioId,
+      if (observacao != null && observacao.trim().isNotEmpty)
+        "observacao": observacao.trim(),
+    };
+
+    final res = await ApiClient.post(
+      "transporte/api/bdt/jornada/marco",
+      payload,
+    );
+
+    return Map<String, dynamic>.from(res);
+  }
+
+  /// Retorna o estado dos três marcos + histórico de assinaturas.
+  /// Estrutura esperada:
+  ///   {
+  ///     "marcos": {
+  ///       "partida":             {"datahora": "...", "assinatura": {...} | null},
+  ///       "apresentacao":        {"datahora": "...", "assinatura": {...} | null},
+  ///       "embarque_passageiro": {"datahora": "...", "assinatura": {...} | null}
+  ///     },
+  ///     "historico": [...]
+  ///   }
+  static Future<Map<String, dynamic>?> estadoJornada(int bdtId) async {
+    final usuarioId = await _userId();
+
+    final res = await ApiClient.post("transporte/api/bdt/jornada/estado", {
       "bdt_id": bdtId,
       "usuario_id": usuarioId,
-      "campos": campos,
     });
 
-    return res != null && res["success"] == true;
+    if (res["success"] != true) return null;
+    return res;
   }
 
   // =========================
@@ -139,27 +206,16 @@ class BdtService {
   }) async {
     final usuarioId = await _userId();
 
-    // ✅ rota nova (se existir no backend)
-    var res = await ApiClient.post("transporte/api/bdt/trecho/extra/criar", {
+    // Rota canônica do backend atual: transporte/api/bdt/trechos/create
+    final res = await ApiClient.post("transporte/api/bdt/trechos/create", {
       "bdt_id": bdtId,
       "usuario_id": usuarioId,
+      "fk_agenda": agendaId, // null => extra
       "origem": origem,
       "destino": destino,
-      if (agendaId != null) "agenda_id": agendaId,
     });
 
-    // ✅ fallback rota antiga (se seu routes ainda usa trechos/create)
-    if (res == null || res["success"] != true) {
-      res = await ApiClient.post("transporte/api/bdt/trechos/create", {
-        "bdt_id": bdtId,
-        "usuario_id": usuarioId,
-        "fk_agenda": agendaId, // null => extra
-        "origem": origem,
-        "destino": destino,
-      });
-    }
-
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   static Future<bool> atualizarTrecho({
