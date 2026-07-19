@@ -75,16 +75,24 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
 
 ---
 
-## Sprint M2 📱 — GPS (~64h)
+## Sprint M2 📱 — GPS (~64h) — ✅ concluída
 **Equivalente à Sprint 3 do plano web.**
 
 **Objetivo:** rastreamento confiável mesmo com celular bloqueado ou sem internet.
 
-- UI de origem/destino no app (visual melhor) — 8h
-- Corrigir saltos espúrios de GPS (filtragem de outliers) — 16h
-- GPS em background + sync offline (cache local + reenvio coerente) — 40h
+- ✅ UI de origem/destino no app (visual melhor) — 8h
+  - `bdt_page._cardTrechoAtivo`: card grande com Origem/Destino em destaque + chips `Online/Offline` (via `connectivity_plus`) e `N na fila` / `Enviado`
+  - Estado atualizado a cada 10s (`_pontosTimer`) + reativo à conectividade (`Connectivity().onConnectivityChanged`)
+- ✅ Corrigir saltos espúrios de GPS (filtragem de outliers) — 16h
+  - `LocationOutlierFilter`: descarta pontos com accuracy > 50m, velocidade > 200 km/h ou teleporte > 500m em <5s (Haversine)
+  - Filtro stateful; `reset()` ao trocar de trecho
+- ✅ GPS em background + sync offline (cache local + reenvio coerente) — 40h
+  - `LocationQueueDb` (sqflite): fila persistente `pending_locations` com `attempts` e `last_error`; max 10 tentativas antes de descartar
+  - `BackgroundLocationService._drainQueue`: worker no isolate do foreground service consome batch de 20 pontos a cada 30s
+  - Fluxo: `Geolocator → outlier filter → SQLite → worker HTTP`. Sem rede o ponto fica na fila; ao reconectar, o worker drena
+  - `AndroidManifest.xml`: `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` + `LocationService.ensureBatteryOptimizationDisabled()` — pede isenção de Doze na entrada da tela do BDT (M2.4)
 
-> ⚠️ Item de **maior risco** do MVP mobile (V=65%, R=65%). Pede POC dedicada antes da implementação completa — Doze/App Standby do Android + Background Modes do iOS são notoriamente restritivos.
+> ⚠️ Item de **maior risco** do MVP mobile (V=65%, R=65%). A implementação seguiu o padrão recomendado — validação real em produção (30+ min bloqueado, offline em túnel, etc.) fica para a fase de QA/piloto.
 
 ---
 
