@@ -96,16 +96,24 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
 
 ---
 
-## Sprint M3 📱 — Pré-BDT criação (~32h)
+## Sprint M3 📱 — Pré-BDT criação (~32h) — ✅ concluída
 **Paralela à Sprint 1 do plano web.**
 
 **Objetivo:** condutor pode pré-criar BDT no app para saídas urgentes.
 
-- Pré-BDT — criação pelo condutor — 32h
-
-> Depende de:
-> - Endpoint de criação de pré-BDT no web (Sprint 1 web)
-> - Role `Criar Pré-BDT` ativo no usuário (Sprint 0 web — já feito)
+- ✅ Pré-BDT — criação pelo condutor — 32h
+  - **Backend** (`e-prefeitura` `feature/027-mobile-support`):
+    `POST /transporte/api/bdt/pre-bdt/criar` + `PreBdtService::criarPeloCondutor()`
+    grava `trnsp_bdt` (status Pré-BDT pendente) + trechos previstos + histórico
+    em transação, retorna `{bdt_id, protocolo}`
+  - **Frontend** (`bdt_uerj` `main`):
+    `PreBdtFormPage` (rota `/pre_bdt/novo`) com card de identificação
+    (veículo + data), card de trechos com adicionar/remover dinâmico
+    (origem/destino + horários), card de observações. FAB na `HomePage`
+    ("Novo Pré-BDT") dá acesso rápido.
+  - Depois de enviar, dialog mostra o protocolo gerado e volta pra home.
+  - O Pré-BDT vira BDT operacional quando o admin aprovar via web
+    (`PreBdtAdminController`, já existente da Sprint W1).
 
 ---
 
