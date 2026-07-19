@@ -1,4 +1,8 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import '../services/background_location_service.dart';
 import '../services/bdt_service.dart';
 import '../services/gps_live_service.dart';
 import '../services/location_service.dart';
@@ -23,7 +27,22 @@ class _BdtPageState extends State<BdtPage> {
 
   bool _loadedOnce = false;
 
+  // Estado da fila de envio (M2): tela mostra quantos pontos ainda estão
+  // pendentes localmente. Atualizado por _pontosTimer a cada 10s enquanto
+  // o tracking está ativo.
+  int _pontosNaFila = 0;
+  Timer? _pontosTimer;
+
+  // Estado de conexão (M2): chip online/offline no card de tracking.
+  List<ConnectivityResult> _conn = const [ConnectivityResult.none];
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
+
   bool get isTracking => trackingAgendaId != null && trackingTrechoId != null;
+  bool get _isOnline => _conn.any((r) =>
+      r == ConnectivityResult.wifi ||
+      r == ConnectivityResult.mobile ||
+      r == ConnectivityResult.ethernet ||
+      r == ConnectivityResult.vpn);
 
   // =========================
   // Load
@@ -292,23 +311,79 @@ class _BdtPageState extends State<BdtPage> {
       trechoId: trechoId,
       interval: const Duration(seconds: 5),
     );
+
+    _startPontosMonitor(bdtId, trechoId);
   }
 
-  /// Pede a permissão de localização "O tempo todo" UMA vez por sessão de
-  /// página, fora de qualquer fluxo de bottom sheet/dialog para não conflitar
-  /// com widgets em remoção.
+  /// Liga o polling do contador de pontos pendentes na fila SQLite +
+  /// a subscription de conectividade. Chamado em [_startTracking].
+  void _startPontosMonitor(int bdtId, int trechoId) {
+    _pontosTimer?.cancel();
+    _connSub?.cancel();
+
+    // Primeira leitura imediata.
+    // ignore: discarded_futures
+    _atualizarPontosNaFila(bdtId, trechoId);
+
+    _pontosTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      // ignore: discarded_futures
+      _atualizarPontosNaFila(bdtId, trechoId);
+    });
+
+    // Estado inicial + escuta de mudanças.
+    Connectivity().checkConnectivity().then((r) {
+      if (mounted) setState(() => _conn = r);
+    });
+    _connSub = Connectivity().onConnectivityChanged.listen((r) {
+      if (mounted) setState(() => _conn = r);
+    });
+  }
+
+  Future<void> _atualizarPontosNaFila(int bdtId, int trechoId) async {
+    try {
+      final n = await BackgroundLocationService.countPendingFor(
+        bdtId: bdtId,
+        trechoId: trechoId,
+      );
+      if (mounted && _pontosNaFila != n) {
+        setState(() => _pontosNaFila = n);
+      }
+    } catch (_) {
+      // não bloqueia UI se a fila estiver indisponível
+    }
+  }
+
+  /// Pede a permissão de localização "O tempo todo" e a isenção de
+  /// otimização de bateria (M2) UMA vez por sessão de página, fora de
+  /// qualquer fluxo de bottom sheet/dialog para não conflitar com
+  /// widgets em remoção.
   bool _bgPermissionAsked = false;
   Future<void> _requestBackgroundPermissionOnce() async {
     if (_bgPermissionAsked) return;
     _bgPermissionAsked = true;
 
-    final ok = await LocationService.ensureBackgroundPermission();
+    final okLoc = await LocationService.ensureBackgroundPermission();
     if (!mounted) return;
-    if (!ok) {
+    if (!okLoc) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
             'Sem a permissão "O tempo todo" o GPS pode parar quando você sair do app.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+
+    // Isenção de bateria — sem isso o foreground service morre após
+    // ~30 min de tela bloqueada em vários fabricantes.
+    final okBat = await LocationService.ensureBatteryOptimizationDisabled();
+    if (!mounted) return;
+    if (!okBat) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Autorize "Sem otimização de bateria" para que o GPS não pare com o celular bloqueado.',
           ),
           duration: Duration(seconds: 4),
         ),
@@ -372,10 +447,16 @@ class _BdtPageState extends State<BdtPage> {
     // ignore: discarded_futures
     GpsLiveService.stop();
 
-    if (trackingAgendaId != null || trackingTrechoId != null) {
+    _pontosTimer?.cancel();
+    _pontosTimer = null;
+    _connSub?.cancel();
+    _connSub = null;
+
+    if (trackingAgendaId != null || trackingTrechoId != null || _pontosNaFila != 0) {
       setState(() {
         trackingAgendaId = null;
         trackingTrechoId = null;
+        _pontosNaFila = 0;
       });
     }
   }
@@ -672,25 +753,22 @@ class _BdtPageState extends State<BdtPage> {
     return s;
   }
 
-  /// Descreve o trecho em execução sem expor IDs internos.
-  /// Procura no payload por origem/destino do trecho que está sendo
-  /// rastreado. Se não achar, retorna label genérica.
-  String _labelTrechoAtivo() {
+  /// Procura o Map do trecho em execução (para extrair origem/destino
+  /// individualmente na UI). Retorna null se não achar.
+  Map<String, dynamic>? _findTrechoAtivo() {
     final tId = trackingTrechoId;
-    if (tId == null || tId <= 0) return 'Trecho em execução';
+    if (tId == null || tId <= 0) return null;
 
     final ok = payload != null && payload!['success'] == true;
-    if (!ok) return 'Trecho em execução';
+    if (!ok) return null;
 
-    // Procura primeiro nos trechos extras…
     final extras = (payload!['trechos_extras'] as List<dynamic>? ?? const []);
     for (final t in extras) {
       final tt = (t as Map<String, dynamic>);
       final id = int.tryParse(tt['id'].toString()) ?? 0;
-      if (id == tId) return _fmtOrigemDestino(tt);
+      if (id == tId) return tt;
     }
 
-    // …depois nas agendas.
     final agendas = (payload!['agendas'] as List<dynamic>? ?? const []);
     for (final a in agendas) {
       final trechos = ((a as Map<String, dynamic>)['trechos']
@@ -699,11 +777,11 @@ class _BdtPageState extends State<BdtPage> {
       for (final t in trechos) {
         final tt = (t as Map<String, dynamic>);
         final id = int.tryParse(tt['id'].toString()) ?? 0;
-        if (id == tId) return _fmtOrigemDestino(tt);
+        if (id == tId) return tt;
       }
     }
 
-    return 'Trecho em execução';
+    return null;
   }
 
   String _fmtOrigemDestino(Map<String, dynamic> trecho) {
@@ -1824,6 +1902,142 @@ class _BdtPageState extends State<BdtPage> {
     });
   }
 
+  /// Card grande no topo da página do BDT quando há trecho em execução.
+  /// Mostra origem/destino em destaque + chips com estado da rede e da
+  /// fila de envio (M2).
+  Widget _cardTrechoAtivo() {
+    final trecho = _findTrechoAtivo();
+    final origem = (trecho?['origem'] ?? '').toString().trim();
+    final destino = (trecho?['destino'] ?? '').toString().trim();
+    final semOrigem = origem.isEmpty;
+    final semDestino = destino.isEmpty;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Card(
+      elevation: 0,
+      color: scheme.primaryContainer.withValues(alpha: 0.4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.gps_fixed, color: scheme.primary, size: 22),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Trecho em execução',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                  ),
+                ),
+                _chipStatusFila(),
+                const SizedBox(width: 6),
+                _chipStatusConexao(),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _linhaOrigemDestino(
+              icone: Icons.trip_origin,
+              label: 'Origem',
+              texto: semOrigem ? '—' : origem,
+              vazio: semOrigem,
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(9, 2, 0, 2),
+              child: SizedBox(
+                height: 14,
+                child: VerticalDivider(width: 2, thickness: 1.4),
+              ),
+            ),
+            _linhaOrigemDestino(
+              icone: Icons.location_on,
+              label: 'Destino',
+              texto: semDestino ? '—' : destino,
+              vazio: semDestino,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _linhaOrigemDestino({
+    required IconData icone,
+    required String label,
+    required String texto,
+    required bool vazio,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icone, size: 18, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                texto,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: vazio ? FontWeight.w400 : FontWeight.w700,
+                  fontStyle: vazio ? FontStyle.italic : FontStyle.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _chipStatusConexao() {
+    final online = _isOnline;
+    return Chip(
+      visualDensity: const VisualDensity(horizontal: -3, vertical: -3),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      avatar: Icon(
+        online ? Icons.wifi : Icons.wifi_off,
+        size: 14,
+        color: online ? Colors.green : Colors.red,
+      ),
+      label: Text(online ? 'Online' : 'Offline',
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+    );
+  }
+
+  Widget _chipStatusFila() {
+    final n = _pontosNaFila;
+    final cor = n == 0
+        ? Colors.green
+        : (n < 20 ? Colors.orange : Colors.red);
+    return Chip(
+      visualDensity: const VisualDensity(horizontal: -3, vertical: -3),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      avatar: Icon(Icons.cloud_upload_outlined, size: 14, color: cor),
+      label: Text(
+        n == 0 ? 'Enviado' : '$n na fila',
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+    );
+  }
+
   @override
   void dispose() {
     _stopTracking();
@@ -1913,43 +2127,7 @@ class _BdtPageState extends State<BdtPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
               children: [
-                if (isTracking)
-                  Card(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.gps_fixed),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  "GPS em envio",
-                                  style: TextStyle(fontWeight: FontWeight.w700),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _labelTrechoAtivo(),
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Chip(
-                            label: const Text("Ao vivo"),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                if (isTracking) _cardTrechoAtivo(),
                 if (trechosExtras.isNotEmpty)
                   Card(
                     margin: const EdgeInsets.only(top: 12),
