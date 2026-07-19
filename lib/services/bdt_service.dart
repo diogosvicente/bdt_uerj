@@ -2,6 +2,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/bdt_resumo.dart';
+import '../models/feedback_condutor.dart';
+import '../models/passageiro.dart';
 import '../utils/logger.dart';
 import 'location_service.dart';
 
@@ -493,5 +495,132 @@ class BdtService {
     );
 
     return Map<String, dynamic>.from(res);
+  }
+
+  // ==========================================================
+  // Sprint M4 — Validação de atendimento
+  // ==========================================================
+
+  /// Registra um marco da jornada COM assinatura opcional (M4).
+  /// Reusa o endpoint bdt/jornada/marco que já suporta os campos novos.
+  static Future<Map<String, dynamic>> registrarMarcoComAssinatura({
+    required int bdtId,
+    required String marco, // partida|apresentacao|embarque_passageiro
+    String? observacao,
+    String? assinaturaSvg,
+    String? signatarioNome,
+    String? signatarioTipo, // condutor|passageiro|outro
+  }) async {
+    final usuarioId = await _userId();
+
+    final payload = <String, dynamic>{
+      'bdt_id': bdtId,
+      'marco': marco,
+      'usuario_id': usuarioId,
+      if (observacao != null && observacao.trim().isNotEmpty)
+        'observacao': observacao.trim(),
+      if (assinaturaSvg != null && assinaturaSvg.trim().isNotEmpty)
+        'assinatura_svg': assinaturaSvg,
+      if (signatarioNome != null && signatarioNome.trim().isNotEmpty)
+        'signatario_nome': signatarioNome.trim(),
+      if (signatarioTipo != null && signatarioTipo.trim().isNotEmpty)
+        'signatario_tipo': signatarioTipo,
+    };
+
+    final res = await ApiClient.post(
+      'transporte/api/bdt/jornada/marco',
+      payload,
+    );
+    _log.info('registrarMarcoComAssinatura marco=$marco ok=${res["success"]}');
+    return Map<String, dynamic>.from(res);
+  }
+
+  /// Lista passageiros previstos do BDT (M4.1).
+  static Future<List<Passageiro>> listarPassageiros(int bdtId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/passageiros/listar', {
+      'bdt_id': bdtId,
+      'usuario_id': usuarioId,
+    });
+    if (res['success'] != true) {
+      _log.warn('listarPassageiros FALHOU: ${res['message']}');
+      return const [];
+    }
+    final list = (res['data'] as List<dynamic>? ?? const []);
+    return list
+        .whereType<Map>()
+        .map((e) => Passageiro.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// Envia bulk update de presença/embarque_extra dos passageiros (M4.1).
+  static Future<bool> marcarPresencaPassageiros({
+    required int bdtId,
+    required List<Map<String, dynamic>> updates,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/passageiros/marcar-presenca',
+      {
+        'bdt_id': bdtId,
+        'usuario_id': usuarioId,
+        'updates': updates,
+      },
+    );
+    final ok = res['success'] == true;
+    _log.info('marcarPresencaPassageiros ok=$ok updated=${res['atualizados']}');
+    return ok;
+  }
+
+  /// Encerra o BDT (M4.3). Mudança para status ENCERRADO=3.
+  static Future<Map<String, dynamic>> encerrarBdt({
+    required int bdtId,
+    String? observacao,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/encerrar', {
+      'bdt_id': bdtId,
+      'usuario_id': usuarioId,
+      if (observacao != null && observacao.trim().isNotEmpty)
+        'observacao': observacao.trim(),
+    });
+    _log.info('encerrarBdt ok=${res["success"]} msg=${res["message"]}');
+    return Map<String, dynamic>.from(res);
+  }
+
+  /// Registra o feedback do condutor sobre a viagem (M4.3).
+  /// Upsert do lado backend: 1 feedback por BDT.
+  static Future<bool> registrarFeedbackCondutor({
+    required int bdtId,
+    required int nota, // 1-5
+    String? comentario,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/feedback-condutor/registrar',
+      {
+        'bdt_id': bdtId,
+        'usuario_id': usuarioId,
+        'nota': nota,
+        if (comentario != null && comentario.trim().isNotEmpty)
+          'comentario': comentario.trim(),
+      },
+    );
+    final ok = res['success'] == true;
+    _log.info('registrarFeedbackCondutor ok=$ok nota=$nota');
+    return ok;
+  }
+
+  /// Obtém feedback existente (para a UI mostrar em modo readonly).
+  static Future<FeedbackCondutor?> obterFeedbackCondutor(int bdtId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/feedback-condutor/obter',
+      {'bdt_id': bdtId, 'usuario_id': usuarioId},
+    );
+    if (res['success'] != true) return null;
+    final j = res['feedback'];
+    if (j is! Map) return null;
+    return FeedbackCondutor.fromJson(Map<String, dynamic>.from(j));
   }
 }
