@@ -45,6 +45,28 @@ class LocationService {
     return false;
   }
 
+  /// M2: pede ao usuário que retire o app da otimização de bateria
+  /// (Doze / App Standby). Sem isso, o foreground service pode ser
+  /// morto pelo Android após ~30 min de tela bloqueada, especialmente em
+  /// fabricantes agressivos (Xiaomi, Huawei, Samsung One UI).
+  ///
+  /// Abre a tela do sistema **apenas se a permissão ainda não foi dada**.
+  /// Retorna true se a isenção está ativa (ou se a Android é antiga
+  /// demais para ter Doze — raro hoje).
+  static Future<bool> ensureBatteryOptimizationDisabled() async {
+    final status = await ph.Permission.ignoreBatteryOptimizations.status;
+    if (status.isGranted) return true;
+
+    final result = await ph.Permission.ignoreBatteryOptimizations.request();
+    if (result.isGranted) return true;
+
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[LocationService] usuário negou isenção de bateria: $result');
+    }
+    return false;
+  }
+
   static Future<Position?> getCurrentPosition() async {
     final ok = await ensureForegroundPermission();
     if (!ok) return null;

@@ -23,6 +23,13 @@
     <!-- ✅ (Opcional) Reinicia o serviço após boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- ✅ M2: pede isenção de Doze/App Standby para o foreground service
+         não ser morto pelo Android quando o celular fica idle por muito
+         tempo (>30 min com tela bloqueada). Sem isso, muitos fabricantes
+         (Xiaomi, Huawei, Samsung com One UI) matam o processo cedo
+         mesmo com notificação persistente. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:label="BDT UERJ"
         android:name="${applicationName}"
