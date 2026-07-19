@@ -1,0 +1,57 @@
+{
+  // Perfis prontos para "Run and Debug" (Ctrl+Shift+D).
+  // Selecione um no dropdown e aperte F5.
+  //
+  // Diferentes perfis passam APP_ENV via --dart-define, que é lido em
+  // lib/api/api_client.dart e escolhe a baseUrl da API.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Backend: Docker do PC via cabo USB.
+      // Antes de rodar, garanta o portal ADB:
+      //   adb reverse tcp:8080 tcp:80
+      "name": "Dev — localhost (USB, adb reverse)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=APP_ENV=localhost"
+      ]
+    },
+    {
+      // Backend: Docker do PC, acessado pelo emulador Android via 10.0.2.2.
+      "name": "Dev — emulator (Android 10.0.2.2)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=APP_ENV=emulator"
+      ]
+    },
+    {
+      // Backend: WSL na mesma LAN (celular no WiFi do PC).
+      "name": "Dev — wsl (mesma LAN)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=APP_ENV=wsl"
+      ]
+    },
+    {
+      // Backend: produção (www.e-prefeitura.uerj.br).
+      "name": "Prod — produção",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart"
+    },
+    {
+      // Mesmo que "Prod" mas em modo profile (perf + debugging visual).
+      "name": "Profile — produção",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "profile"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  // ==========================================================================
+  // Extensão "Android iOS Emulator" (diemasmichiels.emulate)
+  //
+  // Ela precisa dos caminhos ABSOLUTOS para os binários do Android SDK.
+  // Sem estas configurações a extensão mostra:
+  //   "Error fetching your Android emulators! Make sure your ..."
+  //
+  // Os caminhos abaixo apontam para a instalação padrão feita nesta máquina
+  // em C:\Users\Diogo\dev\android-sdk. Se um dia mudarem, atualize aqui.
+  // ==========================================================================
+  "emulator.emulatorPath": "C:\\Users\\Diogo\\dev\\android-sdk\\emulator",
+  "emulator.androidCommandPath": "C:\\Users\\Diogo\\dev\\android-sdk\\cmdline-tools\\latest\\bin",
+  "emulator.useEmulatorAvdLauncher": true,
+
+  // Extensão oficial do Flutter/Dart — garante que o SDK correto seja usado.
+  "dart.flutterSdkPath": "C:\\Users\\Diogo\\dev\\flutter"
+}
