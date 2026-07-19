@@ -117,14 +117,21 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
 
 ---
 
-## Sprint M4 📱 — Validação atendimento (parte 1) (~88h)
+## Sprint M4 📱 — Validação atendimento (parte 1) (~88h) — ✅ concluída
 **Equivalente à Sprint 10 do plano web.**
 
 **Objetivo:** condutor formaliza início e conclusão do atendimento no app.
 
-- Validação de INÍCIO do atendimento (embarque) — formulário no app — 40h
-- Assinatura touch no tablet/celular do condutor + identificar signatário — 24h
-- Validação de CONCLUSÃO + feedback do condutor — 24h
+- ✅ Validação de INÍCIO do atendimento (embarque) — formulário no app — 40h
+  - **Backend** (`feature/027-mobile-support`): `POST bdt/passageiros/listar` e `bdt/passageiros/marcar-presenca` (bulk, valida pertencimento).
+  - **Frontend**: `ValidacaoInicioPage` (rota `/validacao/inicio`) mostra os 3 marcos + lista de passageiros com switch de presença; botão "Salvar presenças" faz bulk update.
+- ✅ Assinatura touch no tablet/celular do condutor + identificar signatário — 24h
+  - **Backend**: extensão de `POST bdt/jornada/marco` com `assinatura_svg`, `signatario_nome`, `signatario_tipo`; migration em `trnsp_bdt_assinaturas`.
+  - **Frontend**: dependência `signature: ^5.5.0` + `SignaturePad` widget wrapper (`lib/widgets/signature_pad.dart`) + `AssinaturaMarcoPage` (rota `/marco/assinatura`) que casa signatário/tipo/observação com o desenho.
+- ✅ Validação de CONCLUSÃO + feedback do condutor — 24h
+  - **Backend**: nova tabela `trnsp_bdt_feedback_condutor` (1 por BDT) + `POST bdt/feedback-condutor/registrar` (upsert), `POST bdt/feedback-condutor/obter`, `POST bdt/encerrar` (muda `id_status_atual` para `ENCERRADO=3` com transação).
+  - **Frontend**: `ConclusaoPage` (rota `/conclusao`) com estrelas 1–5 + comentário + botão "Encerrar BDT" (habilita só depois do feedback salvo, com confirmação).
+  - Novos itens no `_openBdtActionsSheet` do `bdt_page.dart`: "Validar início" e "Concluir viagem".
 
 ---
 
