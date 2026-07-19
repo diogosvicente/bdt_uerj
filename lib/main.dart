@@ -8,6 +8,7 @@ import 'pages/bdt_page.dart';
 import 'pages/bdt_form_page.dart';
 import 'pages/pre_bdt_form_page.dart';
 import 'services/background_location_service.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,10 +64,7 @@ class BdtUerjApp extends StatelessWidget {
         "/pre_bdt/novo": (_) => const PreBdtFormPage(),
       },
 
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.blue,
-      ),
+      theme: AppTheme.light(),
     );
   }
 }

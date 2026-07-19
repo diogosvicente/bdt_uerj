@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 
+import '../utils/logger.dart';
 import 'background_location_service.dart';
 import 'bdt_service.dart';
 import 'location_service.dart';
@@ -24,11 +24,7 @@ class GpsLiveService {
   static int? _agendaId;
   static int? _trechoId;
 
-  static void _log(String msg) {
-    developer.log(msg, name: 'GPS-LIVE');
-    // ignore: avoid_print
-    print('[GPS-LIVE] $msg');
-  }
+  static const _log = Logger('GPS-LIVE');
 
   static Future<void> start({
     required int bdtId,
@@ -43,13 +39,13 @@ class GpsLiveService {
     _agendaId = (agendaId != null && agendaId > 0) ? agendaId : null;
     _trechoId = trechoId;
 
-    _log('start bdt=$bdtId agenda=$_agendaId trecho=$trechoId interval=${interval.inSeconds}s');
+    _log.info('start bdt=$bdtId agenda=$_agendaId trecho=$trechoId interval=${interval.inSeconds}s');
 
     // 1) Timer no isolate principal — caminho confiável de envio.
     _timer = Timer.periodic(interval, (_) async {
       final loc = await LocationService.getLocPayload();
       if (loc == null) {
-        _log('LocationService retornou null (sem fix ou sem permissão)');
+        _log.warn('LocationService retornou null (sem fix ou sem permissão)');
         return;
       }
 
@@ -60,13 +56,13 @@ class GpsLiveService {
           trechoId: trechoId,
           loc: loc,
         );
-        _log(
+        _log.info(
           'envio foreground: ${ok ? "OK" : "FALHOU"} '
           'lat=${(loc["lat"] as num).toStringAsFixed(6)} '
           'lng=${(loc["lng"] as num).toStringAsFixed(6)}',
         );
       } catch (e) {
-        _log('exceção no envio foreground: $e');
+        _log.error('exceção no envio foreground', e);
       }
     });
 
@@ -80,9 +76,9 @@ class GpsLiveService {
         trechoId: trechoId,
         interval: interval,
       );
-      _log('foreground service: ${started ? "iniciado" : "FALHOU iniciar"}');
+      _log.info('foreground service: ${started ? "iniciado" : "FALHOU iniciar"}');
     } catch (e) {
-      _log('foreground service exceção: $e');
+      _log.error('foreground service', e);
     }
   }
 
@@ -90,7 +86,7 @@ class GpsLiveService {
     if (_timer != null) {
       _timer!.cancel();
       _timer = null;
-      _log('timer foreground parado');
+      _log.info('timer foreground parado');
     }
     _bdtId = null;
     _agendaId = null;

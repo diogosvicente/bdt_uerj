@@ -1,11 +1,13 @@
-import 'dart:developer' as developer;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bdt_resumo.dart';
+import '../utils/logger.dart';
 import 'location_service.dart';
 
 class BdtService {
+  static const _log = Logger('BDT-SVC');
+
   static Future<int> _userId() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt('usuario_id') ?? 0;
@@ -102,12 +104,12 @@ class BdtService {
     final Map<String, dynamic>? resolvedLoc =
         loc ?? await LocationService.getLocPayload();
     if (resolvedLoc == null) {
-      _log('enviarLocalizacao: SEM POSIÇÃO (loc=null)');
+      _log.warn('enviarLocalizacao: SEM POSIÇÃO (loc=null)');
       return false;
     }
 
     if (usuarioId <= 0) {
-      _log('enviarLocalizacao: usuario_id inválido ($usuarioId) — sem login?');
+      _log.warn('enviarLocalizacao: usuario_id inválido ($usuarioId) — sem login?');
     }
 
     final payload = <String, dynamic>{
@@ -122,17 +124,11 @@ class BdtService {
     final ok = res["success"] == true;
     final httpStatus = res["http_status"];
     final msg = res["message"] ?? res["status"];
-    _log(
+    _log.info(
       'enviarLocalizacao: ${ok ? "OK" : "FALHA"} '
       'http=$httpStatus bdt=$bdtId trecho=$trechoId msg=$msg',
     );
     return ok;
-  }
-
-  static void _log(String msg) {
-    developer.log(msg, name: 'BDT-SVC');
-    // ignore: avoid_print
-    print('[BDT-SVC] $msg');
   }
 
   // ==========================================================

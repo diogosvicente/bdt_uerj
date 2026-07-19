@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' as developer;
 import 'dart:ui';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -11,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../api/ssl_bootstrap.dart';
+import '../utils/logger.dart';
 import 'location_outlier_filter.dart';
 import 'location_queue_db.dart';
 
@@ -169,9 +169,9 @@ class BackgroundLocationService {
     // Cada isolate tem seu próprio SecurityContext.defaultContext.
     try {
       await SslBootstrap.install();
-      _log('SSL bootstrap OK no isolate de service');
+      _log.info('SSL bootstrap OK no isolate de service');
     } catch (e) {
-      _log('SSL bootstrap FALHOU: $e');
+      _log.info('SSL bootstrap FALHOU: $e');
     }
 
     final queue = LocationQueueDb();
@@ -255,7 +255,7 @@ class BackgroundLocationService {
 
       final rejeicao = filter.reject(pos);
       if (rejeicao != null) {
-        _log('descartado por outlier: $rejeicao');
+        _log.info('descartado por outlier: $rejeicao');
         return;
       }
 
@@ -273,7 +273,7 @@ class BackgroundLocationService {
         payload: payload,
       );
 
-      _log(
+      _log.info(
         'enfileirado lat=${pos.latitude.toStringAsFixed(6)} '
         'lng=${pos.longitude.toStringAsFixed(6)} '
         'acc=${pos.accuracy.toStringAsFixed(1)}m',
@@ -281,7 +281,7 @@ class BackgroundLocationService {
       await updateNotifWithQueue();
     }
 
-    _log('iniciando stream GPS (intervalo=${intervalSec}s, distancia=5m)');
+    _log.info('iniciando stream GPS (intervalo=${intervalSec}s, distancia=5m)');
     posSub = Geolocator.getPositionStream(
       locationSettings: AndroidSettings(
         accuracy: LocationAccuracy.best,
@@ -291,7 +291,7 @@ class BackgroundLocationService {
       ),
     ).listen(
       capturarPonto,
-      onError: (e, st) => _log('Geolocator stream ERROR: $e'),
+      onError: (e, st) => _log.error('Geolocator stream', e, st),
     );
 
     // Heartbeat: garante ponto mesmo se o stream não disparar (carro parado).
@@ -363,19 +363,19 @@ class BackgroundLocationService {
     try {
       lote = await queue.takePending(limit: _workerBatchSize);
     } catch (e) {
-      _log('takePending FALHOU: $e');
+      _log.info('takePending FALHOU: $e');
       return;
     }
     if (lote.isEmpty) return;
 
-    _log('drenando fila: ${lote.length} ponto(s) para enviar');
+    _log.info('drenando fila: ${lote.length} ponto(s) para enviar');
 
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
     final usuarioId = prefs.getInt('usuario_id') ?? 0;
 
     if (token == null || token.isEmpty || usuarioId <= 0) {
-      _log('sem credenciais (token=${token != null} uid=$usuarioId) — mantendo fila');
+      _log.info('sem credenciais (token=${token != null} uid=$usuarioId) — mantendo fila');
       return;
     }
 
@@ -404,11 +404,11 @@ class BackgroundLocationService {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           await queue.markSent(p.id);
         } else {
-          _log('HTTP ${res.statusCode} (tent ${p.attempts + 1}) body=${_truncar(res.body, 120)}');
+          _log.info('HTTP ${res.statusCode} (tent ${p.attempts + 1}) body=${_truncar(res.body, 120)}');
           await queue.markFailed(p.id, error: 'HTTP ${res.statusCode}');
         }
       } catch (e) {
-        _log('EXCEÇÃO no envio (tent ${p.attempts + 1}): $e');
+        _log.info('EXCEÇÃO no envio (tent ${p.attempts + 1}): $e');
         await queue.markFailed(p.id, error: e.toString());
       }
     }
@@ -419,9 +419,5 @@ class BackgroundLocationService {
   static String _truncar(String s, int max) =>
       s.length <= max ? s : '${s.substring(0, max)}…';
 
-  static void _log(String msg) {
-    developer.log(msg, name: 'BG-GPS');
-    // ignore: avoid_print
-    print('[BG-GPS] $msg');
-  }
+  static const _log = Logger('BG-GPS');
 }
