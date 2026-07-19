@@ -1,56 +1,87 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 
+/// Resultado do login. Precisamos distinguir os casos para que a UI possa,
+/// por exemplo, recarregar o captcha se ele falhar.
+class LoginResult {
+  final bool ok;
+  final String? message;
+  final bool captchaError;
+  final bool captchaReloadRequired;
+
+  const LoginResult._({
+    required this.ok,
+    this.message,
+    this.captchaError = false,
+    this.captchaReloadRequired = false,
+  });
+
+  factory LoginResult.success() => const LoginResult._(ok: true);
+  factory LoginResult.failure(String? msg) =>
+      LoginResult._(ok: false, message: msg);
+  factory LoginResult.captchaFailure(String? msg, {required bool reload}) =>
+      LoginResult._(
+        ok: false,
+        message: msg,
+        captchaError: true,
+        captchaReloadRequired: reload,
+      );
+}
+
 class AuthService {
-  static Future<bool> login(String cpf, String senha) async {
-    final res = await ApiClient.post(
-      'transporte/api/login',
-      {
-        'cpf': cpf,
-        'senha': senha,
-      },
-    );
+  /// Executa o login. Se o backend estiver com captcha habilitado,
+  /// [captchaToken] e [captcha] são obrigatórios.
+  static Future<LoginResult> login(
+    String cpf,
+    String senha, {
+    String? captchaToken,
+    String? captcha,
+  }) async {
+    final payload = <String, dynamic>{
+      'cpf': cpf,
+      'senha': senha,
+      if (captchaToken != null && captchaToken.isNotEmpty)
+        'captcha_token': captchaToken,
+      if (captcha != null && captcha.isNotEmpty) 'captcha': captcha,
+    };
 
-    if (res == null) {
-      print('Erro login: resposta nula (talvez status != 200)');
-      return false;
-    }
-
-    print('Resposta login: $res');
+    final res = await ApiClient.post('transporte/api/login', payload);
 
     if (res['success'] != true) {
-      print('Login falhou: ${res['message']}');
-      return false;
+      final status = (res['status'] ?? '').toString();
+      final msg = res['message']?.toString();
+
+      if (status == 'CAPTCHA_ERROR') {
+        return LoginResult.captchaFailure(
+          msg,
+          reload: res['captcha_reload'] == true,
+        );
+      }
+      return LoginResult.failure(msg);
     }
 
     final usuario = res['usuario'] as Map<String, dynamic>?;
-
     if (usuario == null) {
-      print('Resposta sem campo "usuario"');
-      return false;
+      return LoginResult.failure('Resposta sem dados do usuário.');
     }
 
     final prefs = await SharedPreferences.getInstance();
 
-    // token
     if (res['token'] != null) {
       await prefs.setString('token', res['token'].toString());
     }
 
-    // id (pode vir int OU string)
     final dynamic rawId = usuario['id'];
     final int usuarioId = rawId is int
         ? rawId
         : int.tryParse(rawId.toString()) ?? 0;
-
     await prefs.setInt('usuario_id', usuarioId);
 
-    // demais campos
-    await prefs.setString('usuario_nome',  usuario['nome']?.toString()  ?? '');
+    await prefs.setString('usuario_nome', usuario['nome']?.toString() ?? '');
     await prefs.setString('usuario_email', usuario['email']?.toString() ?? '');
-    await prefs.setString('usuario_cpf',   usuario['cpf']?.toString()   ?? '');
+    await prefs.setString('usuario_cpf', usuario['cpf']?.toString() ?? '');
 
-    return true;
+    return LoginResult.success();
   }
 
   static Future<void> logout() async {
@@ -60,5 +91,12 @@ class AuthService {
     await prefs.remove('usuario_nome');
     await prefs.remove('usuario_email');
     await prefs.remove('usuario_cpf');
+
+    // Desliga "manter conectado" — senão, ao voltar pra tela de login,
+    // o auto-redirect da LoginPage tenta reautenticar sem token e o
+    // usuário fica preso num loop. As credenciais salvas ("lembrar senha")
+    // NÃO são apagadas: o usuário provavelmente vai querer entrar de novo
+    // com o mesmo CPF/senha.
+    await prefs.remove('login_manter_conectado');
   }
 }

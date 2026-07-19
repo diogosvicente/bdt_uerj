@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../widgets/loading.dart';
+import '../widgets/captcha_field.dart';
 import '../formatters/cpf_input_formatter.dart';
 
 class LoginPage extends StatefulWidget {
@@ -12,9 +14,83 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  // Chaves de preferences usadas por esta tela.
+  // O token/usuario_id* são gravados por AuthService.login().
+  static const _kLembrarSenha = 'login_lembrar_senha';
+  static const _kManterConectado = 'login_manter_conectado';
+  static const _kCpfSalvo = 'login_cpf_salvo';
+  static const _kSenhaSalva = 'login_senha_salva';
+
   final cpfController = TextEditingController();
   final senhaController = TextEditingController();
+  final captchaController = TextEditingController();
+
+  // Chave para acessar o CaptchaField (token atual, reload após erro).
+  final _captchaKey = GlobalKey<CaptchaFieldState>();
+
   bool loading = false;
+  bool _obscurePassword = true;
+  bool _lembrarSenha = false;
+  bool _manterConectado = false;
+
+  /// Evita processar 2× (initState + didChangeDependencies).
+  bool _bootstrapped = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bootstrapped) return;
+    _bootstrapped = true;
+    _bootstrap();
+  }
+
+  /// Carrega preferências salvas. Se "manter conectado" estiver ligado E
+  /// houver token, vai direto pra /home sem mostrar a tela.
+  Future<void> _bootstrap() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    _lembrarSenha = prefs.getBool(_kLembrarSenha) ?? false;
+    _manterConectado = prefs.getBool(_kManterConectado) ?? false;
+
+    if (_lembrarSenha) {
+      cpfController.text = prefs.getString(_kCpfSalvo) ?? '';
+      senhaController.text = prefs.getString(_kSenhaSalva) ?? '';
+    }
+
+    if (_manterConectado) {
+      final token = prefs.getString('token');
+      if (token != null && token.isNotEmpty && mounted) {
+        Navigator.pushReplacementNamed(context, '/home');
+        return;
+      }
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _persistPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kLembrarSenha, _lembrarSenha);
+    await prefs.setBool(_kManterConectado, _manterConectado);
+
+    if (_lembrarSenha) {
+      // grava CPF sem máscara para reduzir ambiguidade
+      final rawCpf = cpfController.text.replaceAll(RegExp(r'\D'), '');
+      await prefs.setString(_kCpfSalvo, rawCpf);
+      await prefs.setString(_kSenhaSalva, senhaController.text);
+    } else {
+      await prefs.remove(_kCpfSalvo);
+      await prefs.remove(_kSenhaSalva);
+    }
+  }
+
+  @override
+  void dispose() {
+    cpfController.dispose();
+    senhaController.dispose();
+    captchaController.dispose();
+    super.dispose();
+  }
 
   Future<void> _doLogin() async {
     // remove máscara (deixa só números)
@@ -31,26 +107,53 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
+    // captcha: só valida se o backend estiver com o desafio ativo
+    final captchaState = _captchaKey.currentState;
+    final captchaAtivo = captchaState != null && !captchaState.isDisabledByServer;
+
+    if (captchaAtivo && captchaController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Digite o texto do captcha."),
+        ),
+      );
+      return;
+    }
+
     setState(() => loading = true);
 
-    final ok = await AuthService.login(
-      rawCpf,      // passa CPF sem máscara
+    final result = await AuthService.login(
+      rawCpf,
       senha,
+      captchaToken: captchaState?.token,
+      captcha: captchaAtivo ? captchaController.text.trim() : null,
     );
-
-    setState(() => loading = false);
 
     if (!mounted) return;
 
-    if (ok) {
+    if (result.ok) {
+      await _persistPreferences();
+      if (!mounted) return;
       Navigator.pushReplacementNamed(context, "/home");
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("CPF ou senha inválidos."),
-        ),
-      );
+      return;
     }
+
+    setState(() => loading = false);
+
+    // Se o backend disse que o captcha reciclou, atualiza a imagem.
+    if (result.captchaReloadRequired) {
+      captchaController.clear();
+      // ignore: discarded_futures
+      captchaState?.reload();
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.message ?? 'CPF ou senha inválidos.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -102,6 +205,7 @@ class _LoginPageState extends State<LoginPage> {
                         TextField(
                           controller: cpfController,
                           keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.next,
                           inputFormatters: <TextInputFormatter>[
                             FilteringTextInputFormatter.digitsOnly,
                             CpfInputFormatter(),
@@ -115,17 +219,76 @@ class _LoginPageState extends State<LoginPage> {
 
                         const SizedBox(height: 16),
 
-                        // CAMPO SENHA
+                        // CAMPO SENHA (com ícone de mostrar/esconder)
                         TextField(
                           controller: senhaController,
-                          obscureText: true,
-                          decoration: const InputDecoration(
+                          obscureText: _obscurePassword,
+                          textInputAction: TextInputAction.next,
+                          decoration: InputDecoration(
                             labelText: "Senha",
-                            border: OutlineInputBorder(),
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              tooltip: _obscurePassword
+                                  ? "Mostrar senha"
+                                  : "Ocultar senha",
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
+                            ),
                           ),
                         ),
 
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
+
+                        // CAPTCHA (some sozinho se backend desligar via env)
+                        CaptchaField(
+                          key: _captchaKey,
+                          controller: captchaController,
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        // OPÇÕES: lembrar senha + manter conectado
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CheckboxListTile(
+                              value: _lembrarSenha,
+                              onChanged: (v) => setState(
+                                () => _lembrarSenha = v ?? false,
+                              ),
+                              controlAffinity: ListTileControlAffinity.leading,
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: const Text("Lembrar senha"),
+                              subtitle: const Text(
+                                "Preenche CPF e senha automaticamente na próxima vez.",
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            CheckboxListTile(
+                              value: _manterConectado,
+                              onChanged: (v) => setState(
+                                () => _manterConectado = v ?? false,
+                              ),
+                              controlAffinity: ListTileControlAffinity.leading,
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: const Text("Manter conectado"),
+                              subtitle: const Text(
+                                "Pula esta tela ao abrir o app se você já tiver logado.",
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
 
                         ElevatedButton(
                           onPressed: _doLogin,
