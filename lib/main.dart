@@ -7,6 +7,9 @@ import 'pages/home_page.dart';
 import 'pages/bdt_page.dart';
 import 'pages/bdt_form_page.dart';
 import 'pages/pre_bdt_form_page.dart';
+import 'pages/validacao_inicio_page.dart';
+import 'pages/assinatura_marco_page.dart';
+import 'pages/conclusao_page.dart';
 import 'services/background_location_service.dart';
 import 'theme/app_theme.dart';
 
@@ -62,6 +65,10 @@ class BdtUerjApp extends StatelessWidget {
         "/bdt": (_) => const BdtPage(),
         "/bdt_form": (_) => const BdtFormPage(),
         "/pre_bdt/novo": (_) => const PreBdtFormPage(),
+        // Sprint M4
+        "/validacao/inicio": (_) => const ValidacaoInicioPage(), // arg: int bdtId
+        "/marco/assinatura": (_) => const AssinaturaMarcoPage(), // arg: AssinaturaMarcoArgs
+        "/conclusao":       (_) => const ConclusaoPage(),        // arg: int bdtId
       },
 
       theme: AppTheme.light(),

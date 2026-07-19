@@ -75,6 +75,25 @@ class _BdtPageState extends State<BdtPage> {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.playlist_add_check),
+                title: const Text("Validar início"),
+                subtitle: const Text("Marcos + presença de passageiros"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.pushNamed(context, "/validacao/inicio", arguments: bdtId);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.stop_circle_outlined,
+                    color: Colors.redAccent),
+                title: const Text("Concluir viagem"),
+                subtitle: const Text("Feedback + encerrar"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.pushNamed(context, "/conclusao", arguments: bdtId);
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.add_road),
                 title: const Text("Trecho extra"),
                 subtitle: const Text("Cadastrar origem e destino"),
