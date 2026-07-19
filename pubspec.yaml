@@ -53,6 +53,11 @@ dependencies:
   # Armazenamento seguro para credenciais (Android Keystore / iOS Keychain)
   flutter_secure_storage: ^9.2.2
 
+  # Fila offline de pontos GPS (M2)
+  sqflite: ^2.3.3
+  path: ^1.9.0
+  connectivity_plus: ^6.0.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
