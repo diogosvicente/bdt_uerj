@@ -180,6 +180,14 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _abrirPreBdtForm() async {
+    // Volta pra home ao terminar; o refresh o próprio operador dispara se
+    // quiser ver o Pré-BDT recém-criado como pendente na lista.
+    await Navigator.pushNamed(context, '/pre_bdt/novo');
+    if (!mounted) return;
+    _autoOpenTentado = true; // evita auto-open acidental logo depois
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -188,6 +196,11 @@ class _HomePageState extends State<HomePage> {
       subtitle: _uiDate(selectedDate),
       onRefresh: _reload,
       onLogout: _logout,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _abrirPreBdtForm,
+        icon: const Icon(Icons.rocket_launch_outlined),
+        label: const Text('Novo Pré-BDT'),
+      ),
       body: FutureBuilder<List<BdtResumo>>(
         future: future,
         builder: (context, snap) {

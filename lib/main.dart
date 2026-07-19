@@ -6,6 +6,7 @@ import 'pages/login_page.dart';
 import 'pages/home_page.dart';
 import 'pages/bdt_page.dart';
 import 'pages/bdt_form_page.dart';
+import 'pages/pre_bdt_form_page.dart';
 import 'services/background_location_service.dart';
 
 Future<void> main() async {
@@ -59,6 +60,7 @@ class BdtUerjApp extends StatelessWidget {
         "/home": (_) => const HomePage(),
         "/bdt": (_) => const BdtPage(),
         "/bdt_form": (_) => const BdtFormPage(),
+        "/pre_bdt/novo": (_) => const PreBdtFormPage(),
       },
 
       theme: ThemeData(

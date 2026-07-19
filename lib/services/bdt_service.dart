@@ -457,4 +457,45 @@ class BdtService {
     // ApiClient já padroniza a resposta com success/message
     return Map<String, dynamic>.from(res);
   }
+
+  // ==========================================================
+  // Sprint M3 — Pré-BDT (condutor pré-cria um BDT via app)
+  //
+  // Envia:
+  //   {
+  //     fk_veiculo: int,
+  //     data_referencia: 'YYYY-MM-DD' (opcional),
+  //     observacoes_gerais: string?,
+  //     trechos: [
+  //       { origem, destino, saida?, chegada?, obs? }
+  //     ]
+  //   }
+  //
+  // Retorna: { success, message, bdt_id?, protocolo? }
+  // ==========================================================
+  static Future<Map<String, dynamic>> criarPreBdt({
+    required int fkVeiculo,
+    String? dataReferencia,
+    String? observacoesGerais,
+    required List<Map<String, dynamic>> trechos,
+  }) async {
+    final usuarioId = await _userId();
+
+    final payload = <String, dynamic>{
+      'usuario_id': usuarioId,
+      'fk_veiculo': fkVeiculo,
+      if (dataReferencia != null && dataReferencia.isNotEmpty)
+        'data_referencia': dataReferencia,
+      if (observacoesGerais != null && observacoesGerais.trim().isNotEmpty)
+        'observacoes_gerais': observacoesGerais.trim(),
+      'trechos': trechos,
+    };
+
+    final res = await ApiClient.post(
+      'transporte/api/bdt/pre-bdt/criar',
+      payload,
+    );
+
+    return Map<String, dynamic>.from(res);
+  }
 }
