@@ -672,6 +672,49 @@ class _BdtPageState extends State<BdtPage> {
     return s;
   }
 
+  /// Descreve o trecho em execução sem expor IDs internos.
+  /// Procura no payload por origem/destino do trecho que está sendo
+  /// rastreado. Se não achar, retorna label genérica.
+  String _labelTrechoAtivo() {
+    final tId = trackingTrechoId;
+    if (tId == null || tId <= 0) return 'Trecho em execução';
+
+    final ok = payload != null && payload!['success'] == true;
+    if (!ok) return 'Trecho em execução';
+
+    // Procura primeiro nos trechos extras…
+    final extras = (payload!['trechos_extras'] as List<dynamic>? ?? const []);
+    for (final t in extras) {
+      final tt = (t as Map<String, dynamic>);
+      final id = int.tryParse(tt['id'].toString()) ?? 0;
+      if (id == tId) return _fmtOrigemDestino(tt);
+    }
+
+    // …depois nas agendas.
+    final agendas = (payload!['agendas'] as List<dynamic>? ?? const []);
+    for (final a in agendas) {
+      final trechos = ((a as Map<String, dynamic>)['trechos']
+              as List<dynamic>? ??
+          const []);
+      for (final t in trechos) {
+        final tt = (t as Map<String, dynamic>);
+        final id = int.tryParse(tt['id'].toString()) ?? 0;
+        if (id == tId) return _fmtOrigemDestino(tt);
+      }
+    }
+
+    return 'Trecho em execução';
+  }
+
+  String _fmtOrigemDestino(Map<String, dynamic> trecho) {
+    final origem = (trecho['origem'] ?? '').toString().trim();
+    final destino = (trecho['destino'] ?? '').toString().trim();
+    if (origem.isEmpty && destino.isEmpty) return 'Trecho em execução';
+    if (origem.isEmpty) return '→ $destino';
+    if (destino.isEmpty) return '$origem →';
+    return '$origem → $destino';
+  }
+
   /// Constrói "YYYY-MM-DD HH:MM:00" usando a data do BDT
   String _apiDateTimeFromHm(String hm) {
     final base = _bdtBaseDate();
@@ -1802,9 +1845,11 @@ class _BdtPageState extends State<BdtPage> {
         ? (payload!['trechos_extras'] as List<dynamic>? ?? const [])
         : const [];
 
+    // Sempre mostra Protocolo (ano/numero), nunca o ID interno.
+    // Se ainda não carregou, mostra só "BDT" — o carregamento é curto.
     final titulo = bdt != null
         ? "BDT ${bdt['ano']}/${bdt['numero']}"
-        : "BDT #$bdtId";
+        : "BDT";
     final placa = (bdt != null && (bdt['placa'] ?? '').toString().isNotEmpty)
         ? (bdt['placa'] ?? '').toString()
         : null;
@@ -1890,7 +1935,7 @@ class _BdtPageState extends State<BdtPage> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  "Agenda #$trackingAgendaId • Trecho #$trackingTrechoId",
+                                  _labelTrechoAtivo(),
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ],
@@ -2155,7 +2200,9 @@ class _BdtPageState extends State<BdtPage> {
                     ),
                   ),
 
-                ...agendas.map((raw) {
+                ...agendas.asMap().entries.map((entry) {
+                  final int idxAgenda = entry.key;
+                  final raw = entry.value;
                   final a = raw as Map<String, dynamic>;
                   final int agendaId =
                       int.tryParse(a['fk_agenda'].toString()) ?? 0;
@@ -2163,6 +2210,14 @@ class _BdtPageState extends State<BdtPage> {
 
                   final saida = _fmtDt(a['datahora_saida']);
                   final retorno = _fmtDt(a['datahora_retorno_previsto']);
+
+                  // Título da agenda sem expor o ID interno:
+                  // preferência: horário de saída (se houver) → "Agenda das HH:MM".
+                  // fallback: numeração sequencial → "Agenda 1", "Agenda 2".
+                  final horaSaidaAgenda = _fmtTimeOnly(a['datahora_saida']);
+                  final tituloAgenda = horaSaidaAgenda.isNotEmpty
+                      ? "Agenda das $horaSaidaAgenda"
+                      : "Agenda ${idxAgenda + 1}";
 
                   return Card(
                     margin: const EdgeInsets.only(top: 12),
@@ -2192,7 +2247,7 @@ class _BdtPageState extends State<BdtPage> {
                           borderRadius: BorderRadius.circular(18),
                         ),
                         title: Text(
-                          "Agenda #$agendaId",
+                          tituloAgenda,
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                         subtitle: (saida.isNotEmpty || retorno.isNotEmpty)

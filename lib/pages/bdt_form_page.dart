@@ -810,13 +810,21 @@ class _BdtFormPageState extends State<BdtFormPage> {
   Widget build(BuildContext context) {
     final int bdtId = ModalRoute.of(context)!.settings.arguments as int;
 
+    // Protocolo (ano/numero) em vez de ID interno. Se ainda não carregou
+    // o payload, mostra só "BDT" — o carregamento é curto.
+    final ok = payload != null && payload!['success'] == true;
+    final bdtMap = ok ? (payload!['bdt'] as Map<String, dynamic>?) : null;
+    final subtitle = bdtMap != null
+        ? "BDT ${bdtMap['ano']}/${bdtMap['numero']}"
+        : "BDT";
+
     // erro do backend
     if (payload != null && payload!['success'] != true) {
       final msg = (payload!['message'] ?? 'Erro ao carregar formulário.')
           .toString();
       return AppScaffold(
         title: "Formulário do BDT",
-        subtitle: "BDT #$bdtId",
+        subtitle: subtitle,
         onRefresh: () => _load(bdtId),
         body: Center(
           child: Padding(
@@ -829,7 +837,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
     return AppScaffold(
       title: "Formulário do BDT",
-      subtitle: "BDT #$bdtId",
+      subtitle: subtitle,
       onRefresh: () => _load(bdtId),
       body: (payload == null)
           ? const Center(child: CircularProgressIndicator())
