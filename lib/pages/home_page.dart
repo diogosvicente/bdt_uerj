@@ -47,8 +47,38 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  /// Recarrega a lista de BDTs do dia selecionado.
+  ///
+  /// Aguarda o Future resolver antes de retornar — assim o botão refresh
+  /// (do AppNavbar) pode ser encadeado com feedback visual sem precisar
+  /// re-implementar o snackbar em cada callsite. Também mostra um
+  /// SnackBar no fim confirmando o resultado.
   Future<void> _reload() async {
-    setState(() => future = BdtService.listarDoDia(data: _apiDate(selectedDate)));
+    final novo = BdtService.listarDoDia(data: _apiDate(selectedDate));
+    setState(() => future = novo);
+    try {
+      final lista = await novo;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              lista.isEmpty
+                  ? 'Nenhum BDT para ${_uiDate(selectedDate)}.'
+                  : 'Lista atualizada (${lista.length} BDT${lista.length > 1 ? "s" : ""}).',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(content: Text('Falha ao atualizar: $e')),
+        );
+    }
   }
 
   Future<void> _logout() async {

@@ -16,7 +16,10 @@ class AppScaffold extends StatelessWidget {
   final Widget body;
   final String title;
   final String subtitle;
-  final VoidCallback? onRefresh;
+  // Aceita função async para permitir feedback visual (spinner na navbar
+  // enquanto o refresh está rodando). Callers síncronos podem passar
+  // `() async { doStuff(); }`.
+  final Future<void> Function()? onRefresh;
   final VoidCallback? onLogout;
   final bool showBackButton;
   final Widget? floatingActionButton;
