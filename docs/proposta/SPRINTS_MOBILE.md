@@ -45,29 +45,33 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
 
 ---
 
-## Sprint M1 📱 — Login + UX (~64h) — 🚧 em andamento
+## Sprint M1 📱 — Login + UX (~64h) — ✅ concluída
 **Equivalente à Sprint 2 do plano web.**
 
 **Objetivo:** experiência de login confortável e UX clara nas listas.
 
-> **Estado atual (branch `feature/m0-m1-login-ux`):**
-> - ✅ **Backend web** (repo `e-prefeitura`, branch `feature/027-sprint-m1-login-api`): endpoint `POST /transporte/api/captcha/new` + API tokenizada (`generateTokenized`/`verifyTokenized`), `POST /transporte/api/login` valida captcha.
-> - ✅ **Login com captcha no app** (`CaptchaService` + `CaptchaField` widget).
-> - ✅ **Botão eye** para mostrar/esconder senha.
-> - 🚧 **"Lembrar senha"** e **"Manter conectado"** funcionando via SharedPreferences — falta migrar senha para Keychain/Keystore.
-> - ❌ Ainda não iniciado: abrir BDT no app, Protocolo em vez de ID, esconder IDs das agendas/trechos.
+> **Estado (branch `feature/m0-m1-login-ux`):** tudo entregue. Backend em `feature/027-sprint-m1-login-api` no repo `e-prefeitura` (captcha tokenizado).
 
-- 🚧 Manter sessão ativa após fechar/bloquear celular — 8h — auto-login via `token`+`login_manter_conectado` funcionando; **falta validar** sobrevivência a kill/reboot e considerar refresh token
-- 🚧 Salvar senha (Keychain/Keystore) + botão eye — 12h
-  - ✅ Botão eye (`visibility` / `visibility_off`)
-  - ⚠️ Senha atualmente em `SharedPreferences` (plaintext) — **falta migrar para `flutter_secure_storage`** (Android Keystore / iOS Keychain)
+- ✅ Manter sessão ativa após fechar/bloquear celular — 8h
+  - Auto-login via `token`+`login_manter_conectado` no bootstrap da `LoginPage`
+  - `AuthService.verifyToken()` valida o token contra o backend antes de auto-redirecionar; se 401/403 limpa o storage
+- ✅ Salvar senha (Keychain/Keystore) + botão eye — 12h
+  - Botão eye (`visibility` / `visibility_off`) no `TextField` da senha
+  - Senha em `flutter_secure_storage` (Android Keystore / iOS Keychain) via `CredentialsStorage`
+  - Migração transparente de quem já tinha senha em `SharedPreferences` (plaintext)
 - ✅ Captcha no login do app (reuso do captcha web) — 12h
   - `CaptchaService.fetchNew()` consome `POST /transporte/api/captcha/new`
   - `CaptchaField` widget com imagem, refresh e campo de resposta
   - Uso único por token, recarrega automaticamente em erro
-- ❌ Abrir BDT direto no app (só condutor atrelado, confirmar veículo) — 16h
-- ❌ Exibir Protocolo (não ID) — agendas e trechos com nomes lógicos — 8h
-- ❌ Organizar agendas/trechos sem expor IDs — 8h
+- ✅ Abrir BDT direto no app (só condutor atrelado, confirmar veículo) — 16h
+  - `HomePage._maybeAutoOpen` — se hoje e a lista retornar exatamente 1 BDT, abre diálogo "Confirmar veículo" com placa/marca/modelo antes de navegar
+  - Usuário pode escolher outro (fica na lista) sem loop de auto-open
+- ✅ Exibir Protocolo (não ID) — agendas e trechos com nomes lógicos — 8h
+  - `BdtResumo.titulo` = "BDT ano/numero"
+  - `bdt_page`/`bdt_form_page` usam sempre ano/numero (nunca "#$bdtId")
+- ✅ Organizar agendas/trechos sem expor IDs — 8h
+  - Título da agenda: "Agenda das HH:MM" ou "Agenda N" (índice)
+  - Banner de tracking: "$origem → $destino" via `_labelTrechoAtivo()`
 
 ---
 
