@@ -99,4 +99,37 @@ class AuthService {
     // com o mesmo CPF/senha.
     await prefs.remove('login_manter_conectado');
   }
+
+  /// Verifica se o token salvo ainda é válido no backend.
+  ///
+  /// Retorna:
+  /// - `true`  → token válido, pode auto-logar.
+  /// - `false` → token inválido/expirado (limpa o storage) OU falha de rede
+  ///             (mantém o storage, mas força a tela de login manual).
+  ///
+  /// Implementação: chama `bdt/dia` **sem** enviar `usuario_id` — assim
+  /// o backend precisa resolver o usuário pelo Bearer token; se ele
+  /// estiver expirado/inválido, responde 401.
+  static Future<bool> verifyToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    if (token == null || token.isEmpty) return false;
+
+    final res = await ApiClient.post('transporte/api/bdt/dia', const {});
+    final httpStatus = res['http_status'];
+
+    if (httpStatus == 200 && res['success'] == true) {
+      return true;
+    }
+
+    // Sinaliza token inválido: 401 (não autenticado) ou 403 (não permitido).
+    if (httpStatus == 401 || httpStatus == 403) {
+      await logout();
+      return false;
+    }
+
+    // Qualquer outra situação (500, timeout, sem rede...) — não sabemos se
+    // o token é bom. Não apaga. Só sinaliza pra UI cair no login normal.
+    return false;
+  }
 }

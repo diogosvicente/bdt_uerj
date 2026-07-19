@@ -50,6 +50,9 @@ dependencies:
   flutter_local_notifications: ^17.2.4
   permission_handler: ^11.3.1
 
+  # Armazenamento seguro para credenciais (Android Keystore / iOS Keychain)
+  flutter_secure_storage: ^9.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

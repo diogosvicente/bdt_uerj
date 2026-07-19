@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../services/credentials_storage.dart';
 import '../widgets/loading.dart';
 import '../widgets/captcha_field.dart';
 import '../formatters/cpf_input_formatter.dart';
@@ -14,13 +15,6 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  // Chaves de preferences usadas por esta tela.
-  // O token/usuario_id* são gravados por AuthService.login().
-  static const _kLembrarSenha = 'login_lembrar_senha';
-  static const _kManterConectado = 'login_manter_conectado';
-  static const _kCpfSalvo = 'login_cpf_salvo';
-  static const _kSenhaSalva = 'login_senha_salva';
-
   final cpfController = TextEditingController();
   final senhaController = TextEditingController();
   final captchaController = TextEditingController();
@@ -45,23 +39,29 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   /// Carrega preferências salvas. Se "manter conectado" estiver ligado E
-  /// houver token, vai direto pra /home sem mostrar a tela.
+  /// houver token, valida o token contra o backend e vai direto pra /home
+  /// sem mostrar a tela.
   Future<void> _bootstrap() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    _lembrarSenha = prefs.getBool(_kLembrarSenha) ?? false;
-    _manterConectado = prefs.getBool(_kManterConectado) ?? false;
+    _lembrarSenha = await CredentialsStorage.getLembrarSenha();
+    _manterConectado = await CredentialsStorage.getManterConectado();
 
     if (_lembrarSenha) {
-      cpfController.text = prefs.getString(_kCpfSalvo) ?? '';
-      senhaController.text = prefs.getString(_kSenhaSalva) ?? '';
+      cpfController.text = (await CredentialsStorage.getCpf()) ?? '';
+      senhaController.text = (await CredentialsStorage.getSenha()) ?? '';
     }
 
     if (_manterConectado) {
+      final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
-      if (token != null && token.isNotEmpty && mounted) {
-        Navigator.pushReplacementNamed(context, '/home');
-        return;
+      if (token != null && token.isNotEmpty) {
+        // Valida o token contra o backend antes de auto-logar.
+        // Se estiver expirado/inválido, cai pra tela de login normal.
+        final ok = await AuthService.verifyToken();
+        if (!mounted) return;
+        if (ok) {
+          Navigator.pushReplacementNamed(context, '/home');
+          return;
+        }
       }
     }
 
@@ -69,18 +69,18 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _persistPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kLembrarSenha, _lembrarSenha);
-    await prefs.setBool(_kManterConectado, _manterConectado);
+    await CredentialsStorage.setFlags(
+      lembrarSenha: _lembrarSenha,
+      manterConectado: _manterConectado,
+    );
 
     if (_lembrarSenha) {
       // grava CPF sem máscara para reduzir ambiguidade
       final rawCpf = cpfController.text.replaceAll(RegExp(r'\D'), '');
-      await prefs.setString(_kCpfSalvo, rawCpf);
-      await prefs.setString(_kSenhaSalva, senhaController.text);
+      await CredentialsStorage.setCpf(rawCpf);
+      await CredentialsStorage.setSenha(senhaController.text);
     } else {
-      await prefs.remove(_kCpfSalvo);
-      await prefs.remove(_kSenhaSalva);
+      await CredentialsStorage.clear();
     }
   }
 
