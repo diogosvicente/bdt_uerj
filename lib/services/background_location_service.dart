@@ -11,36 +11,56 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../api/ssl_bootstrap.dart';
+import 'location_outlier_filter.dart';
+import 'location_queue_db.dart';
 
-/// Serviço de captura contínua de GPS rodando em **foreground service Android**.
+/// Serviço de captura contínua de GPS em foreground service Android.
 ///
-/// Diferente do antigo [GpsLiveService] (que era um `Timer.periodic` dentro do
-/// próprio app), aqui o tracking continua mesmo com:
+/// **Arquitetura M2:**
+///
+/// ```
+///  Geolocator ──► Filtro Outliers ──► Fila SQLite ──► Worker HTTP
+///  (coleta)      (accuracy/speed/     (persistente,   (batch,
+///                 teleporte)           sobrevive       retry)
+///                                      offline)
+/// ```
+///
+/// **Por que fila?** Sem rede (túnel, área rural) o ponto é armazenado
+/// localmente e reenviado quando reconectar. Sem isso, esses pontos seriam
+/// perdidos silenciosamente (o request HTTP falha e nada mais).
+///
+/// **Por que filtro?** GPS é ruidoso — receptores frequentemente reportam
+/// pontos com accuracy alta (>50m) ou velocidade impossível (>200 km/h);
+/// esses pontos falseiam o traçado do trecho.
+///
+/// Continua funcionando com:
 ///   - tela bloqueada;
-///   - app em background (outro app aberto);
-///   - app recolhido na tela inicial.
-///
-/// Para isso o Android exige um foreground service com notificação persistente.
+///   - app em background;
+///   - app recolhido na home;
+///   - **sem conexão de dados** (novo em M2).
 class BackgroundLocationService {
   static const String _notifChannelId = 'bdt_uerj_gps_channel';
   static const String _notifChannelName = 'BDT UERJ — GPS';
   static const int _notifId = 9011;
 
-  // Chaves de SharedPreferences usadas para passar contexto pro isolate do
-  // service (não há acesso direto à memória do app aqui).
+  // Chaves de SharedPreferences para passar contexto pro isolate do service.
   static const String _prefBdtId = 'bg_gps_bdt_id';
   static const String _prefAgendaId = 'bg_gps_agenda_id';
   static const String _prefTrechoId = 'bg_gps_trecho_id';
   static const String _prefIntervalSec = 'bg_gps_interval_sec';
   static const String _prefRunning = 'bg_gps_running';
 
+  /// A cada quantos segundos o worker consome a fila.
+  static const _workerIntervalSec = 30;
+
+  /// Tamanho do batch por rodada de envio.
+  static const _workerBatchSize = 20;
+
   static final FlutterLocalNotificationsPlugin _notif =
       FlutterLocalNotificationsPlugin();
 
-  /// Chamar **uma vez** no `main()` (depois do
-  /// `WidgetsFlutterBinding.ensureInitialized()` e do SslBootstrap).
+  /// Chamar uma vez no `main()`.
   static Future<void> init() async {
-    // 1. Configura canal de notificação Android.
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _notif.initialize(
       const InitializationSettings(android: androidInit),
@@ -55,17 +75,16 @@ class BackgroundLocationService {
         _notifChannelId,
         _notifChannelName,
         description: 'Mantém o GPS ativo durante o trecho do BDT.',
-        importance: Importance.low, // não vibra, não toca
+        importance: Importance.low,
         showBadge: false,
       ),
     );
 
-    // 2. Configura o foreground service.
     final service = FlutterBackgroundService();
     await service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: _onServiceStart,
-        autoStart: false, // só inicia quando a UI mandar
+        autoStart: false,
         isForegroundMode: true,
         notificationChannelId: _notifChannelId,
         initialNotificationTitle: 'BDT UERJ',
@@ -81,8 +100,6 @@ class BackgroundLocationService {
     );
   }
 
-  /// Inicia o foreground service para o trecho informado.
-  /// Idempotente: se já estiver rodando, apenas atualiza o contexto.
   static Future<bool> start({
     required int bdtId,
     int? agendaId,
@@ -106,7 +123,6 @@ class BackgroundLocationService {
       final started = await service.startService();
       if (!started) return false;
     } else {
-      // já rodando: atualiza contexto
       service.invoke('update_context', {
         'bdt_id': bdtId,
         'agenda_id': agendaId,
@@ -117,7 +133,6 @@ class BackgroundLocationService {
     return true;
   }
 
-  /// Para o serviço e dispensa a notificação.
   static Future<void> stop() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefRunning, false);
@@ -133,23 +148,25 @@ class BackgroundLocationService {
     return FlutterBackgroundService().isRunning();
   }
 
+  /// Consultado pela UI para mostrar quantos pontos ainda estão em fila.
+  static Future<int> countPendingFor({required int bdtId, int? trechoId}) async {
+    final q = LocationQueueDb();
+    try {
+      return await q.countPendingFor(bdtId: bdtId, trechoId: trechoId);
+    } finally {
+      await q.close();
+    }
+  }
+
   // ==========================================================================
-  // ENTRYPOINTS DO SERVICE (isolate separado — sem acesso ao state do app)
+  // ENTRYPOINTS DO SERVICE (isolate separado)
   // ==========================================================================
 
-  /// Entry-point obrigatório (top-level/static) executado no isolate do
-  /// foreground service.
   @pragma('vm:entry-point')
   static void _onServiceStart(ServiceInstance service) async {
-    // Necessário para usar plugins (HTTP/SharedPreferences) no isolate.
     DartPluginRegistrant.ensureInitialized();
 
-    // ⚠️ Cada isolate Dart tem seu próprio SecurityContext.defaultContext.
-    // O isolate principal chama SslBootstrap.install() no main(), mas esse
-    // efeito NÃO se propaga para o isolate do foreground service. Sem este
-    // bootstrap aqui, qualquer POST para https://www.e-prefeitura.uerj.br
-    // falha silenciosamente com HandshakeException (a CA da RNP que assina
-    // o certificado da UERJ não está no truststore Android padrão).
+    // Cada isolate tem seu próprio SecurityContext.defaultContext.
     try {
       await SslBootstrap.install();
       _log('SSL bootstrap OK no isolate de service');
@@ -157,10 +174,13 @@ class BackgroundLocationService {
       _log('SSL bootstrap FALHOU: $e');
     }
 
+    final queue = LocationQueueDb();
+    final filter = LocationOutlierFilter();
+
     StreamSubscription<Position>? posSub;
     Timer? heartbeatTimer;
+    Timer? syncTimer;
 
-    // contexto inicial vindo do SharedPreferences
     int bdtId = 0;
     int? agendaId;
     int trechoId = 0;
@@ -176,19 +196,20 @@ class BackgroundLocationService {
 
     await refreshContextFromPrefs();
 
-    // Atualiza a notificação persistente.
-    void setNotif(String content) {
-      if (service is AndroidServiceInstance) {
-        service.setForegroundNotificationInfo(
-          title: 'BDT UERJ — Coletando GPS',
-          content: content,
-        );
-      }
+    Future<void> updateNotifWithQueue() async {
+      if (service is! AndroidServiceInstance) return;
+      final pending = await queue.countPending();
+      final content = pending == 0
+          ? 'Trecho ativo — pontos enviados em tempo real'
+          : 'Trecho ativo — $pending ponto${pending == 1 ? "" : "s"} na fila';
+      service.setForegroundNotificationInfo(
+        title: 'BDT UERJ — Coletando GPS',
+        content: content,
+      );
     }
 
-    setNotif('Trecho #$trechoId ativo');
+    await updateNotifWithQueue();
 
-    // Escuta comandos vindos da UI (atualizar contexto / parar).
     service.on('update_context').listen((event) async {
       if (event == null) return;
       final p = await SharedPreferences.getInstance();
@@ -205,49 +226,75 @@ class BackgroundLocationService {
         await p.remove(_prefAgendaId);
       }
       if (event['trecho_id'] is int) {
-        trechoId = event['trecho_id'] as int;
+        final novoTrecho = event['trecho_id'] as int;
+        if (novoTrecho != trechoId) {
+          // trecho mudou — âncora do filtro de teleporte precisa resetar
+          filter.reset();
+        }
+        trechoId = novoTrecho;
         await p.setInt(_prefTrechoId, trechoId);
       }
       if (event['interval_sec'] is int) {
         intervalSec = event['interval_sec'] as int;
         await p.setInt(_prefIntervalSec, intervalSec);
       }
-      setNotif('Trecho #$trechoId ativo');
+      await updateNotifWithQueue();
     });
 
     service.on('stop').listen((_) async {
       await posSub?.cancel();
       heartbeatTimer?.cancel();
+      syncTimer?.cancel();
+      await queue.close();
       await service.stopSelf();
     });
 
-    // Stream do geolocator: GPS de alta acurácia, mas filtrando por distância
-    // mínima também — assim economizamos bateria quando o veículo está parado.
+    // Enfileira um ponto (aplica filtro primeiro).
+    Future<void> capturarPonto(Position pos) async {
+      if (bdtId <= 0 || trechoId <= 0) return;
+
+      final rejeicao = filter.reject(pos);
+      if (rejeicao != null) {
+        _log('descartado por outlier: $rejeicao');
+        return;
+      }
+
+      final payload = _buildPayload(
+        bdtId: bdtId,
+        agendaId: agendaId,
+        trechoId: trechoId,
+        pos: pos,
+      );
+
+      await queue.enqueue(
+        bdtId: bdtId,
+        agendaId: agendaId,
+        trechoId: trechoId,
+        payload: payload,
+      );
+
+      _log(
+        'enfileirado lat=${pos.latitude.toStringAsFixed(6)} '
+        'lng=${pos.longitude.toStringAsFixed(6)} '
+        'acc=${pos.accuracy.toStringAsFixed(1)}m',
+      );
+      await updateNotifWithQueue();
+    }
+
     _log('iniciando stream GPS (intervalo=${intervalSec}s, distancia=5m)');
     posSub = Geolocator.getPositionStream(
       locationSettings: AndroidSettings(
         accuracy: LocationAccuracy.best,
-        distanceFilter: 5, // metros
+        distanceFilter: 5,
         intervalDuration: Duration(seconds: intervalSec),
         foregroundNotificationConfig: null,
       ),
     ).listen(
-      (pos) async {
-        if (bdtId <= 0 || trechoId <= 0) {
-          _log('ponto descartado (bdtId=$bdtId trechoId=$trechoId)');
-          return;
-        }
-        await _enviarPonto(
-          bdtId: bdtId,
-          agendaId: agendaId,
-          trechoId: trechoId,
-          pos: pos,
-        );
-      },
+      capturarPonto,
       onError: (e, st) => _log('Geolocator stream ERROR: $e'),
     );
 
-    // Heartbeat: garante envio mesmo se o stream não disparar (carro parado).
+    // Heartbeat: garante ponto mesmo se o stream não disparar (carro parado).
     heartbeatTimer = Timer.periodic(
       Duration(seconds: intervalSec * 2),
       (_) async {
@@ -258,102 +305,120 @@ class BackgroundLocationService {
               timeLimit: Duration(seconds: 8),
             ),
           );
-          await _enviarPonto(
-            bdtId: bdtId,
-            agendaId: agendaId,
-            trechoId: trechoId,
-            pos: pos,
-          );
+          await capturarPonto(pos);
         } catch (_) {
           // sem fix; tudo bem
         }
       },
     );
+
+    // Worker de reenvio — consome a fila em batch a cada N segundos.
+    syncTimer = Timer.periodic(
+      const Duration(seconds: _workerIntervalSec),
+      (_) => _drainQueue(queue, updateNotifWithQueue),
+    );
+
+    // Chuta a fila logo, sem esperar 30s (útil quando o app reabre após
+    // ficar sem rede e há backlog acumulado).
+    _drainQueue(queue, updateNotifWithQueue);
   }
 
   @pragma('vm:entry-point')
   static Future<bool> _iosOnBackground(ServiceInstance service) async {
-    // iOS está fora do escopo deste projeto (sem implementação Apple),
-    // mas mantemos o hook para evitar crash se um dia compilarmos pra iOS.
     return true;
   }
 
-  /// Envia um ponto para `transporte/api/bdt/localizacao` do isolate do
-  /// service. **Não pode usar [BdtService]** porque o ApiClient depende de
-  /// `debugPrint` e de plugins que podem não estar 100% acessíveis em isolate
-  /// separado — fazemos a chamada HTTP "à mão", com o mesmo contrato.
-  static Future<void> _enviarPonto({
+  /// Constrói o payload no mesmo formato aceito por `bdt/localizacao`.
+  static Map<String, dynamic> _buildPayload({
     required int bdtId,
     int? agendaId,
     required int trechoId,
     required Position pos,
-  }) async {
+  }) {
+    return {
+      'bdt_id': bdtId,
+      if (agendaId != null && agendaId > 0) 'agenda_id': agendaId,
+      'trecho_id': trechoId,
+      'loc': {
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        'accuracy': pos.accuracy,
+        'speed': pos.speed,
+        'bearing': pos.heading,
+        'altitude': pos.altitude,
+        'captured_at': (pos.timestamp).toIso8601String(),
+        'provider': 'gps',
+        'origem_registro': 'app_mobile_bg',
+      },
+    };
+  }
+
+  /// Consome a fila: pega um batch, tenta enviar cada um. Sucesso apaga,
+  /// falha incrementa tentativas.
+  static Future<void> _drainQueue(
+    LocationQueueDb queue,
+    Future<void> Function() onProgress,
+  ) async {
+    List<PendingPoint> lote;
+    try {
+      lote = await queue.takePending(limit: _workerBatchSize);
+    } catch (e) {
+      _log('takePending FALHOU: $e');
+      return;
+    }
+    if (lote.isEmpty) return;
+
+    _log('drenando fila: ${lote.length} ponto(s) para enviar');
+
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    final usuarioId = prefs.getInt('usuario_id') ?? 0;
+
+    if (token == null || token.isEmpty || usuarioId <= 0) {
+      _log('sem credenciais (token=${token != null} uid=$usuarioId) — mantendo fila');
+      return;
+    }
+
     final uri = Uri.parse(
       '${ApiClient.baseUrl.replaceAll(RegExp(r'/+$'), '')}/transporte/api/bdt/localizacao',
     );
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-      final usuarioId = prefs.getInt('usuario_id') ?? 0;
-
-      if (token == null || token.isEmpty) {
-        _log('SEM TOKEN no SharedPreferences — refaça o login.');
-      }
-      if (usuarioId <= 0) {
-        _log('usuario_id inválido ($usuarioId) — refaça o login.');
-      }
-
+    for (final p in lote) {
       final body = jsonEncode({
-        'bdt_id': bdtId,
+        ...p.payload,
         'usuario_id': usuarioId,
-        if (agendaId != null && agendaId > 0) 'agenda_id': agendaId,
-        'trecho_id': trechoId,
-        'loc': {
-          'lat': pos.latitude,
-          'lng': pos.longitude,
-          'accuracy': pos.accuracy,
-          'speed': pos.speed,
-          'bearing': pos.heading,
-          'altitude': pos.altitude,
-          'captured_at': DateTime.now().toIso8601String(),
-          'provider': 'gps',
-          'origem_registro': 'app_mobile_bg',
-        },
       });
 
-      _log(
-        'POST $uri lat=${pos.latitude.toStringAsFixed(6)} '
-        'lng=${pos.longitude.toStringAsFixed(6)} acc=${pos.accuracy.toStringAsFixed(1)}m',
-      );
-
-      final res = await http
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              if (token != null && token.isNotEmpty)
+      try {
+        final res = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
                 'Authorization': 'Bearer $token',
-            },
-            body: body,
-          )
-          .timeout(const Duration(seconds: 10));
+              },
+              body: body,
+            )
+            .timeout(const Duration(seconds: 10));
 
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        _log('OK ${res.statusCode}');
-      } else {
-        _log('HTTP ${res.statusCode}: ${res.body}');
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          await queue.markSent(p.id);
+        } else {
+          _log('HTTP ${res.statusCode} (tent ${p.attempts + 1}) body=${_truncar(res.body, 120)}');
+          await queue.markFailed(p.id, error: 'HTTP ${res.statusCode}');
+        }
+      } catch (e) {
+        _log('EXCEÇÃO no envio (tent ${p.attempts + 1}): $e');
+        await queue.markFailed(p.id, error: e.toString());
       }
-    } catch (e, st) {
-      _log('EXCEÇÃO ao enviar ponto: $e');
-      _log('  stack: ${st.toString().split("\n").take(3).join(" | ")}');
     }
+
+    await onProgress();
   }
 
-  /// Log unificado para o isolate de service. Aparece no `adb logcat` com
-  /// tag `flutter` e prefixo `[BG-GPS]`. Em release também sai (não usa
-  /// `kDebugMode`), pois só assim é possível diagnosticar problemas no APK
-  /// instalado.
+  static String _truncar(String s, int max) =>
+      s.length <= max ? s : '${s.substring(0, max)}…';
+
   static void _log(String msg) {
     developer.log(msg, name: 'BG-GPS');
     // ignore: avoid_print
