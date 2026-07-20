@@ -64,7 +64,9 @@ class BdtUerjApp extends StatelessWidget {
         "/home": (_) => const HomePage(),
         "/bdt": (_) => const BdtPage(),
         "/bdt_form": (_) => const BdtFormPage(),
-        "/pre_bdt/novo": (_) => const PreBdtFormPage(),
+        "/pre_bdt/novo":   (_) => const PreBdtFormPage(),
+        // Edição: mesmo widget, decide o modo pelo `arguments: int bdtId`.
+        "/pre_bdt/editar": (_) => const PreBdtFormPage(),
         // Sprint M4
         "/validacao/inicio": (_) => const ValidacaoInicioPage(), // arg: int bdtId
         "/marco/assinatura": (_) => const AssinaturaMarcoPage(), // arg: AssinaturaMarcoArgs

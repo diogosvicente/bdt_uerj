@@ -543,6 +543,55 @@ class BdtService {
     return Map<String, dynamic>.from(res);
   }
 
+  /// Sprint M3 — carrega 1 Pré-BDT pendente do usuário logado pra
+  /// pré-preencher o form de edição. Retorna `null` se o backend
+  /// responder 404 (BDT não existe / já foi decidido / é de outro
+  /// user) — a UI deve tratar isso mostrando um snackbar.
+  static Future<PreBdtPendente?> obterPreBdt(int bdtId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/pre-bdt/obter', {
+      'usuario_id': usuarioId,
+      'bdt_id': bdtId,
+    });
+    if (res['success'] != true) {
+      _log.warn('obterPreBdt#$bdtId FALHOU: ${res['message']}');
+      return null;
+    }
+    final raw = res['data'];
+    if (raw is! Map) return null;
+    return PreBdtPendente.fromJson(Map<String, dynamic>.from(raw));
+  }
+
+  /// Sprint M3 — atualiza um Pré-BDT do próprio usuário enquanto
+  /// ainda está pendente. Backend rejeita se: já foi aprovado/recusado,
+  /// se pertence a outro usuário, ou se algum trecho tem origem/destino
+  /// em branco. Retorna o Map bruto {success, message, bdt_id, protocolo}
+  /// pra a UI decidir o fluxo (snackbar + volta pra home).
+  static Future<Map<String, dynamic>> atualizarPreBdt({
+    required int bdtId,
+    required int fkVeiculo,
+    String? dataReferencia,
+    String? observacoesGerais,
+    required List<Map<String, dynamic>> trechos,
+  }) async {
+    final usuarioId = await _userId();
+    final payload = <String, dynamic>{
+      'usuario_id': usuarioId,
+      'bdt_id': bdtId,
+      'fk_veiculo': fkVeiculo,
+      if (dataReferencia != null && dataReferencia.isNotEmpty)
+        'data_referencia': dataReferencia,
+      'observacoes_gerais':
+          (observacoesGerais ?? '').trim().isEmpty ? '' : observacoesGerais!.trim(),
+      'trechos': trechos,
+    };
+    final res = await ApiClient.post(
+      'transporte/api/bdt/pre-bdt/atualizar',
+      payload,
+    );
+    return Map<String, dynamic>.from(res);
+  }
+
   // ==========================================================
   // Sprint M4 — Validação de atendimento
   // ==========================================================

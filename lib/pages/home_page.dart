@@ -412,8 +412,25 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
+      trailing: const Icon(Icons.edit_outlined),
       isThreeLine: true,
+      onTap: () => _abrirEdicaoPreBdt(p.id),
     );
+  }
+
+  Future<void> _abrirEdicaoPreBdt(int bdtId) async {
+    final result = await Navigator.pushNamed(
+      context,
+      '/pre_bdt/editar',
+      arguments: bdtId,
+    );
+    if (!mounted) return;
+    _autoOpenTentado = true; // evita auto-open acidental logo depois
+    if (result == true) {
+      setState(() {
+        futurePendentes = BdtService.listarMeusPreBdtsPendentes();
+      });
+    }
   }
 
   Widget _secaoBdtsDoDia() {

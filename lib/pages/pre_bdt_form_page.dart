@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../models/pre_bdt_pendente.dart';
 import '../models/veiculo.dart';
 import '../services/bdt_service.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/veiculo_autocomplete.dart';
 
-/// Sprint M3 — formulário de criação de Pré-BDT pelo condutor.
+/// Sprint M3 — formulário de Pré-BDT: **cria** ou **edita**.
 ///
-/// Preenche o mínimo para o admin conseguir aprovar/recusar:
-/// - Veículo (autocomplete por placa/modelo/marca)
-/// - Data de referência (default hoje)
-/// - Trechos previstos (origem → destino, com horários opcionais)
-/// - Observações gerais (opcional)
+/// O modo é decidido pelo `arguments` da rota:
+/// - `Navigator.pushNamed(context, '/pre_bdt/novo')` → cria
+/// - `Navigator.pushNamed(context, '/pre_bdt/editar', arguments: bdtId)` → edita
 ///
-/// Ao enviar, chama `POST transporte/api/bdt/pre-bdt/criar`. Se OK, mostra
-/// o protocolo e volta para a home.
+/// Em modo edição, chama `BdtService.obterPreBdt(bdtId)` no primeiro
+/// `didChangeDependencies` (precisa de `ModalRoute` → não dá pra ler
+/// os arguments no `initState`) e pré-preenche todos os campos. Se o
+/// backend responder null (já foi aprovado/recusado, ou é de outro
+/// usuário), mostra estado de erro com botão "Voltar".
 class PreBdtFormPage extends StatefulWidget {
   const PreBdtFormPage({super.key});
 
@@ -28,10 +30,37 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
   Veiculo? _veiculo;
   final _obsCtrl = TextEditingController();
   DateTime _dataRef = DateTime.now();
-
   final List<_TrechoInput> _trechos = [_TrechoInput()];
 
   bool _enviando = false;
+
+  // ── Estado do modo edição ─────────────────────────────────────────
+  /// bdtId lido do arguments da rota. Null = modo criação.
+  int? _bdtId;
+  /// Trava do bootstrap (didChangeDependencies roda mais de uma vez).
+  bool _bootstrapped = false;
+  /// Enquanto true, mostra loading no lugar do form (só em edição).
+  bool _carregando = false;
+  /// Se o obter retornou null (não pode editar), guarda a mensagem
+  /// pra mostrar em vez do form.
+  String? _erroCarregar;
+
+  bool get _modoEdicao => _bdtId != null;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bootstrapped) return;
+    _bootstrapped = true;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is int) {
+      _bdtId = args;
+      _carregando = true;
+      // dispara o load fora do frame para não emitir setState em build.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _carregarParaEdicao());
+    }
+  }
 
   @override
   void dispose() {
@@ -40,6 +69,62 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
       t.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _carregarParaEdicao() async {
+    final id = _bdtId;
+    if (id == null) return;
+    try {
+      final p = await BdtService.obterPreBdt(id);
+      if (!mounted) return;
+      if (p == null) {
+        setState(() {
+          _carregando = false;
+          _erroCarregar =
+              'Este Pré-BDT não pode ser editado. Provavelmente o admin '
+              'já aprovou ou recusou. Volte para a home e recarregue.';
+        });
+        return;
+      }
+      // Preenche o form com os dados do backend.
+      _veiculo = Veiculo(
+        id: p.fkVeiculo,
+        placa: p.veiculoPlaca ?? '',
+        marca: p.veiculoMarca,
+        modelo: p.veiculoModelo,
+        label: p.veiculoLabel,
+      );
+      _obsCtrl.text = p.observacoesGerais ?? '';
+      _dataRef = _parseData(p.dataReferencia) ?? DateTime.now();
+
+      // Descarta os controllers vazios criados no init e monta um por trecho.
+      for (final t in _trechos) {
+        t.dispose();
+      }
+      _trechos
+        ..clear()
+        ..addAll(p.trechos.map(_TrechoInput.fromPrevisto));
+      if (_trechos.isEmpty) _trechos.add(_TrechoInput());
+
+      setState(() {
+        _carregando = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _carregando = false;
+        _erroCarregar = 'Falha ao carregar Pré-BDT: $e';
+      });
+    }
+  }
+
+  DateTime? _parseData(String iso) {
+    if (iso.isEmpty) return null;
+    try {
+      return DateTime.parse(iso.length >= 10 ? iso.substring(0, 10) : iso);
+    } catch (_) {
+      return null;
+    }
   }
 
   String _fmtData(DateTime d) {
@@ -75,7 +160,6 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
   }
 
   Future<void> _enviar() async {
-    // valida veículo (o Autocomplete não tem FormField validator, checamos manual)
     if (_veiculo == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Escolha um veículo.')),
@@ -83,7 +167,6 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
       return;
     }
 
-    // valida trechos
     final trechosPayload = <Map<String, dynamic>>[];
     for (var i = 0; i < _trechos.length; i++) {
       final t = _trechos[i];
@@ -107,28 +190,37 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
 
     setState(() => _enviando = true);
     try {
-      final res = await BdtService.criarPreBdt(
-        fkVeiculo: _veiculo!.id,
-        dataReferencia: _apiData(_dataRef),
-        observacoesGerais: _obsCtrl.text,
-        trechos: trechosPayload,
-      );
+      final res = _modoEdicao
+          ? await BdtService.atualizarPreBdt(
+              bdtId: _bdtId!,
+              fkVeiculo: _veiculo!.id,
+              dataReferencia: _apiData(_dataRef),
+              observacoesGerais: _obsCtrl.text,
+              trechos: trechosPayload,
+            )
+          : await BdtService.criarPreBdt(
+              fkVeiculo: _veiculo!.id,
+              dataReferencia: _apiData(_dataRef),
+              observacoesGerais: _obsCtrl.text,
+              trechos: trechosPayload,
+            );
 
       if (!mounted) return;
 
       if (res['success'] == true) {
         final protocolo = (res['protocolo'] ?? '').toString();
+        final mensagem = _modoEdicao
+            ? 'Pré-BDT atualizado. Continua na fila de aprovação.'
+            : 'Seu Pré-BDT foi enviado para aprovação. O admin será notificado.';
         await showDialog<void>(
           context: context,
           builder: (_) => AlertDialog(
-            title: const Text('Pré-BDT enviado'),
+            title: Text(_modoEdicao ? 'Pré-BDT atualizado' : 'Pré-BDT enviado'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Seu Pré-BDT foi enviado para aprovação. O admin será notificado.',
-                ),
+                Text(mensagem),
                 const SizedBox(height: 10),
                 if (protocolo.isNotEmpty) ...[
                   const Text('Protocolo:',
@@ -154,13 +246,17 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
         );
         if (!mounted) return;
         // pop(true) sinaliza pra HomePage recarregar a lista de "Meus
-        // Pré-BDTs pendentes" — mostrando o recém-criado sem exigir 🔄.
+        // Pré-BDTs pendentes" — mostrando a criação/edição sem precisar 🔄.
         Navigator.pop(context, true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              (res['message'] ?? 'Falha ao enviar Pré-BDT.').toString(),
+              (res['message'] ??
+                      (_modoEdicao
+                          ? 'Falha ao atualizar Pré-BDT.'
+                          : 'Falha ao enviar Pré-BDT.'))
+                  .toString(),
             ),
           ),
         );
@@ -181,35 +277,65 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Novo Pré-BDT',
-      subtitle: 'Saída urgente',
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+      title: _modoEdicao ? 'Editar Pré-BDT' : 'Novo Pré-BDT',
+      subtitle: _modoEdicao ? 'Aguardando aprovação' : 'Saída urgente',
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_carregando) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_erroCarregar != null) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _cardCabecalho(),
+            const Icon(Icons.lock_outline, size: 48, color: Colors.black54),
             const SizedBox(height: 12),
-            _cardTrechos(),
-            const SizedBox(height: 12),
-            _cardObs(),
-            const SizedBox(height: 20),
+            Text(
+              _erroCarregar!,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _enviando ? null : _enviar,
-              icon: _enviando
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-              label: const Text('Enviar para aprovação'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(50),
-              ),
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('Voltar para a home'),
             ),
           ],
         ),
+      );
+    }
+
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+        children: [
+          _cardCabecalho(),
+          const SizedBox(height: 12),
+          _cardTrechos(),
+          const SizedBox(height: 12),
+          _cardObs(),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _enviando ? null : _enviar,
+            icon: _enviando
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(_modoEdicao ? Icons.save : Icons.send),
+            label: Text(_modoEdicao ? 'Salvar alterações' : 'Enviar para aprovação'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -406,6 +532,34 @@ class _TrechoInput {
   final destinoCtrl = TextEditingController();
   final horaSaidaCtrl = TextEditingController();
   final horaChegadaCtrl = TextEditingController();
+
+  _TrechoInput();
+
+  /// Constrói um `_TrechoInput` a partir de um `TrechoPrevisto` vindo do
+  /// backend. Extrai só o "HH:MM" das strings de datetime (`saida` /
+  /// `chegada` no formato "YYYY-MM-DD HH:MM:SS"), que é o que o
+  /// `showTimePicker` espera no controller.
+  factory _TrechoInput.fromPrevisto(TrechoPrevisto t) {
+    final i = _TrechoInput();
+    i.origemCtrl.text  = t.origem;
+    i.destinoCtrl.text = t.destino;
+    i.horaSaidaCtrl.text   = _hhmm(t.saida);
+    i.horaChegadaCtrl.text = _hhmm(t.chegada);
+    return i;
+  }
+
+  static String _hhmm(String? dtIso) {
+    if (dtIso == null || dtIso.isEmpty) return '';
+    // Aceita "YYYY-MM-DD HH:MM:SS", "YYYY-MM-DDTHH:MM:SS" ou já "HH:MM".
+    final s = dtIso.replaceFirst('T', ' ');
+    if (s.length >= 16 && s.contains(' ')) {
+      return s.substring(11, 16); // "HH:MM"
+    }
+    if (s.length >= 5 && s.contains(':')) {
+      return s.substring(0, 5);
+    }
+    return '';
+  }
 
   void dispose() {
     origemCtrl.dispose();

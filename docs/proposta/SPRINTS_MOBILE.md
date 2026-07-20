@@ -120,6 +120,24 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
   debounce 250ms + cache). Corrigido também insert em
   `trnsp_bdt_condutores` que faltava (Pré-BDT criado não vinculava o
   condutor à execução).
+- ✅ Edição do próprio Pré-BDT enquanto pendente — o condutor pode
+  corrigir veículo/data/observações/trechos até o admin aprovar ou
+  recusar.
+  - **Backend** (`feature/027-mobile-support`): `POST bdt/pre-bdt/obter`
+    (pré-carrega o form) e `POST bdt/pre-bdt/atualizar` (salva). Guard
+    em `PreBdtRepository::findMeuPendente(bdtId, userId)` — retorna null
+    se o BDT é de outro usuário OU se `pre_bdt_status != pendente`.
+    Trechos: soft-delete todos e recria (seguro nesta fase — ainda não
+    foram materializados em `trnsp_solicitacao_trechos`). Grava
+    histórico "editado pelo condutor via app mobile".
+  - **Frontend**: `PreBdtFormPage` refatorada em modo criar/editar —
+    lê `bdtId` via `ModalRoute.arguments`; se presente, chama
+    `obterPreBdt` no `didChangeDependencies` e pré-preenche
+    veículo/data/obs/trechos. Título e botão adaptativos. Se o backend
+    retornar null (não pode mais editar), mostra card de erro com
+    botão "Voltar". Nova rota `/pre_bdt/editar` (mesmo widget da
+    `/pre_bdt/novo`). Tap no card de pendentes da HomePage navega
+    pra edição; retorno com `pop(true)` recarrega o card.
 - ✅ Visibilidade dos Pré-BDTs pendentes na home — condutor precisava
   saber quais Pré-BDTs criou que ainda estão aguardando aprovação.
   - **Backend** (`feature/027-mobile-support`): `POST bdt/pre-bdt/meus-pendentes` +
