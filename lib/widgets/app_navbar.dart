@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 
 /// Barra superior do app.
@@ -41,6 +42,24 @@ class AppNavbar extends StatefulWidget implements PreferredSizeWidget {
 
 class _AppNavbarState extends State<AppNavbar> {
   bool _refreshing = false;
+
+  /// Nome do usuário logado, buscado uma vez no `initState` para exibir
+  /// no header do menu `⋮`. Fica em cache no state (a sessão não muda
+  /// enquanto a AppBar está montada).
+  String _nomeLogado = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // ignore: discarded_futures
+    _carregarNome();
+  }
+
+  Future<void> _carregarNome() async {
+    final nome = await AuthService.getNomeLogado();
+    if (!mounted || nome.isEmpty) return;
+    setState(() => _nomeLogado = nome);
+  }
 
   Future<void> _handleRefresh() async {
     if (widget.onRefresh == null || _refreshing) return;
@@ -161,8 +180,40 @@ class _AppNavbarState extends State<AppNavbar> {
             onSelected: (v) {
               if (v == 'logout') widget.onLogout!();
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
+            itemBuilder: (context) => [
+              // Cabeçalho não-clicável identificando o usuário logado.
+              // `enabled: false` faz o Material desabilitar o toque e
+              // deixar o texto acinzentado — visual de "info", não de ação.
+              if (_nomeLogado.isNotEmpty)
+                PopupMenuItem(
+                  enabled: false,
+                  height: 44,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Logado como',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _nomeLogado,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              if (_nomeLogado.isNotEmpty) const PopupMenuDivider(),
+              const PopupMenuItem(
                 value: 'logout',
                 child: Row(
                   children: [

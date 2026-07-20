@@ -84,6 +84,14 @@ class AuthService {
     return LoginResult.success();
   }
 
+  /// Nome exibível do usuário logado (`usuarios.nome`). Retorna string
+  /// vazia se não houver sessão OU se o backend não devolveu esse campo
+  /// no login. Chamado pela UI para saudar / identificar o condutor.
+  static Future<String> getNomeLogado() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('usuario_nome') ?? '';
+  }
+
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
