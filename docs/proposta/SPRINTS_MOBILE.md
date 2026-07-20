@@ -9,6 +9,43 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
 
 ---
 
+## Princípio arquitetural — sempre reusar código web quando existir
+
+Quando o mobile precisar implementar um comportamento que o web
+(`e-prefeitura`) já implementa de alguma forma — como service,
+controller, seeder ou até uma migration —, a regra é **executar o
+código web direto**, não reescrever a lógica em paralelo.
+
+**Por quê:**
+- Doc de apoio (extrair a lógica web num markdown pra "copiar como
+  guia") vira dupla verdade e fica desatualizado — a gente segue um
+  passo-a-passo escrito, o web evolui, e o mobile diverge sem
+  ninguém perceber.
+- Reescrever é uma **oportunidade adicional de bug**. Exemplo real
+  desta sprint: o `PreBdtService::criarPeloCondutor` fazia inserts
+  extras que o seeder `PreBdtTesteSeeder` não fazia — resultado:
+  Pré-BDT pendente aparecia na "lista do dia" como se fosse BDT
+  operacional (bug reportado como "duplicando / BDT vazio").
+
+**Como aplicar:**
+1. Ao abrir uma nova feature mobile, procurar primeiro por
+   `Seeds/`, `Services/`, `Controllers/` ou testes no
+   `e-prefeitura` que já façam algo parecido.
+2. Se existir: o backend mobile (rota `transporte/api/*`) deve ser
+   um **wrapper fino** em cima desse service/repositório — só
+   valida input do JSON, chama o método existente, formata a
+   resposta pro app.
+3. Se **não existir** (feature 100% nova pro mobile, como o
+   "Pré-BDT criado pelo condutor"), então sim, criamos o service
+   novo — mas seguindo o padrão do web (categoria, transações,
+   assertivas, `allowedFields`, etc.).
+
+Ver também [[bdt_uerj_mobile_nao_quebra_web]] — regra complementar
+sobre nunca alterar contrato web ao mexer no backend pra atender
+mobile.
+
+---
+
 ## Composição
 
 | Tipo | Itens | Horas | Onde |
@@ -138,6 +175,16 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
     botão "Voltar". Nova rota `/pre_bdt/editar` (mesmo widget da
     `/pre_bdt/novo`). Tap no card de pendentes da HomePage navega
     pra edição; retorno com `pop(true)` recarrega o card.
+- ✅ Bugfix "Pré-BDT aparece duplicado / BDT vazio" (2026-07-20) —
+  quando o condutor criava Pré-BDT pelo app, ele aparecia tanto no
+  card "Meus Pré-BDTs pendentes" quanto na lista "BDTs do dia".
+  Causa: `BdtModel::listarDoDiaPorCondutor` (usado pela home) faz
+  `INNER JOIN trnsp_bdt_condutores` sem filtrar por status, e o
+  `criarPeloCondutor` cria esse vínculo (necessário pra tela admin
+  ver quem abriu). Correção **aditiva**: `whereNotIn('b.id_status_atual',
+  BdtStatus::PENDENTES_APROVACAO)`. Pré-BDT com status PRE_BDT (6)
+  só reaparece na lista do dia depois de aprovado E aberto pelo
+  admin (quando `id_status_atual` vira EM_ABERTO).
 - ✅ Visibilidade dos Pré-BDTs pendentes na home — condutor precisava
   saber quais Pré-BDTs criou que ainda estão aguardando aprovação.
   - **Backend** (`feature/027-mobile-support`): `POST bdt/pre-bdt/meus-pendentes` +
