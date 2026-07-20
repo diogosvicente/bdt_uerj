@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../models/veiculo.dart';
 import '../services/bdt_service.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/veiculo_autocomplete.dart';
 
 /// Sprint M3 — formulário de criação de Pré-BDT pelo condutor.
 ///
 /// Preenche o mínimo para o admin conseguir aprovar/recusar:
-/// - Veículo (id numérico)
+/// - Veículo (autocomplete por placa/modelo/marca)
 /// - Data de referência (default hoje)
 /// - Trechos previstos (origem → destino, com horários opcionais)
 /// - Observações gerais (opcional)
@@ -24,7 +25,7 @@ class PreBdtFormPage extends StatefulWidget {
 class _PreBdtFormPageState extends State<PreBdtFormPage> {
   final _formKey = GlobalKey<FormState>();
 
-  final _veiculoCtrl = TextEditingController();
+  Veiculo? _veiculo;
   final _obsCtrl = TextEditingController();
   DateTime _dataRef = DateTime.now();
 
@@ -34,7 +35,6 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
 
   @override
   void dispose() {
-    _veiculoCtrl.dispose();
     _obsCtrl.dispose();
     for (final t in _trechos) {
       t.dispose();
@@ -75,7 +75,13 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
   }
 
   Future<void> _enviar() async {
-    if (!_formKey.currentState!.validate()) return;
+    // valida veículo (o Autocomplete não tem FormField validator, checamos manual)
+    if (_veiculo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escolha um veículo.')),
+      );
+      return;
+    }
 
     // valida trechos
     final trechosPayload = <Map<String, dynamic>>[];
@@ -102,7 +108,7 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
     setState(() => _enviando = true);
     try {
       final res = await BdtService.criarPreBdt(
-        fkVeiculo: int.parse(_veiculoCtrl.text.trim()),
+        fkVeiculo: _veiculo!.id,
         dataReferencia: _apiData(_dataRef),
         observacoesGerais: _obsCtrl.text,
         trechos: trechosPayload,
@@ -218,20 +224,9 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
             const Text('Identificação',
                 style: TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _veiculoCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'ID do veículo',
-                helperText: 'Confirme o veículo com o setor antes de enviar.',
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) {
-                final n = int.tryParse((v ?? '').trim());
-                if (n == null || n <= 0) return 'Informe o ID do veículo.';
-                return null;
-              },
+            VeiculoAutocomplete(
+              initialValue: _veiculo,
+              onChanged: (v) => setState(() => _veiculo = v),
             ),
             const SizedBox(height: 12),
             InkWell(

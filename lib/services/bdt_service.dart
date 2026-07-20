@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../models/bdt_resumo.dart';
 import '../models/feedback_condutor.dart';
 import '../models/passageiro.dart';
+import '../models/veiculo.dart';
 import '../utils/logger.dart';
 import 'location_service.dart';
 
@@ -471,6 +472,31 @@ class BdtService {
   //
   // Retorna: { success, message, bdt_id?, protocolo? }
   // ==========================================================
+
+  /// Autocomplete de veículos (Sprint M3).
+  /// `q` vazio → 12 veículos mais recentes (para o campo abrir com opções).
+  /// Backend faz LIKE em placa + modelo + marca.
+  static Future<List<Veiculo>> buscarVeiculos({
+    String q = '',
+    int limit = 12,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/veiculos/buscar', {
+      'usuario_id': usuarioId,
+      if (q.trim().isNotEmpty) 'q': q.trim(),
+      'limit': limit,
+    });
+    if (res['success'] != true) {
+      _log.warn('buscarVeiculos FALHOU: ${res['message']}');
+      return const [];
+    }
+    final list = (res['data'] as List<dynamic>? ?? const []);
+    return list
+        .whereType<Map>()
+        .map((e) => Veiculo.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
   static Future<Map<String, dynamic>> criarPreBdt({
     required int fkVeiculo,
     String? dataReferencia,
