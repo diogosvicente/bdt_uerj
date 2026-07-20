@@ -10,8 +10,14 @@ import 'pages/pre_bdt_form_page.dart';
 import 'pages/validacao_inicio_page.dart';
 import 'pages/assinatura_marco_page.dart';
 import 'pages/conclusao_page.dart';
+import 'services/alertas_service.dart';
 import 'services/background_location_service.dart';
 import 'theme/app_theme.dart';
+
+/// Chave global do Navigator — usada pelo `AlertasService.onTap` para
+/// abrir a tela do BDT quando o usuário toca numa notificação, sem
+/// precisar de context.
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +32,14 @@ Future<void> main() async {
   // só sobe quando um trecho é iniciado (GpsLiveService.start).
   await BackgroundLocationService.init();
 
+  // Sprint M5 — alertas locais 1h/30min antes de cada BDT. Só inicializa;
+  // o agendamento em si acontece quando a HomePage carrega a lista do dia
+  // (`HomePage._reload` chama `AlertasService.sincronizarComBdtsDoDia`).
+  await AlertasService.init();
+  AlertasService.onTap = (bdtId) {
+    navigatorKey.currentState?.pushNamed('/bdt', arguments: bdtId);
+  };
+
   runApp(const BdtUerjApp());
 }
 
@@ -35,6 +49,7 @@ class BdtUerjApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'BDT UERJ',
       debugShowCheckedModeBanner: false,
 

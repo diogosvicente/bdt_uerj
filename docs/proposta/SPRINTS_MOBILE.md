@@ -198,15 +198,35 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
 
 ---
 
-## Sprint M5 📱 — Alertas inteligentes (~40h)
+## Sprint M5 📱 — Alertas inteligentes (~40h) — ✅ concluída
 **Equivalente à Sprint 18 do plano web.**
 
 **Objetivo:** notificar o condutor com antecedência da saída.
 
-- 1º Alerta — preparação (1h antes da saída programada) — 24h
-- 2º Alerta — deslocamento (30min antes) — 16h
-
-> Integração opcional com WhatsApp depende da pesquisa de viabilidade feita na Sprint 17 do plano web.
+- ✅ 1º Alerta — preparação (1h antes da saída programada) — 24h
+- ✅ 2º Alerta — deslocamento (30min antes) — 16h
+  - **Backend** (`feature/027-mobile-support`): `BdtModel::listarDoDiaPorCondutor`
+    ganhou uma subquery que retorna `hora_saida_prevista =
+    MIN(trnsp_solicitacao_trechos.saida)` agregando todos os trechos
+    das solicitações vinculadas ao BDT via `trnsp_bdt_designacao`.
+    Sem esse campo o app não teria hora pra agendar alerta.
+  - **Frontend**: novo `AlertasService` (categoria PLATFORM) usando
+    `flutter_local_notifications` + `timezone`. `init()` no bootstrap
+    do `main.dart` (canal Android + permissão POST_NOTIFICATIONS).
+    `sincronizarComBdtsDoDia(List<BdtResumo>)` faz `cancelAll` + agenda
+    2 alertas por BDT com `horaSaidaPrevista` futura (IDs
+    `bdtId*10+1` e `bdtId*10+2`). Chamado no `initState` da HomePage
+    e depois de cada `_reload`. Payload = `bdtId` — ao tocar na
+    notificação, o app abre `/bdt` via `navigatorKey`.
+    `cancelarBdt(int)` chamado em `ConclusaoPage` quando o BDT é
+    encerrado. Novo campo `horaSaidaPrevista` em `BdtResumo`.
+  - **Android manifest**: `SCHEDULE_EXACT_ALARM` + `USE_EXACT_ALARM`
+    (Android 12+). Se o usuário negar, fallback pra
+    `inexactAllowWhileIdle` — alerta ainda dispara, com alguns min
+    de atraso.
+  - Integração opcional com WhatsApp depende da pesquisa de
+    viabilidade feita na Sprint 17 do plano web — **não incluída
+    nesta iteração**.
 
 ---
 

@@ -48,6 +48,10 @@ dependencies:
   # Background GPS (foreground service Android + notificação persistente)
   flutter_background_service: ^5.0.10
   flutter_local_notifications: ^17.2.4
+  # Sprint M5 — usado pelo AlertasService.zonedSchedule. Já é dep
+  # transitiva de flutter_local_notifications; declaramos explícito
+  # porque importamos direto (`tz.local`, `tz.TZDateTime`).
+  timezone: ^0.9.4
   permission_handler: ^11.3.1
 
   # Armazenamento seguro para credenciais (Android Keystore / iOS Keychain)

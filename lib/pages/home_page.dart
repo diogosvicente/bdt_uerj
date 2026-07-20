@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/bdt_resumo.dart';
 import '../models/pre_bdt_pendente.dart';
+import '../services/alertas_service.dart';
 import '../services/auth_service.dart';
 import '../services/bdt_service.dart';
 import '../theme/app_theme.dart';
@@ -25,6 +26,16 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     future = BdtService.listarDoDia(data: _apiDate(selectedDate));
     futurePendentes = BdtService.listarMeusPreBdtsPendentes();
+
+    // Sprint M5 — assim que a lista do dia terminar de carregar (sem
+    // esperar refresh manual), agenda os alertas 1h/30min antes de
+    // cada BDT com hora prevista futura.
+    future.then((bdts) {
+      if (!mounted) return;
+      // fire-and-forget — falha aqui não bloqueia o app.
+      // ignore: discarded_futures
+      AlertasService.sincronizarComBdtsDoDia(bdts);
+    });
   }
 
   String _apiDate(DateTime d) {
@@ -76,6 +87,12 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       final lista = results[0] as List<BdtResumo>;
       final pendentes = results[1] as List<PreBdtPendente>;
+
+      // Re-sincroniza os alertas com a lista fresca — se o admin mudou
+      // horário/reagendou/removeu BDT, isso corrige o schedule.
+      // ignore: discarded_futures
+      AlertasService.sincronizarComBdtsDoDia(lista);
+
       final partes = <String>[
         lista.isEmpty
             ? 'nenhum BDT em ${_uiDate(selectedDate)}'

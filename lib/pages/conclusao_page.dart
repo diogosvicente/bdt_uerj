@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/feedback_condutor.dart';
+import '../services/alertas_service.dart';
 import '../services/bdt_service.dart';
 import '../utils/logger.dart';
 import '../widgets/app_scaffold.dart';
@@ -119,9 +120,15 @@ class _ConclusaoPageState extends State<ConclusaoPage> {
 
     setState(() => _encerrando = true);
     try {
-      final res = await BdtService.encerrarBdt(bdtId: _bdtIdFromRoute());
+      final bdtId = _bdtIdFromRoute();
+      final res = await BdtService.encerrarBdt(bdtId: bdtId);
       if (!mounted) return;
       if (res['success'] == true) {
+        // Sprint M5 — alertas do BDT não fazem mais sentido depois de
+        // encerrado. Fire-and-forget: se falhar, o schedule ainda vai
+        // ser corrigido no próximo refresh da HomePage (sincroniza).
+        // ignore: discarded_futures
+        AlertasService.cancelarBdt(bdtId);
         await showDialog<void>(
           context: context,
           builder: (_) => AlertDialog(
