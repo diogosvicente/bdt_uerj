@@ -36,6 +36,12 @@ class CaptchaFieldState extends State<CaptchaField> {
   bool _loading = false;
   Object? _error;
 
+  /// Mensagem de validação exibida abaixo do campo (linha vermelha do
+  /// Material `errorText`). O LoginPage seta via [showError] quando o
+  /// backend responde CAPTCHA_ERROR. Some sozinho quando o usuário
+  /// começa a corrigir a digitação.
+  String? _validationError;
+
   /// Token atual do desafio, ou null se o captcha está desligado / não carregou.
   String? get token => _challenge?.token;
 
@@ -47,12 +53,38 @@ class CaptchaFieldState extends State<CaptchaField> {
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_clearValidationOnEdit);
     if (widget.autoLoadOnInit) {
       reload();
     }
   }
 
+  @override
+  void dispose() {
+    widget.controller.removeListener(_clearValidationOnEdit);
+    super.dispose();
+  }
+
+  void _clearValidationOnEdit() {
+    if (_validationError == null) return;
+    if (!mounted) return;
+    setState(() => _validationError = null);
+  }
+
+  /// Marca o campo em vermelho com a mensagem [msg]. Chamado pelo
+  /// LoginPage quando o backend rejeita o captcha. Passa `null` para
+  /// limpar o erro sem esperar o usuário editar.
+  void showError(String? msg) {
+    if (!mounted) return;
+    setState(() => _validationError = msg);
+  }
+
   Future<void> reload() async {
+    // Guard defensivo: o LoginPage pode chamar reload() logo após um
+    // `setState(loading=false)`, e num caso raro o widget já ter sido
+    // desmontado (usuário apertou back). Sem esse guard, o setState
+    // abaixo explode com "setState after dispose".
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -109,9 +141,10 @@ class CaptchaFieldState extends State<CaptchaField> {
           autocorrect: false,
           enableSuggestions: false,
           textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Digite o texto da imagem',
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
+            errorText: _validationError,
           ),
         ),
       ],

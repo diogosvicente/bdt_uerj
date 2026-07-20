@@ -140,11 +140,25 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => loading = false);
 
-    // Se o backend disse que o captcha reciclou, atualiza a imagem.
-    if (result.captchaReloadRequired) {
-      captchaController.clear();
-      // ignore: discarded_futures
-      captchaState?.reload();
+    // Reobtém o state atual pelo GlobalKey — a referência antiga capturada
+    // antes do await pode estar defunct se o CaptchaField foi remontado.
+    final captchaStateAtual = _captchaKey.currentState;
+
+    if (result.captchaError) {
+      // Backend rejeitou o captcha: marca o campo em vermelho com a
+      // mensagem específica. Snackbar seria redundante — a mensagem já
+      // aparece embaixo do campo (padrão Material errorText).
+      captchaStateAtual?.showError(
+        result.message ?? 'Captcha incorreto. Tente novamente.',
+      );
+      // O backend pode ter descartado o token; nesse caso recarrega a
+      // imagem para o usuário digitar um novo desafio.
+      if (result.captchaReloadRequired) {
+        captchaController.clear();
+        // ignore: discarded_futures
+        captchaStateAtual?.reload();
+      }
+      return;
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -158,17 +172,28 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    // NÃO removemos o formulário da árvore durante o loading — se ele
+    // sai, o CaptchaField é disposado e o GlobalKey capturado antes do
+    // await fica defunct (crash "setState after dispose"). Em vez disso,
+    // deixamos o form sempre montado, com opacidade e bloqueio de
+    // toque, e sobrepomos um Loading centralizado. Assim o state do
+    // captcha sobrevive à resposta de erro do backend e permite marcar
+    // o campo em vermelho.
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Center(
-            child: SingleChildScrollView(
-              child: loading
-                  ? const Loading(text: "Entrando no BDT UERJ...")
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(
+                child: SingleChildScrollView(
+                  child: AbsorbPointer(
+                    absorbing: loading,
+                    child: Opacity(
+                      opacity: loading ? 0.4 : 1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                         // LOGO DO E-PREFEITURA
                         Center(
                           child: Image.asset(
@@ -299,10 +324,21 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+          if (loading)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0x11000000),
+                child: Center(child: Loading(text: "Entrando no BDT UERJ...")),
+              ),
+            ),
+        ],
       ),
+    ),
     );
   }
 }
