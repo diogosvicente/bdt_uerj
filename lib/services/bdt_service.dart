@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../models/bdt_resumo.dart';
 import '../models/feedback_condutor.dart';
 import '../models/passageiro.dart';
+import '../models/pre_bdt_pendente.dart';
 import '../models/veiculo.dart';
 import '../utils/logger.dart';
 import 'location_service.dart';
@@ -472,6 +473,25 @@ class BdtService {
   //
   // Retorna: { success, message, bdt_id?, protocolo? }
   // ==========================================================
+
+  /// Lista os Pré-BDTs do usuário logado que ainda estão aguardando
+  /// aprovação do admin (Sprint M3, tela inicial do app).
+  static Future<List<PreBdtPendente>> listarMeusPreBdtsPendentes() async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/pre-bdt/meus-pendentes',
+      {'usuario_id': usuarioId},
+    );
+    if (res['success'] != true) {
+      _log.warn('listarMeusPreBdtsPendentes FALHOU: ${res['message']}');
+      return const [];
+    }
+    final list = (res['data'] as List<dynamic>? ?? const []);
+    return list
+        .whereType<Map>()
+        .map((e) => PreBdtPendente.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
 
   /// Autocomplete de veículos (Sprint M3).
   /// `q` vazio → 12 veículos mais recentes (para o campo abrir com opções).

@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../models/bdt_resumo.dart';
+import '../models/pre_bdt_pendente.dart';
 import '../services/auth_service.dart';
 import '../services/bdt_service.dart';
-import '../models/bdt_resumo.dart';
+import '../theme/app_theme.dart';
 import '../widgets/app_scaffold.dart';
 
 class HomePage extends StatefulWidget {
@@ -16,6 +18,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   DateTime selectedDate = DateTime.now();
   late Future<List<BdtResumo>> future;
+  late Future<List<PreBdtPendente>> futurePendentes;
 
   /// Trava para não abrir o diálogo de confirmação de veículo em loop
   /// (o `build` roda várias vezes conforme o `FutureBuilder` resolve).
@@ -24,15 +27,15 @@ class _HomePageState extends State<HomePage> {
   bool _autoOpenTentado = false;
 
   /// True enquanto um `_reload` está no ar. Serve para suprimir o
-  /// `_maybeAutoOpen` durante o pull-to-refresh — abrir um AlertDialog
-  /// enquanto o `RefreshIndicator` ainda está com o spinner ativo trava
-  /// a animação em alguns Androids.
+  /// `_maybeAutoOpen` durante o refresh — abrir um AlertDialog enquanto
+  /// o refresh ainda está no ar trava a animação em alguns Androids.
   bool _refreshing = false;
 
   @override
   void initState() {
     super.initState();
     future = BdtService.listarDoDia(data: _apiDate(selectedDate));
+    futurePendentes = BdtService.listarMeusPreBdtsPendentes();
   }
 
   String _apiDate(DateTime d) {
@@ -67,34 +70,48 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// Recarrega a lista de BDTs do dia selecionado.
+  /// Recarrega a lista de BDTs do dia selecionado E a lista de Pré-BDTs
+  /// pendentes do usuário. Ambas rolam em paralelo — o FutureBuilder de
+  /// cada seção reage independente, então o card que voltar primeiro já
+  /// aparece atualizado.
   Future<void> _reload() async {
     // Suprime o auto-open enquanto o refresh está no ar (evita AlertDialog
-    // aparecer sobre o spinner do RefreshIndicator).
+    // aparecer sobre a mensagem de "atualizada").
     _refreshing = true;
     // Marca como "já tentado" para o build atual não abrir dialog no
     // mesmo tick; será liberado no final quando limparmos _refreshing.
     _autoOpenTentado = true;
 
     final novo = BdtService.listarDoDia(data: _apiDate(selectedDate));
-    setState(() => future = novo);
+    final novosPendentes = BdtService.listarMeusPreBdtsPendentes();
+    setState(() {
+      future = novo;
+      futurePendentes = novosPendentes;
+    });
 
-    // Timeout defensivo: o RefreshIndicator fica com o spinner girando até
-    // este Future terminar. O ApiClient.post já tem timeout de 10s por
-    // request, mas se algo (SSL handshake lento, DNS, etc) travar antes
-    // disso, garantimos que o spinner some em ≤15s no pior caso.
+    // Timeout defensivo: se o ApiClient.post travar antes do próprio
+    // timeout dele (10s), garantimos que o snackbar de "demorou" cai em
+    // ≤15s. Aguardamos as duas futuras juntas para o feedback ser único.
     try {
-      final lista = await novo.timeout(const Duration(seconds: 15));
+      final results = await Future.wait<Object>([
+        novo,
+        novosPendentes,
+      ]).timeout(const Duration(seconds: 15));
       if (!mounted) return;
+      final lista = results[0] as List<BdtResumo>;
+      final pendentes = results[1] as List<PreBdtPendente>;
+      final partes = <String>[
+        lista.isEmpty
+            ? 'nenhum BDT em ${_uiDate(selectedDate)}'
+            : '${lista.length} BDT${lista.length > 1 ? "s" : ""}',
+        if (pendentes.isNotEmpty)
+          '${pendentes.length} Pré-BDT${pendentes.length > 1 ? "s" : ""} pendente${pendentes.length > 1 ? "s" : ""}',
+      ];
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(
           SnackBar(
-            content: Text(
-              lista.isEmpty
-                  ? 'Nenhum BDT para ${_uiDate(selectedDate)}.'
-                  : 'Lista atualizada (${lista.length} BDT${lista.length > 1 ? "s" : ""}).',
-            ),
+            content: Text('Atualizado — ${partes.join(", ")}.'),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -134,7 +151,7 @@ class _HomePageState extends State<HomePage> {
   /// Se ele "Cancelar", cai na lista normalmente.
   void _maybeAutoOpen(BdtResumo unico) {
     if (_autoOpenTentado) return;
-    if (_refreshing) return; // não intromete durante pull-to-refresh
+    if (_refreshing) return; // não intromete durante refresh
     if (!_isHoje(selectedDate)) return;
 
     _autoOpenTentado = true;
@@ -215,11 +232,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirPreBdtForm() async {
-    // Volta pra home ao terminar; o refresh o próprio operador dispara se
-    // quiser ver o Pré-BDT recém-criado como pendente na lista.
-    await Navigator.pushNamed(context, '/pre_bdt/novo');
+    // Quando volta do form (com Pré-BDT criado ou cancelado), recarrega
+    // a lista de pendentes — é a forma mais direta de mostrar o recém-
+    // criado sem exigir toque manual no 🔄.
+    final result = await Navigator.pushNamed(context, '/pre_bdt/novo');
     if (!mounted) return;
     _autoOpenTentado = true; // evita auto-open acidental logo depois
+
+    if (result == true) {
+      setState(() {
+        futurePendentes = BdtService.listarMeusPreBdtsPendentes();
+      });
+    }
   }
 
   @override
@@ -235,94 +259,231 @@ class _HomePageState extends State<HomePage> {
         icon: const Icon(Icons.rocket_launch_outlined),
         label: const Text('Novo Pré-BDT'),
       ),
-      body: FutureBuilder<List<BdtResumo>>(
-        future: future,
-        builder: (context, snap) {
-          final loading = snap.connectionState != ConnectionState.done;
-          final items = snap.data ?? const <BdtResumo>[];
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+        children: [
+          _cardData(),
+          const SizedBox(height: 10),
+          _secaoPendentes(),
+          const SizedBox(height: 10),
+          _secaoBdtsDoDia(),
+        ],
+      ),
+    );
+  }
 
-          // Sprint M1 — auto-abrir BDT único (só hoje).
-          if (!loading && items.length == 1) {
-            _maybeAutoOpen(items.first);
-          }
+  // ─── seções ────────────────────────────────────────────────────────
 
-          // Só o botão 🔄 da navbar dispara refresh — o pull-to-refresh
-          // foi removido a pedido do usuário (estava conflitando com o
-          // dialog de auto-open em Androids específicos).
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-            children: [
-              // seletor de data (enterprise)
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.event),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text("Data do BDT", style: TextStyle(fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 2),
-                            Text(_uiDate(selectedDate), style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                        ),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: _pickDate,
-                        icon: const Icon(Icons.calendar_month),
-                        label: const Text("Alterar"),
-                      ),
-                    ],
-                  ),
+  Widget _cardData() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            const Icon(Icons.event),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Data do BDT", style: TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 2),
+                  Text(_uiDate(selectedDate), style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: _pickDate,
+              icon: const Icon(Icons.calendar_month),
+              label: const Text("Alterar"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Pré-BDTs criados por mim que ainda estão pendentes. Some quando não
+  /// tem nenhum — sem "estado vazio" chamativo, pra não poluir a home de
+  /// quem nunca criou Pré-BDT.
+  Widget _secaoPendentes() {
+    return FutureBuilder<List<PreBdtPendente>>(
+      future: futurePendentes,
+      builder: (context, snap) {
+        final loading = snap.connectionState != ConnectionState.done;
+        final items = snap.data ?? const <PreBdtPendente>[];
+
+        if (loading) {
+          return Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
                 ),
               ),
-
-              const SizedBox(height: 10),
-
-              if (loading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 40),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (items.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 40),
-                  child: Center(
-                    child: Text(
-                      "Nenhum BDT encontrado para ${_uiDate(selectedDate)}.",
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                )
-              else
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const Divider(height: 0),
-                    itemBuilder: (context, i) {
-                      final b = items[i];
-                      return ListTile(
-                        title: Text(b.titulo, style: const TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: Text(b.subtitulo),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.pushNamed(context, "/bdt", arguments: b.id),
-                      );
-                    },
-                  ),
-                ),
-            ],
+            ),
           );
-        },
+        }
+
+        if (items.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.hourglass_top, color: AppTheme.warning),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Meus Pré-BDTs aguardando aprovação',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppTheme.warning.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${items.length}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.warning,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 8),
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const Divider(height: 0),
+                itemBuilder: (context, i) => _tilePendente(items[i]),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _tilePendente(PreBdtPendente p) {
+    final trechosLabel = p.trechos.isEmpty
+        ? 'Sem trechos previstos'
+        : p.trechos.map((t) => '${t.origem} → ${t.destino}').join(' · ');
+
+    return ListTile(
+      leading: const CircleAvatar(
+        backgroundColor: Color(0x22F59E0B),
+        child: Icon(Icons.pending_actions, color: AppTheme.warning),
       ),
+      title: Text(
+        p.protocolo.isNotEmpty ? p.protocolo : p.titulo,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(p.veiculoLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(
+            trechosLabel,
+            style: const TextStyle(fontSize: 12),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+      isThreeLine: true,
+    );
+  }
+
+  Widget _secaoBdtsDoDia() {
+    return FutureBuilder<List<BdtResumo>>(
+      future: future,
+      builder: (context, snap) {
+        final loading = snap.connectionState != ConnectionState.done;
+        final items = snap.data ?? const <BdtResumo>[];
+
+        // Sprint M1 — auto-abrir BDT único (só hoje).
+        if (!loading && items.length == 1) {
+          _maybeAutoOpen(items.first);
+        }
+
+        if (loading) {
+          return const Padding(
+            padding: EdgeInsets.only(top: 40),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (items.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 40),
+            child: Center(
+              child: Text(
+                "Nenhum BDT encontrado para ${_uiDate(selectedDate)}.",
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(14, 14, 14, 6),
+                child: Row(
+                  children: [
+                    Icon(Icons.assignment_turned_in_outlined),
+                    SizedBox(width: 8),
+                    Text(
+                      'BDTs do dia',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 8),
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const Divider(height: 0),
+                itemBuilder: (context, i) {
+                  final b = items[i];
+                  return ListTile(
+                    title: Text(b.titulo, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(b.subtitulo),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.pushNamed(context, "/bdt", arguments: b.id),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -153,7 +153,9 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
           ),
         );
         if (!mounted) return;
-        Navigator.pop(context); // volta pra home
+        // pop(true) sinaliza pra HomePage recarregar a lista de "Meus
+        // Pré-BDTs pendentes" — mostrando o recém-criado sem exigir 🔄.
+        Navigator.pop(context, true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

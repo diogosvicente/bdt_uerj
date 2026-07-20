@@ -114,6 +114,24 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
   - Depois de enviar, dialog mostra o protocolo gerado e volta pra home.
   - O Pré-BDT vira BDT operacional quando o admin aprovar via web
     (`PreBdtAdminController`, já existente da Sprint W1).
+- ✅ Refino M3 (após dogfooding no Pixel): condutor real não sabe o
+  ID interno do veículo — form ficou com um autocomplete (`GET
+  /transporte/api/veiculos/buscar`, widget `VeiculoAutocomplete` com
+  debounce 250ms + cache). Corrigido também insert em
+  `trnsp_bdt_condutores` que faltava (Pré-BDT criado não vinculava o
+  condutor à execução).
+- ✅ Visibilidade dos Pré-BDTs pendentes na home — condutor precisava
+  saber quais Pré-BDTs criou que ainda estão aguardando aprovação.
+  - **Backend** (`feature/027-mobile-support`): `POST bdt/pre-bdt/meus-pendentes` +
+    `PreBdtRepository::listarMeusPendentes()` (JOIN veículo/marca/modelo,
+    filtra por `criado_por = usuário logado AND pre_bdt_status = 'pendente'`)
+    + `PreBdtService` enriquece com `protocolo` e `trechos_previstos`.
+  - **Frontend**: modelo `PreBdtPendente`, método
+    `BdtService.listarMeusPreBdtsPendentes()` e nova seção na `HomePage`
+    (card "Meus Pré-BDTs aguardando aprovação") acima da lista de BDTs
+    do dia. Some do card se lista vier vazia. O botão 🔄 da AppBar
+    recarrega as duas listas em paralelo (`Future.wait`), e o retorno do
+    form (`pop(true)`) também dispara refresh só do card.
 
 ---
 
