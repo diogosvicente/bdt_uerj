@@ -1,0 +1,29 @@
+{
+  // Tasks reutilizáveis do projeto. Executáveis via
+  // Ctrl+Shift+P → "Tasks: Run Task", OU chamadas como `preLaunchTask`
+  // pelo launch.json.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Ativa o portal USB (celular:8080 → PC:80) — pré-requisito do
+      // perfil "Dev — localhost". Executado automaticamente antes do
+      // F5 nesse perfil (via preLaunchTask no launch.json).
+      "label": "adb-reverse",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/adb-reverse.ps1"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "clear": false
+      }
+    }
+  ]
+}

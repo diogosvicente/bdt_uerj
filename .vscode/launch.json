@@ -8,12 +8,15 @@
   "configurations": [
     {
       // Backend: Docker do PC via cabo USB.
-      // Antes de rodar, garanta o portal ADB:
-      //   adb reverse tcp:8080 tcp:80
+      //
+      // O `preLaunchTask` roda `adb reverse tcp:8080 tcp:80` automaticamente
+      // antes do `flutter run` — não precisa mais lembrar do comando toda
+      // vez que reconecta o cabo (a task auto-detecta o único device).
       "name": "Dev — localhost (USB, adb reverse)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
+      "preLaunchTask": "adb-reverse",
       "args": [
         "--dart-define=APP_ENV=localhost"
       ]
