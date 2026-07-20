@@ -246,16 +246,12 @@ class _HomePageState extends State<HomePage> {
             _maybeAutoOpen(items.first);
           }
 
-          // Pull-to-refresh: arrastar a tela pra baixo dispara `_reload`
-          // (mesmo callback do botão 🔄 da navbar). `always` no physics
-          // garante que o gesto funciona mesmo quando a lista é pequena
-          // demais pra rolar.
-          return RefreshIndicator(
-            onRefresh: _reload,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-              children: [
+          // Só o botão 🔄 da navbar dispara refresh — o pull-to-refresh
+          // foi removido a pedido do usuário (estava conflitando com o
+          // dialog de auto-open em Androids específicos).
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+            children: [
               // seletor de data (enterprise)
               Card(
                 elevation: 0,
@@ -323,8 +319,7 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                 ),
-              ],
-            ),
+            ],
           );
         },
       ),
