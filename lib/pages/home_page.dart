@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/bdt_service.dart';
@@ -17,9 +19,15 @@ class _HomePageState extends State<HomePage> {
 
   /// Trava para não abrir o diálogo de confirmação de veículo em loop
   /// (o `build` roda várias vezes conforme o `FutureBuilder` resolve).
-  /// É resetada quando a data muda ou o refresh é acionado — assim se o
-  /// condutor voltar de `/bdt` e trocar a data, o auto-abrir volta a valer.
+  /// É resetada quando a data muda — assim se o condutor voltar de `/bdt`
+  /// e trocar a data, o auto-abrir volta a valer.
   bool _autoOpenTentado = false;
+
+  /// True enquanto um `_reload` está no ar. Serve para suprimir o
+  /// `_maybeAutoOpen` durante o pull-to-refresh — abrir um AlertDialog
+  /// enquanto o `RefreshIndicator` ainda está com o spinner ativo trava
+  /// a animação em alguns Androids.
+  bool _refreshing = false;
 
   @override
   void initState() {
@@ -61,11 +69,22 @@ class _HomePageState extends State<HomePage> {
 
   /// Recarrega a lista de BDTs do dia selecionado.
   Future<void> _reload() async {
-    _autoOpenTentado = false; // usuário pediu refresh → auto-abrir volta a valer
+    // Suprime o auto-open enquanto o refresh está no ar (evita AlertDialog
+    // aparecer sobre o spinner do RefreshIndicator).
+    _refreshing = true;
+    // Marca como "já tentado" para o build atual não abrir dialog no
+    // mesmo tick; será liberado no final quando limparmos _refreshing.
+    _autoOpenTentado = true;
+
     final novo = BdtService.listarDoDia(data: _apiDate(selectedDate));
     setState(() => future = novo);
+
+    // Timeout defensivo: o RefreshIndicator fica com o spinner girando até
+    // este Future terminar. O ApiClient.post já tem timeout de 10s por
+    // request, mas se algo (SSL handshake lento, DNS, etc) travar antes
+    // disso, garantimos que o spinner some em ≤15s no pior caso.
     try {
-      final lista = await novo;
+      final lista = await novo.timeout(const Duration(seconds: 15));
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
@@ -79,6 +98,15 @@ class _HomePageState extends State<HomePage> {
             duration: const Duration(seconds: 2),
           ),
         );
+    } on TimeoutException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('A resposta demorou demais. Verifique a conexão e tente novamente.'),
+          ),
+        );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -86,6 +114,11 @@ class _HomePageState extends State<HomePage> {
         ..showSnackBar(
           SnackBar(content: Text('Falha ao atualizar: $e')),
         );
+    } finally {
+      // Fim do refresh: libera o auto-open pra próxima carga (se o usuário
+      // trocar de data ou apertar 🔄 de novo).
+      _refreshing = false;
+      _autoOpenTentado = false;
     }
   }
 
@@ -101,12 +134,13 @@ class _HomePageState extends State<HomePage> {
   /// Se ele "Cancelar", cai na lista normalmente.
   void _maybeAutoOpen(BdtResumo unico) {
     if (_autoOpenTentado) return;
+    if (_refreshing) return; // não intromete durante pull-to-refresh
     if (!_isHoje(selectedDate)) return;
 
     _autoOpenTentado = true;
     // Precisa esperar o frame terminar para não abrir dialog dentro do build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _refreshing) return;
       _abrirConfirmacaoVeiculo(unico);
     });
   }
