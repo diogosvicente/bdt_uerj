@@ -168,6 +168,17 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
   - **Backend**: nova tabela `trnsp_bdt_feedback_condutor` (1 por BDT) + `POST bdt/feedback-condutor/registrar` (upsert), `POST bdt/feedback-condutor/obter`, `POST bdt/encerrar` (muda `id_status_atual` para `ENCERRADO=3` com transação).
   - **Frontend**: `ConclusaoPage` (rota `/conclusao`) com estrelas 1–5 + comentário + botão "Encerrar BDT" (habilita só depois do feedback salvo, com confirmação).
   - Novos itens no `_openBdtActionsSheet` do `bdt_page.dart`: "Validar início" e "Concluir viagem".
+- ✅ Duplicação de trechos extras no `bdt_page.dart` — trechos que já
+  aparecem numa agenda estavam sendo listados de novo na seção
+  "Trechos extras". Correção no `BdtApiService::detalhes` (mobile,
+  aditivo): subtrai do array `trechos_extras` todos os ids que já
+  foram listados em `agendas[N].trechos`. Card "Trechos extras"
+  agora só mostra os trechos avulsos (sem agenda).
+- ✅ Nova AppBar (Sprint M6/UX): logo institucional da UERJ (brasão
+  circular em capsule branca) à esquerda, título + subtítulo à
+  direita, fundo com gradient azul UERJ (`#0D47A1 → #002171`) e
+  sombra sutil. O parâmetro `subtitle` — antes ignorado — agora
+  aparece abaixo do título. `AppNavbar._toolbarHeight = 76`.
 - ✅ Auto-abertura de BDT ao iniciar trecho + KM inicial opcional —
   paridade com o web, que já fazia isso automaticamente.
   - **Backend** (`feature/027-mobile-support`): `BdtApiService::iniciarTrecho`

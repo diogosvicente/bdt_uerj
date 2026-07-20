@@ -1,5 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../theme/app_theme.dart';
+
+/// Barra superior do app.
+///
+/// Layout: logo circular da UERJ à esquerda, título + subtítulo à direita,
+/// fundo com gradient azul institucional e sombra sutil. Actions ficam
+/// na ordem: refresh (opcional) → menu (com "Sair" quando `onLogout != null`).
+///
+/// Mantém a compatibilidade da API antiga (`title`, `subtitle`, `onRefresh`,
+/// `onLogout`, `showBackButton`) — só a apresentação mudou.
 class AppNavbar extends StatefulWidget implements PreferredSizeWidget {
   const AppNavbar({
     super.key,
@@ -10,17 +21,19 @@ class AppNavbar extends StatefulWidget implements PreferredSizeWidget {
     this.showBackButton = true,
   });
 
-  final String title; // BDT e-Prefeitura
-  final String subtitle; // Hoje
-  // Retorna Future<void> pra permitir mostrar spinner enquanto executa.
-  // Se o caller passar uma VoidCallback (fire-and-forget), o wrapper abaixo
-  // ainda funciona.
+  final String title;
+  final String subtitle;
+
+  /// Retorna Future<void> pra permitir mostrar spinner enquanto executa.
   final Future<void> Function()? onRefresh;
   final VoidCallback? onLogout;
   final bool showBackButton;
 
+  /// Altura visível (fora da status bar).
+  static const double _toolbarHeight = 76;
+
   @override
-  Size get preferredSize => const Size.fromHeight(112);
+  Size get preferredSize => const Size.fromHeight(_toolbarHeight);
 
   @override
   State<AppNavbar> createState() => _AppNavbarState();
@@ -42,42 +55,84 @@ class _AppNavbarState extends State<AppNavbar> {
   @override
   Widget build(BuildContext context) {
     final canPop = Navigator.of(context).canPop();
+    final showBack = widget.showBackButton && canPop;
 
     return AppBar(
-      backgroundColor: const Color(0xFF0D47A1),
-      elevation: 2,
-      toolbarHeight: 112,
-      centerTitle: true,
+      // Cor real fica no flexibleSpace (para permitir gradient + sombra).
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      toolbarHeight: AppNavbar._toolbarHeight,
       automaticallyImplyLeading: false,
+      systemOverlayStyle: SystemUiOverlayStyle.light,
+      foregroundColor: Colors.white,
+      iconTheme: const IconThemeData(color: Colors.white),
+      actionsIconTheme: const IconThemeData(color: Colors.white),
 
-      leading: (widget.showBackButton && canPop)
+      flexibleSpace: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.primary,          // 0xFF0D47A1
+              Color(0xFF002171),         // azul UERJ mais profundo
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+      ),
+
+      leading: showBack
           ? IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              tooltip: 'Voltar',
+              icon: const Icon(Icons.arrow_back),
               onPressed: () => Navigator.of(context).maybePop(),
             )
           : null,
 
-      title: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // 🔹 LOGO (linha 1)
-          Image.asset(
-            'assets/images/LOGO_PREFEITURA.png',
-            height: 36,
-            fit: BoxFit.contain,
-          ),
-          const SizedBox(height: 6),
+      titleSpacing: showBack ? 4 : 12,
 
-          // 🔹 TEXTO (linha 2)
-          Text(
-            widget.title,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+      title: Row(
+        children: [
+          _LogoBrasao(),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                if (widget.subtitle.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xCCFFFFFF),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -97,21 +152,59 @@ class _AppNavbarState extends State<AppNavbar> {
                       valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   )
-                : const Icon(Icons.refresh, color: Colors.white),
+                : const Icon(Icons.refresh),
           ),
-        PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert, color: Colors.white),
-          onSelected: (v) {
-            if (v == 'logout' && widget.onLogout != null) widget.onLogout!();
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(
-              value: 'logout',
-              child: Text('Sair'),
-            ),
-          ],
-        ),
+        if (widget.onLogout != null)
+          PopupMenuButton<String>(
+            tooltip: 'Menu',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (v) {
+              if (v == 'logout') widget.onLogout!();
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 18),
+                    SizedBox(width: 10),
+                    Text('Sair'),
+                  ],
+                ),
+              ),
+            ],
+          ),
       ],
+    );
+  }
+}
+
+/// Logo institucional da UERJ dentro de uma "capsule" circular branca.
+/// A capsule é necessária porque o brasão em si tem tocha laranja e
+/// contorno azul — no fundo azul da AppBar ele "some". A borda branca
+/// destaca e mantém a identidade visual limpa em qualquer tema.
+class _LogoBrasao extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 52,
+      height: 52,
+      padding: const EdgeInsets.all(4),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Image.asset(
+        'assets/images/logomarca-uerj.png',
+        fit: BoxFit.contain,
+      ),
     );
   }
 }
