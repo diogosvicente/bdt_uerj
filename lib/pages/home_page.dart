@@ -20,17 +20,6 @@ class _HomePageState extends State<HomePage> {
   late Future<List<BdtResumo>> future;
   late Future<List<PreBdtPendente>> futurePendentes;
 
-  /// Trava para não abrir o diálogo de confirmação de veículo em loop
-  /// (o `build` roda várias vezes conforme o `FutureBuilder` resolve).
-  /// É resetada quando a data muda — assim se o condutor voltar de `/bdt`
-  /// e trocar a data, o auto-abrir volta a valer.
-  bool _autoOpenTentado = false;
-
-  /// True enquanto um `_reload` está no ar. Serve para suprimir o
-  /// `_maybeAutoOpen` durante o refresh — abrir um AlertDialog enquanto
-  /// o refresh ainda está no ar trava a animação em alguns Androids.
-  bool _refreshing = false;
-
   @override
   void initState() {
     super.initState();
@@ -48,11 +37,6 @@ class _HomePageState extends State<HomePage> {
     return "${two(d.day)}/${two(d.month)}/${d.year}";
   }
 
-  bool _isHoje(DateTime d) {
-    final now = DateTime.now();
-    return d.year == now.year && d.month == now.month && d.day == now.day;
-  }
-
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -66,7 +50,6 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       selectedDate = picked;
       future = BdtService.listarDoDia(data: _apiDate(selectedDate));
-      _autoOpenTentado = false; // nova data → volta a valer o auto-abrir
     });
   }
 
@@ -75,13 +58,6 @@ class _HomePageState extends State<HomePage> {
   /// cada seção reage independente, então o card que voltar primeiro já
   /// aparece atualizado.
   Future<void> _reload() async {
-    // Suprime o auto-open enquanto o refresh está no ar (evita AlertDialog
-    // aparecer sobre a mensagem de "atualizada").
-    _refreshing = true;
-    // Marca como "já tentado" para o build atual não abrir dialog no
-    // mesmo tick; será liberado no final quando limparmos _refreshing.
-    _autoOpenTentado = true;
-
     final novo = BdtService.listarDoDia(data: _apiDate(selectedDate));
     final novosPendentes = BdtService.listarMeusPreBdtsPendentes();
     setState(() {
@@ -131,11 +107,6 @@ class _HomePageState extends State<HomePage> {
         ..showSnackBar(
           SnackBar(content: Text('Falha ao atualizar: $e')),
         );
-    } finally {
-      // Fim do refresh: libera o auto-open pra próxima carga (se o usuário
-      // trocar de data ou apertar 🔄 de novo).
-      _refreshing = false;
-      _autoOpenTentado = false;
     }
   }
 
@@ -145,100 +116,12 @@ class _HomePageState extends State<HomePage> {
     Navigator.pushReplacementNamed(context, "/login");
   }
 
-  /// Sprint M1 — abertura direta do BDT:
-  /// se hoje e o condutor tem exatamente 1 BDT, mostra um diálogo de
-  /// confirmação de veículo (placa + marca/modelo) antes de navegar.
-  /// Se ele "Cancelar", cai na lista normalmente.
-  void _maybeAutoOpen(BdtResumo unico) {
-    if (_autoOpenTentado) return;
-    if (_refreshing) return; // não intromete durante refresh
-    if (!_isHoje(selectedDate)) return;
-
-    _autoOpenTentado = true;
-    // Precisa esperar o frame terminar para não abrir dialog dentro do build.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _refreshing) return;
-      _abrirConfirmacaoVeiculo(unico);
-    });
-  }
-
-  Future<void> _abrirConfirmacaoVeiculo(BdtResumo bdt) async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Confirmar veículo'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Você tem apenas um BDT hoje. Confirme o veículo antes de abrir:',
-                style: TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 14),
-              _linhaVeiculo(icone: Icons.confirmation_number, label: 'Placa', valor: bdt.placa),
-              _linhaVeiculo(icone: Icons.directions_car, label: 'Marca', valor: bdt.marcaNome ?? '—'),
-              _linhaVeiculo(icone: Icons.category, label: 'Modelo', valor: bdt.modeloNome ?? '—'),
-              const SizedBox(height: 10),
-              Text(
-                bdt.titulo,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Escolher outro'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Confirmar e abrir'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (!mounted) return;
-    if (confirmar == true) {
-      Navigator.pushNamed(context, '/bdt', arguments: bdt.id);
-    }
-    // Se recusar, fica na lista — o auto-open não repete nesta carga.
-  }
-
-  Widget _linhaVeiculo({required IconData icone, required String label, required String valor}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Icon(icone, size: 18, color: Colors.black54),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 60,
-            child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-          ),
-          Expanded(
-            child: Text(
-              valor.trim().isEmpty ? '—' : valor,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _abrirPreBdtForm() async {
     // Quando volta do form (com Pré-BDT criado ou cancelado), recarrega
     // a lista de pendentes — é a forma mais direta de mostrar o recém-
     // criado sem exigir toque manual no 🔄.
     final result = await Navigator.pushNamed(context, '/pre_bdt/novo');
     if (!mounted) return;
-    _autoOpenTentado = true; // evita auto-open acidental logo depois
-
     if (result == true) {
       setState(() {
         futurePendentes = BdtService.listarMeusPreBdtsPendentes();
@@ -425,7 +308,6 @@ class _HomePageState extends State<HomePage> {
       arguments: bdtId,
     );
     if (!mounted) return;
-    _autoOpenTentado = true; // evita auto-open acidental logo depois
     if (result == true) {
       setState(() {
         futurePendentes = BdtService.listarMeusPreBdtsPendentes();
@@ -439,11 +321,6 @@ class _HomePageState extends State<HomePage> {
       builder: (context, snap) {
         final loading = snap.connectionState != ConnectionState.done;
         final items = snap.data ?? const <BdtResumo>[];
-
-        // Sprint M1 — auto-abrir BDT único (só hoje).
-        if (!loading && items.length == 1) {
-          _maybeAutoOpen(items.first);
-        }
 
         if (loading) {
           return const Padding(
