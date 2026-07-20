@@ -11,6 +11,49 @@
 
 ---
 
+## 0. Regra inegociável — mobile NÃO quebra o web
+
+> O `e-prefeitura` (web) **já está em produção** e atende usuários reais da
+> UERJ. Todo esforço mobile é **aditivo**: criamos código novo, nunca
+> alteramos o comportamento do que já funciona.
+
+**Pode fazer** (aditivo, seguro):
+- Criar **novo controller / route / service / repository** exclusivo pro
+  mobile (padrão: `App\Controllers\e_Transporte\Api\*ApiController`,
+  rotas sob `transporte/api/*`).
+- **Adicionar campo opcional** ao payload de resposta de um endpoint
+  existente (clientes web antigos ignoram silenciosamente).
+- Adicionar **método novo** a um Service/Repository existente — sem
+  mexer nos métodos que a web usa.
+- **Migration aditiva**: `ADD COLUMN` com `NULL` default ou default
+  seguro; nova tabela; novo índice. Nunca `DROP`, nunca `RENAME`,
+  nunca `MODIFY` de tipo de coluna já em uso.
+- Novo campo no `allowedFields` de um Model CI4 (não afeta insert que
+  não envia o campo).
+
+**NÃO pode fazer** (destrutivo, quebra web):
+- Renomear coluna, tabela, rota, método público ou campo de payload
+  que a web consome hoje.
+- Mudar assinatura (parâmetros obrigatórios, ordem, tipo) de método
+  usado pela web.
+- Remover campo do `allowedFields` que a web escreve.
+- Alterar regra de negócio existente (transições de status, permissões,
+  cálculo de saldo, etc.) para "ficar melhor pro mobile" — se a regra
+  precisa mudar de verdade, isso vira uma **tarefa web separada**,
+  discutida e revisada como mudança de contrato, fora do fluxo mobile.
+- Mexer em migration antiga (retroativamente). Sempre nova migration.
+
+**Se você achar que precisa quebrar algo pra viabilizar o mobile:**
+pare, abra uma issue, converse. Provavelmente há uma extensão aditiva
+que resolve — ex.: um endpoint novo `bdt/pre-bdt/meus-pendentes` em
+vez de mudar o filtro de `bdt/pre-bdt/listar` que a web já usa.
+
+**Onde essa regra é verificada:** em toda revisão de PR na branch
+`feature/027-mobile-support`. E antes de mergear no `main` do
+`e-prefeitura`, roda-se a suite web para confirmar que nada regrediu.
+
+---
+
 ## 1. Stack Tecnológica
 
 ### Core
@@ -664,7 +707,7 @@ Fora do escopo atual (app é Android-first). Se um dia compilar iOS, adicionar `
 
 1. [ ] **Model** — `lib/models/feature_resumo.dart` (imutável, `.fromJson` tolerante)
 2. [ ] **Service (categoria correta)** — em `lib/services/`. Se for API, retornar `Model` ou `Result`.
-3. [ ] **Endpoint no backend** — se ainda não existe, criar na branch `feature/027-mobile-support` do `e-prefeitura` (registrar no stub `SPRINTS_MOBILE.md` de lá).
+3. [ ] **Endpoint no backend** — se ainda não existe, criar (nunca modificar rota/método/campo já usado pela web — ver §0) na branch `feature/027-mobile-support` do `e-prefeitura` (registrar no stub `SPRINTS_MOBILE.md` de lá).
 4. [ ] **Page** — em `lib/pages/`. StatefulWidget, `initState`/`_bootstrap`, tratar `!mounted`.
 5. [ ] **Widgets reutilizáveis** — em `lib/widgets/` (sem lógica de negócio).
 6. [ ] **Rota** — nomeada em `lib/main.dart` (nome curto, prefixado).
