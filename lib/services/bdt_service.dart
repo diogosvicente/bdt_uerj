@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../models/bdt_km_estado.dart';
 import '../models/bdt_resumo.dart';
 import '../models/feedback_condutor.dart';
 import '../models/passageiro.dart';
@@ -48,11 +49,18 @@ class BdtService {
     });
   }
 
-  /// Inicia trecho (agendaId opcional => trecho extra)
+  /// Inicia trecho (agendaId opcional => trecho extra).
+  ///
+  /// Sprint M4 (patch) — [kmInicial] é opcional. Se != null e o BDT
+  /// ainda não tinha KM inicial, o backend salva. Se == null, nada
+  /// acontece com a KM (não sobrescreve). Independente disso, o backend
+  /// AUTO-ABRE o BDT se estava `EM_ABERTO` — o condutor não fica preso
+  /// porque esqueceu de "iniciar BDT" antes (mesma regra do web).
   static Future<bool> iniciarTrecho({
     required int bdtId,
     int? agendaId,
     required int trechoId,
+    double? kmInicial,
   }) async {
     final usuarioId = await _userId();
 
@@ -64,6 +72,7 @@ class BdtService {
       "usuario_id": usuarioId,
       if (agendaId != null && agendaId > 0) "agenda_id": agendaId,
       if (loc != null) "loc": loc,
+      if (kmInicial != null && kmInicial > 0) "km_inicial": kmInicial,
     };
 
     final res = await ApiClient.post(
@@ -71,6 +80,24 @@ class BdtService {
       payload,
     );
     return res != null && res["success"] == true;
+  }
+
+  /// Sprint M4 (patch) — consulta rápida do estado da KM do BDT.
+  /// Retorna null em falha de rede (o app deve tratar como "não sei",
+  /// e nesse caso melhor pular o dialog para não bloquear o condutor).
+  static Future<BdtKmEstado?> obterEstadoKm(int bdtId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/km/estado', {
+      'usuario_id': usuarioId,
+      'bdt_id': bdtId,
+    });
+    if (res['success'] != true) {
+      _log.warn('obterEstadoKm#$bdtId FALHOU: ${res['message']}');
+      return null;
+    }
+    final data = res['data'];
+    if (data is! Map) return null;
+    return BdtKmEstado.fromJson(Map<String, dynamic>.from(data));
   }
 
   /// Finaliza trecho (envia loc junto se tiver)

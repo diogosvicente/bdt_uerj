@@ -168,6 +168,22 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
   - **Backend**: nova tabela `trnsp_bdt_feedback_condutor` (1 por BDT) + `POST bdt/feedback-condutor/registrar` (upsert), `POST bdt/feedback-condutor/obter`, `POST bdt/encerrar` (muda `id_status_atual` para `ENCERRADO=3` com transação).
   - **Frontend**: `ConclusaoPage` (rota `/conclusao`) com estrelas 1–5 + comentário + botão "Encerrar BDT" (habilita só depois do feedback salvo, com confirmação).
   - Novos itens no `_openBdtActionsSheet` do `bdt_page.dart`: "Validar início" e "Concluir viagem".
+- ✅ Auto-abertura de BDT ao iniciar trecho + KM inicial opcional —
+  paridade com o web, que já fazia isso automaticamente.
+  - **Backend** (`feature/027-mobile-support`): `BdtApiService::iniciarTrecho`
+    ganhou parâmetro `?float $kmInicial` (opcional, salva só se
+    `trnsp_bdt.km_inicial` estava vazio) e um helper privado
+    `iniciarBdtSeAberto()` — réplica intencional de
+    `BDTController::iniciarBdtSeAberto` do web (muda status
+    `EM_ABERTO → EM_ANDAMENTO`, insere histórico "BDT iniciado
+    automaticamente...", com `origem = 'mobile'`). Novo endpoint
+    `POST bdt/km/estado` — consulta leve `{km_inicial, km_final,
+    id_status_atual}` para o app decidir se precisa perguntar KM.
+  - **Frontend**: novo model `BdtKmEstado`; `BdtService.obterEstadoKm`
+    e `iniciarTrecho` com `kmInicial?` opcional. Em `bdt_page.dart`,
+    helper `_askKmInicialSePreciso` mostra dialog com campo numérico
+    e três botões (Cancelar / Pular / Salvar e iniciar) antes das
+    duas chamadas de `iniciarTrecho` existentes.
 
 ---
 

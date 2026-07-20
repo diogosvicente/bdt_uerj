@@ -334,6 +334,76 @@ class _BdtPageState extends State<BdtPage> {
     _startPontosMonitor(bdtId, trechoId);
   }
 
+  /// Sprint M4 (patch) — antes de iniciar um trecho, verifica no
+  /// backend se o BDT ainda não tem KM inicial. Se precisar, mostra
+  /// um dialog pedindo o valor. Retorna a decisão do usuário: **cancelar**
+  /// (aborta o iniciar-trecho), **pular** (segue sem enviar KM) ou
+  /// **valor** (envia KM pro backend gravar antes de iniciar o trecho).
+  ///
+  /// Falha de rede no /km/estado → trata como "não precisa perguntar"
+  /// pra não bloquear o condutor por um GET secundário; a KM pode ser
+  /// preenchida depois pela web.
+  Future<_KmDecision> _askKmInicialSePreciso(int bdtId) async {
+    final estado = await BdtService.obterEstadoKm(bdtId);
+    if (!mounted) return const _KmDecision.cancel();
+    if (estado == null || !estado.precisaPerguntarKmInicial) {
+      return const _KmDecision.skip();
+    }
+
+    final ctrl = TextEditingController();
+    final result = await showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('KM inicial'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Você ainda não informou a KM do odômetro no início do BDT. '
+              'Pode preencher agora — ou pular e informar depois.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'KM inicial',
+                border: OutlineInputBorder(),
+                suffixText: 'km',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ''),
+            child: const Text('Pular'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Salvar e iniciar'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+
+    if (result == null) return const _KmDecision.cancel();
+    if (result.isEmpty) return const _KmDecision.skip();
+    final km = double.tryParse(result.replaceAll(',', '.'));
+    if (km == null || km <= 0) return const _KmDecision.skip();
+    return _KmDecision.value(km);
+  }
+
   /// Liga o polling do contador de pontos pendentes na fila SQLite +
   /// a subscription de conectividade. Chamado em [_startTracking].
   void _startPontosMonitor(int bdtId, int trechoId) {
@@ -1149,6 +1219,15 @@ class _BdtPageState extends State<BdtPage> {
 
                                   if (!mounted || !sheetOpen) return;
 
+                                  // Sprint M4 (patch) — se o BDT ainda não tem
+                                  // KM inicial, pergunta antes. Cancelar =
+                                  // aborta o iniciar-trecho (respeita o clique
+                                  // em "Cancelar" do dialog).
+                                  final kmDecision =
+                                      await _askKmInicialSePreciso(bdtId);
+                                  if (!mounted || !sheetOpen) return;
+                                  if (kmDecision.cancelled) return;
+
                                   // ✅ NOVO: mostra banner de progresso IMEDIATAMENTE
                                   setLocal(() {
                                     showProgress = true;
@@ -1164,6 +1243,7 @@ class _BdtPageState extends State<BdtPage> {
                                           ? agendaId
                                           : null,
                                       trechoId: trechoId,
+                                      kmInicial: kmDecision.value,
                                     );
 
                                     if (!mounted || !sheetOpen) return;
@@ -1617,12 +1697,19 @@ class _BdtPageState extends State<BdtPage> {
                 return;
               }
 
+              // Sprint M4 (patch) — pergunta KM inicial se ainda não foi
+              // informada. Se cancelar, aborta.
+              final kmDecision = await _askKmInicialSePreciso(bdtId);
+              if (!mounted) return;
+              if (kmDecision.cancelled) return;
+
               setState(() => busyTrechoId = trechoId);
               try {
                 final ok = await BdtService.iniciarTrecho(
                   bdtId: bdtId,
                   agendaId: agendaId,
                   trechoId: trechoId,
+                  kmInicial: kmDecision.value,
                 );
 
                 if (!mounted) return;
@@ -2667,4 +2754,19 @@ class _BdtPageState extends State<BdtPage> {
             ),
     );
   }
+}
+
+/// Resultado do dialog "informe a KM inicial". Três estados possíveis:
+/// - [_KmDecision.cancel] — usuário fechou o dialog; o iniciar-trecho
+///   deve ser abortado.
+/// - [_KmDecision.skip] — usuário optou por não informar agora (ou
+///   nem chegou a ver o dialog porque o BDT já tinha KM). Segue com
+///   o iniciar-trecho sem enviar KM.
+/// - [_KmDecision.value] — usuário digitou um valor; envia junto.
+class _KmDecision {
+  final bool cancelled;
+  final double? value;
+  const _KmDecision.cancel() : cancelled = true, value = null;
+  const _KmDecision.skip()   : cancelled = false, value = null;
+  const _KmDecision.value(double v) : cancelled = false, value = v;
 }
