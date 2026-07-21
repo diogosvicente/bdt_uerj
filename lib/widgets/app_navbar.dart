@@ -173,30 +173,61 @@ class _AppNavbarState extends State<AppNavbar> {
                   )
                 : const Icon(Icons.refresh),
           ),
-        if (widget.onLogout != null)
-          PopupMenuButton<String>(
-            tooltip: 'Menu',
-            icon: const Icon(Icons.more_vert),
-            onSelected: (v) {
-              if (v == 'logout') widget.onLogout!();
-            },
-            itemBuilder: (context) => [
-              // Cabeçalho não-clicável identificando o usuário logado.
-              // `enabled: false` faz o Material desabilitar o toque e
-              // deixar o texto acinzentado — visual de "info", não de ação.
-              if (_nomeLogado.isNotEmpty)
-                PopupMenuItem(
-                  enabled: false,
-                  height: 44,
+        if (widget.onLogout != null) _buildUserMenu(),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  /// Menu do usuário logado. Substitui o `⋮` clássico por um avatar
+  /// com as iniciais do condutor — a identidade fica visível sem
+  /// abrir menu. Ao tocar: card do usuário (label + nome completo)
+  /// no topo, divisor, e "Sair" em vermelho como única ação.
+  Widget _buildUserMenu() {
+    final iniciais = _iniciaisNome(_nomeLogado);
+    return PopupMenuButton<String>(
+      tooltip: _nomeLogado.isEmpty
+          ? 'Menu do usuário'
+          : 'Logado como $_nomeLogado',
+      offset: const Offset(0, 56),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (v) {
+        if (v == 'logout') widget.onLogout!();
+      },
+      itemBuilder: (context) => [
+        // Cabeçalho do menu — card do usuário. `enabled: false` deixa
+        // ele não-clicável (não é ação), e o layout com avatar + label
+        // "Condutor logado" + nome torna óbvio o que representa.
+        if (_nomeLogado.isNotEmpty)
+          PopupMenuItem(
+            enabled: false,
+            height: 68,
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppTheme.primary,
+                  child: Text(
+                    iniciais,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text(
-                        'Logado como',
+                        'Condutor logado',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 10,
                           color: Colors.black54,
+                          letterSpacing: 0.4,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -204,29 +235,81 @@ class _AppNavbarState extends State<AppNavbar> {
                         _nomeLogado,
                         style: const TextStyle(
                           fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w800,
                           color: Colors.black87,
                         ),
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
                       ),
                     ],
                   ),
                 ),
-              if (_nomeLogado.isNotEmpty) const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, size: 18),
-                    SizedBox(width: 10),
-                    Text('Sair'),
-                  ],
+              ],
+            ),
+          ),
+        if (_nomeLogado.isNotEmpty) const PopupMenuDivider(height: 6),
+
+        // "Sair" com cor de ação destrutiva — ícone e texto em vermelho
+        // (AppTheme.danger). Antes o ícone padrão ficava quase invisível
+        // sobre o fundo claro do menu.
+        const PopupMenuItem(
+          value: 'logout',
+          height: 44,
+          child: Row(
+            children: [
+              Icon(Icons.logout, size: 20, color: AppTheme.danger),
+              SizedBox(width: 12),
+              Text(
+                'Sair',
+                style: TextStyle(
+                  color: AppTheme.danger,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
           ),
+        ),
       ],
+      // O trigger do menu é o avatar. Se ainda não carregou nome, mostra
+      // ícone genérico de pessoa — sem avatar vazio esquisito.
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white70, width: 1.5),
+        ),
+        child: CircleAvatar(
+          radius: 16,
+          backgroundColor: Colors.white,
+          child: iniciais.isEmpty
+              ? const Icon(Icons.person, color: AppTheme.primary, size: 20)
+              : Text(
+                  iniciais,
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+        ),
+      ),
     );
+  }
+
+  /// Extrai iniciais do nome do usuário para o avatar.
+  /// "Diogo da Silva Vicente" → "DV" (primeiro nome + último sobrenome).
+  /// "Diogo" → "D". Vazio → "" (o widget usa ícone person como fallback).
+  static String _iniciaisNome(String nome) {
+    final partes = nome
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (partes.isEmpty) return '';
+    if (partes.length == 1) return partes.first.substring(0, 1).toUpperCase();
+    return (partes.first.substring(0, 1) + partes.last.substring(0, 1))
+        .toUpperCase();
   }
 }
 
