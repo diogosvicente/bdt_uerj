@@ -53,10 +53,14 @@ class AuthService {
     String senha, {
     String? captchaToken,
     String? captcha,
+    bool manterConectado = false,
   }) async {
     final payload = <String, dynamic>{
       'cpf': cpf,
       'senha': senha,
+      // MSEC.4 — backend usa esse flag pra decidir TTL do refresh
+      // (24h se falso, 30d se true). O access sempre é 15min.
+      'manter_conectado': manterConectado,
       if (captchaToken != null && captchaToken.isNotEmpty)
         'captcha_token': captchaToken,
       if (captcha != null && captcha.isNotEmpty) 'captcha': captcha,
@@ -89,10 +93,13 @@ class AuthService {
 
     final prefs = await SharedPreferences.getInstance();
 
-    if (res['token'] != null) {
-      // MSEC.1 — token vive no Keystore/Keychain via TokenStorage,
-      // não mais em SharedPreferences plaintext.
-      await TokenStorage.write(res['token'].toString());
+    // MSEC.4 — o backend agora retorna access_token + refresh_token
+    // separados. Guarda ambos; refresh vazio = compat com backend antigo
+    // que ainda só devolve `token` (mesmo valor do access, 2 dias).
+    final access  = (res['access_token'] ?? res['token'] ?? '').toString();
+    final refresh = (res['refresh_token'] ?? '').toString();
+    if (access.isNotEmpty) {
+      await TokenStorage.writePair(access: access, refresh: refresh);
     }
 
     final dynamic rawId = usuario['id'];
@@ -117,6 +124,23 @@ class AuthService {
   }
 
   static Future<void> logout() async {
+    // MSEC.4 — revoga server-side ANTES de limpar local. Best-effort:
+    // se falhar (sem rede, backend fora), continua o logout local. O
+    // pior caso é o token continuar válido no backend até expirar
+    // naturalmente (access = 15min, refresh = 24h/30d).
+    try {
+      final access  = await TokenStorage.readAccess();
+      final refresh = await TokenStorage.readRefresh();
+      if ((access ?? '').isNotEmpty || (refresh ?? '').isNotEmpty) {
+        await ApiClient.post('transporte/api/bdt/token/revogar', {
+          if ((access ?? '').isNotEmpty) 'access_token': access,
+          if ((refresh ?? '').isNotEmpty) 'refresh_token': refresh,
+        });
+      }
+    } catch (_) {
+      // silencioso — logout local sempre acontece
+    }
+
     // MSEC.1 — token no secure storage (Keystore/Keychain).
     await TokenStorage.clear();
     final prefs = await SharedPreferences.getInstance();
@@ -144,7 +168,7 @@ class AuthService {
   /// o backend precisa resolver o usuário pelo Bearer token; se ele
   /// estiver expirado/inválido, responde 401.
   static Future<bool> verifyToken() async {
-    final token = await TokenStorage.read();
+    final token = await TokenStorage.readAccess();
     if (token == null || token.isEmpty) return false;
 
     final res = await ApiClient.post('transporte/api/bdt/dia', const {});

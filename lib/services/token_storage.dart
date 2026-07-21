@@ -1,29 +1,30 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Armazenamento do token de autenticação (Bearer) do usuário logado.
+/// Armazenamento dos tokens de autenticação do usuário logado.
 ///
-/// **Sprint MSEC.1 (2026-07-21)** — antes, o token vivia em
-/// `SharedPreferences` plaintext. Se o device fosse rootado ou o
-/// backup extraído, o token vazava e — como não expira até a MSEC.4 —
-/// o abuso era indefinido. Agora vive em `flutter_secure_storage`
-/// (Android Keystore / iOS Keychain), mesmo padrão da senha.
+/// **Sprint MSEC.1 (2026-07-21)** — tokens saem de `SharedPreferences`
+/// plaintext e passam pro `flutter_secure_storage` (Android Keystore /
+/// iOS Keychain), mesmo padrão da senha.
 ///
-/// A primeira execução após atualizar o app migra o token antigo
-/// (que estava em `SharedPreferences.getString('token')`)
-/// automaticamente — o usuário nem percebe.
+/// **Sprint MSEC.4 (2026-07-21)** — passa a guardar dois tokens
+/// separados:
+///   - **access** (curto, ~15min) — enviado no header `Authorization`
+///     em todo request. Quando expirar, o backend responde
+///     `401 TOKEN_EXPIRED` e o `ApiClient` dispara `refresh`
+///     automaticamente (transparente pra UI).
+///   - **refresh** (longo, 24h ou 30d) — usado só pelo endpoint
+///     `bdt/token/refresh` pra trocar por um novo par
+///     (access+refresh rotacionado).
 ///
-/// Categoria: STORAGE (`docs/ARCHITECTURE.md §4.4`). Nunca chama
-/// HTTP; se precisar validar contra o backend, é o `AuthService`
-/// que orquestra.
+/// Categoria: STORAGE (`docs/ARCHITECTURE.md §4.4`).
 class TokenStorage {
-  /// Chave em secure storage — não usa a mesma string 'token' antiga
-  /// pra deixar óbvio que estamos num namespace diferente.
-  static const _kTokenSecure = 'auth_token_secure';
+  // MSEC.1 — chave do access (era só 'token' antes)
+  static const _kAccessSecure = 'auth_token_secure';
+  // MSEC.4 — nova chave do refresh
+  static const _kRefreshSecure = 'auth_refresh_secure';
 
-  /// Chave ANTIGA em SharedPreferences — usada só pra migração.
-  /// Depois de migrar, `_kTokenMigrado` = true e a leitura vai direto
-  /// no secure_storage.
+  // Legacy — usada só pela migração 1x (SharedPreferences → secure)
   static const _kTokenLegacy = 'token';
   static const _kTokenMigrado = 'auth_token_migrado_secure';
 
@@ -31,31 +32,69 @@ class TokenStorage {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
-  /// Lê o token atual. Migra automaticamente se ainda estiver no
-  /// SharedPreferences antigo. Retorna `null` se não tem token.
-  static Future<String?> read() async {
+  // ── Access token ──────────────────────────────────────────────────
+
+  /// Lê o access token atual. Migra automaticamente se ainda estiver
+  /// no SharedPreferences antigo. Retorna `null` se não tem sessão.
+  static Future<String?> readAccess() async {
     await _migrateLegacyIfNeeded();
-    return _secure.read(key: _kTokenSecure);
+    return _secure.read(key: _kAccessSecure);
   }
 
-  /// Grava o token novo — chamado no login. Também remove qualquer
-  /// resquício da versão antiga em plaintext (defesa em profundidade).
-  static Future<void> write(String token) async {
-    await _secure.write(key: _kTokenSecure, value: token);
+  static Future<void> writeAccess(String token) async {
+    await _secure.write(key: _kAccessSecure, value: token);
+    // limpa versão antiga em plaintext, se houver
     final p = await SharedPreferences.getInstance();
     await p.remove(_kTokenLegacy);
     await p.setBool(_kTokenMigrado, true);
   }
 
-  /// Apaga o token — chamado no logout. Limpa AMBOS os locais (secure
-  /// e o legacy) por segurança, mesmo se a migração nunca rodou.
+  // ── Refresh token ─────────────────────────────────────────────────
+
+  /// Lê o refresh token. Retorna null se o app foi instalado ANTES da
+  /// MSEC.4 (só tem access antigo) ou se está deslogado.
+  static Future<String?> readRefresh() async {
+    return _secure.read(key: _kRefreshSecure);
+  }
+
+  static Future<void> writeRefresh(String token) async {
+    await _secure.write(key: _kRefreshSecure, value: token);
+  }
+
+  // ── Bulk ──────────────────────────────────────────────────────────
+
+  /// Grava o par (access + refresh) — usado no login e no refresh.
+  /// Um dos dois pode ser vazio (nunca deveria, mas defensivo).
+  static Future<void> writePair({
+    required String access,
+    required String refresh,
+  }) async {
+    await writeAccess(access);
+    if (refresh.isNotEmpty) await writeRefresh(refresh);
+  }
+
+  /// Apaga TUDO — access + refresh + chave legacy. Chamado no logout.
   static Future<void> clear() async {
-    await _secure.delete(key: _kTokenSecure);
+    await _secure.delete(key: _kAccessSecure);
+    await _secure.delete(key: _kRefreshSecure);
     final p = await SharedPreferences.getInstance();
     await p.remove(_kTokenLegacy);
-    // O `_kTokenMigrado` fica — é flag de "migração 1x já rodou",
-    // não muda com logout.
+    // `_kTokenMigrado` fica — migração 1x já rodou, não muda com logout.
   }
+
+  // ── Legacy alias ──────────────────────────────────────────────────
+
+  /// Alias pra `readAccess()`. Mantido pra código que ainda usa
+  /// `TokenStorage.read()` da MSEC.1 (antes do refresh existir).
+  @Deprecated('Use readAccess()')
+  static Future<String?> read() => readAccess();
+
+  /// Alias pra `writeAccess()`. Não guarda refresh — quem tem os dois
+  /// deve usar `writePair()`.
+  @Deprecated('Use writePair() com o par completo')
+  static Future<void> write(String token) => writeAccess(token);
+
+  // ── Migração transparente 1x ──────────────────────────────────────
 
   static Future<void> _migrateLegacyIfNeeded() async {
     final p = await SharedPreferences.getInstance();
@@ -63,7 +102,7 @@ class TokenStorage {
 
     final legacy = p.getString(_kTokenLegacy);
     if (legacy != null && legacy.isNotEmpty) {
-      await _secure.write(key: _kTokenSecure, value: legacy);
+      await _secure.write(key: _kAccessSecure, value: legacy);
     }
     await p.remove(_kTokenLegacy);
     await p.setBool(_kTokenMigrado, true);

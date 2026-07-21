@@ -175,6 +175,9 @@ class _LoginPageState extends State<LoginPage> {
       senha,
       captchaToken: captchaState?.token,
       captcha: captchaAtivo ? captchaController.text.trim() : null,
+      // MSEC.4 — se marcou "Manter conectado", refresh token dura 30d;
+      // caso contrário 24h. O access sempre é 15min e roda no ApiClient.
+      manterConectado: _manterConectado,
     );
 
     if (!mounted) return;

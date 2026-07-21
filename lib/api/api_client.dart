@@ -75,55 +75,42 @@ class ApiClient {
     return Uri.parse('$cleanBase/$cleanEndpoint');
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // MSEC.4 — refresh automático em TOKEN_EXPIRED
+  //
+  // Fluxo:
+  //   1) POST original com Bearer <access>
+  //   2) Se resposta = 401 status=TOKEN_EXPIRED, dispara refresh
+  //      (dedup: só 1 refresh no ar, requests concorrentes esperam)
+  //   3) Se refresh OK → grava par novo + retenta a request original
+  //   4) Se refresh FAIL → devolve a resposta 401 original (a UI /
+  //      AuthService.verifyToken trata como "sessão morta")
+  //
+  // NUNCA retenta mais de uma vez — evita loops infinitos.
+  //
+  // Endpoints do próprio refresh não passam pelo retry (evita
+  // recursão): rota `bdt/token/refresh` sinaliza via _isRefreshCall.
+  // ═══════════════════════════════════════════════════════════════
+
+  /// Completer compartilhado — se N requests recebem TOKEN_EXPIRED
+  /// simultaneamente, só a primeira dispara o refresh; as outras
+  /// aguardam esse Future e reusam o resultado.
+  static Future<bool>? _refreshInFlight;
+
+  static bool _isRefreshCall(String endpoint) =>
+      endpoint.contains('/bdt/token/refresh') ||
+      endpoint.contains('/bdt/token/revogar');
+
   /// Faz POST JSON e retorna Map padronizado (sempre tentando decodificar JSON).
   static Future<Map<String, dynamic>> post(
     String endpoint,
-    Map<String, dynamic> data,
-  ) async {
+    Map<String, dynamic> data, {
+    bool isRetry = false,
+  }) async {
+    Map<String, dynamic> resp;
     try {
-      final token = await TokenStorage.read();
-
-      final uri = _buildUri(endpoint);
-
-      debugPrint("➡️ POST $uri");
-      debugPrint("📦 Body: $data");
-
-      final res = await http
-          .post(
-            uri,
-            headers: {
-              "Content-Type": "application/json",
-              if (token != null && token.isNotEmpty)
-                "Authorization": "Bearer $token",
-            },
-            body: jsonEncode(data),
-          )
-          .timeout(const Duration(seconds: 10));
-
-      final rawBody = res.body;
-      final body = rawBody.trim();
-
-      debugPrint("⬅️ Response ${res.statusCode}: $body");
-
-      // ✅ tenta decodificar JSON SEMPRE
-      final decoded = _tryDecodeJsonMap(body);
-
-      // ✅ se veio JSON, retorna ele (mesmo em 400/401/403)
-      if (decoded != null) {
-        decoded["http_status"] = res.statusCode;
-        return decoded;
-      }
-
-      // ✅ se não veio JSON, retorna erro padronizado
-      return {
-        "success": false,
-        "status": "HTTP_ERROR",
-        "http_status": res.statusCode,
-        "message": body.isNotEmpty
-            ? "Resposta inválida do servidor."
-            : "Servidor retornou resposta vazia.",
-        "raw": rawBody,
-      };
+      final token = await TokenStorage.readAccess();
+      resp = await _doPost(endpoint, data, token);
     } on TimeoutException {
       debugPrint("⏰ Timeout na requisição para $endpoint");
       return {
@@ -140,6 +127,120 @@ class ApiClient {
         "message": "Falha de rede/HTTP.",
       };
     }
+
+    // MSEC.4 — retry silencioso em TOKEN_EXPIRED (só 1 vez).
+    // Nunca retenta o próprio refresh/revogar (evita recursão).
+    final isExpired = resp['http_status'] == 401 &&
+        (resp['status']?.toString() == 'TOKEN_EXPIRED');
+    if (isExpired && !isRetry && !_isRefreshCall(endpoint)) {
+      final refreshOk = await _refreshTokens();
+      if (refreshOk) {
+        debugPrint("🔄 Retry após refresh: $endpoint");
+        return post(endpoint, data, isRetry: true);
+      }
+      // refresh falhou → devolve a resposta 401 original; caller
+      // (AuthService.verifyToken ou UI) decide o que fazer.
+    }
+    return resp;
+  }
+
+  /// Executa o POST HTTP puro (sem retry). Separado pra facilitar teste
+  /// e pra o wrapper acima poder decidir o retry.
+  static Future<Map<String, dynamic>> _doPost(
+    String endpoint,
+    Map<String, dynamic> data,
+    String? token,
+  ) async {
+    final uri = _buildUri(endpoint);
+
+    debugPrint("➡️ POST $uri");
+    debugPrint("📦 Body: $data");
+
+    final res = await http
+        .post(
+          uri,
+          headers: {
+            "Content-Type": "application/json",
+            if (token != null && token.isNotEmpty)
+              "Authorization": "Bearer $token",
+          },
+          body: jsonEncode(data),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    final rawBody = res.body;
+    final body = rawBody.trim();
+
+    debugPrint("⬅️ Response ${res.statusCode}: $body");
+
+    final decoded = _tryDecodeJsonMap(body);
+    if (decoded != null) {
+      decoded["http_status"] = res.statusCode;
+      return decoded;
+    }
+
+    return {
+      "success": false,
+      "status": "HTTP_ERROR",
+      "http_status": res.statusCode,
+      "message": body.isNotEmpty
+          ? "Resposta inválida do servidor."
+          : "Servidor retornou resposta vazia.",
+      "raw": rawBody,
+    };
+  }
+
+  /// Chama `bdt/token/refresh` (dedupado). Retorna true se OK e o par
+  /// novo já foi gravado no `TokenStorage`; false em qualquer falha.
+  static Future<bool> _refreshTokens() async {
+    // Dedup: se já tem refresh em andamento, espera ele.
+    final existing = _refreshInFlight;
+    if (existing != null) return existing;
+
+    final completer = Completer<bool>();
+    _refreshInFlight = completer.future;
+
+    () async {
+      try {
+        final refresh = await TokenStorage.readRefresh();
+        if (refresh == null || refresh.isEmpty) {
+          debugPrint("🔒 refresh: sem refresh token no storage");
+          completer.complete(false);
+          return;
+        }
+
+        // Chama SEM retry (evita recursão). Passa o refresh no body,
+        // não como Bearer — a rota é pública nesse sentido.
+        final res = await _doPost(
+          'transporte/api/bdt/token/refresh',
+          {'refresh_token': refresh},
+          null, // sem Bearer — o refresh_token do body é a credencial
+        );
+
+        if (res['success'] == true) {
+          final newAccess  = (res['access_token']  ?? '').toString();
+          final newRefresh = (res['refresh_token'] ?? '').toString();
+          if (newAccess.isNotEmpty) {
+            await TokenStorage.writePair(
+              access: newAccess,
+              refresh: newRefresh,
+            );
+            debugPrint("🔓 refresh OK — novo par gravado");
+            completer.complete(true);
+            return;
+          }
+        }
+        debugPrint("🔒 refresh FALHOU — status=${res['status']}");
+        completer.complete(false);
+      } catch (e) {
+        debugPrint("🔒 refresh exception: $e");
+        completer.complete(false);
+      } finally {
+        _refreshInFlight = null;
+      }
+    }();
+
+    return completer.future;
   }
 
   /// Tenta decodificar um JSON e retornar somente se for Map<String, dynamic>.

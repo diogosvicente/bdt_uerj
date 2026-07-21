@@ -364,32 +364,44 @@ reais em campo.
     a 10 tentativas/min (600/hora), inviável na prática. Captcha
     continua ativo como camada extra quando `MOBILE_LOGIN_CAPTCHA_ENABLED`.
 
-- ⏳ **MSEC.4 — Expiração + refresh do token** (~4-8h)
-  - **Hoje:** token não expira. Se vaza uma vez, vale pra sempre.
-  - **Fazer no backend:**
-    - Migration aditiva adicionando `expires_at DATETIME NULL` em
-      `trnsp_tokens` (compatível com tokens antigos: NULL = não
-      expira, mantém comportamento atual até MSEC.4b).
-    - Emitir access token curto no login (padrão 15min); guardar
-      refresh token separadamente (ou como coluna nova em
-      `trnsp_tokens` com prazo mais longo, ex.: 30 dias).
-    - Novo endpoint `POST bdt/token/refresh` — recebe refresh
-      token, emite novo access.
-    - Endpoint `POST bdt/token/revogar` pra logout server-side
-      (invalida ambos).
-    - `resolveUserId` valida `expires_at > NOW()` — token expirado
-      retorna 401 com `status=TOKEN_EXPIRED`.
-  - **Fazer no mobile:**
-    - Guardar refresh token no secure_storage (junto com o access
-      via MSEC.1).
-    - Wrapper no `ApiClient` que detecta `401 TOKEN_EXPIRED`,
-      chama `bdt/token/refresh` automaticamente, reenvia a request
-      original. Se refresh também falhar → limpa storage e
-      `Navigator.pushReplacementNamed('/login')`.
-    - `AuthService.verifyToken()` também trata TOKEN_EXPIRED como
-      "não auto-loga, cai na tela de login normal".
-  - **Risco:** médio — mudança mais invasiva; testar bem o fluxo
-    de refresh acontecendo no meio de um upload de GPS/marco.
+- ✅ **MSEC.4 — Expiração + refresh do token** (2026-07-21)
+  - **Backend** (`27b4d09d` no `feature/027-mobile-support`):
+    - `TokenModel::gerarTokenComTTL(userId, tipo, ttlMinutos)` —
+      variante aditiva do `gerarToken()` (que continua fazendo 2 dias
+      fixo pra fluxo web). `revogar(token)` idempotente pra logout.
+    - `AuthApiController::login` emite par `access` (15min) +
+      `refresh` (24h se sem manter_conectado, 30d se marcado).
+      Response tem `access_token` + `refresh_token` + `*_expires_in`;
+      mantém chave legacy `token` = access, pra retrocompat.
+    - `POST bdt/token/refresh` — rotação (revoga o refresh usado e
+      emite par novo). Se refresh vazar e for usado, o legítimo é
+      deslogado no próximo refresh.
+    - `POST bdt/token/revogar` — best-effort logout server-side.
+    - `BdtApiController::resolveUserId` valida `expira_em > NOW()`
+      **em UTC** (bug encontrado no teste: MySQL grava UTC, PHP
+      estava em BRT — comparação ficava incorreta).
+    - `error(401, ...)` promove pra `status=TOKEN_EXPIRED` quando
+      o motivo é token expirado (não confunde com 401 genérico).
+    - Testado via curl: access válido = 200; expirado = 401
+      TOKEN_EXPIRED; refresh válido = par novo; refresh já usado =
+      401 REFRESH_INVALID.
+  - **Mobile** (repo `bdt_uerj`):
+    - `TokenStorage` ampliado com `readAccess/writeAccess/readRefresh/
+      writeRefresh/writePair/clear` — access e refresh separados no
+      Keystore. Migração transparente 1x mantida (v1 → v2).
+    - `AuthService.login` recebe/guarda ambos + passa
+      `manter_conectado` no payload pro backend decidir TTL do refresh.
+    - `AuthService.logout` chama `bdt/token/revogar` best-effort
+      ANTES de limpar local (falha silenciosa se sem rede).
+    - `ApiClient.post` — se recebe `401 TOKEN_EXPIRED`, chama
+      `_refreshTokens()` (dedupado via `Completer` — N requests
+      concorrentes esperam 1 refresh), grava par novo, retenta a
+      request original UMA VEZ. Se refresh também falhar, devolve
+      a resposta 401 original (AuthService trata como sessão morta).
+    - `LoginPage` passa `_manterConectado` na chamada.
+  - **Efeito**: token de sessão nunca fica válido "pra sempre".
+    Access curto (15min) limita janela de abuso se vazar; refresh
+    rotacionado detecta uso concorrente por atacante.
 
 - ⏳ **MSEC.6 — Foto do condutor no avatar (LGPD-safe)** (~3-4h)
   - **Origem:** feedback do usuário em 2026-07-21 sobre o avatar da
