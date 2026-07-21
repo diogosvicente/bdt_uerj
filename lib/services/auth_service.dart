@@ -10,11 +10,20 @@ class LoginResult {
   final bool captchaError;
   final bool captchaReloadRequired;
 
+  /// MSEC.3 — se o backend retornou 429 TOO_MANY_REQUESTS, este flag
+  /// vem true e [retryAfterSeconds] traz quantos segundos esperar
+  /// antes da próxima tentativa. UI deve bloquear o botão "Entrar"
+  /// e mostrar um banner com contagem regressiva.
+  final bool throttled;
+  final int retryAfterSeconds;
+
   const LoginResult._({
     required this.ok,
     this.message,
     this.captchaError = false,
     this.captchaReloadRequired = false,
+    this.throttled = false,
+    this.retryAfterSeconds = 0,
   });
 
   factory LoginResult.success() => const LoginResult._(ok: true);
@@ -26,6 +35,13 @@ class LoginResult {
         message: msg,
         captchaError: true,
         captchaReloadRequired: reload,
+      );
+  factory LoginResult.throttledFailure(String? msg, {required int retryAfter}) =>
+      LoginResult._(
+        ok: false,
+        message: msg,
+        throttled: true,
+        retryAfterSeconds: retryAfter,
       );
 }
 
@@ -57,6 +73,11 @@ class AuthService {
           msg,
           reload: res['captcha_reload'] == true,
         );
+      }
+      if (status == 'TOO_MANY_REQUESTS') {
+        final raw = res['retry_after_seconds'];
+        final retry = raw is int ? raw : int.tryParse(raw?.toString() ?? '') ?? 60;
+        return LoginResult.throttledFailure(msg, retryAfter: retry);
       }
       return LoginResult.failure(msg);
     }

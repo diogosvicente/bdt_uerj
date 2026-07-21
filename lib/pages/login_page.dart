@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../services/credentials_storage.dart';
 import '../services/token_storage.dart';
+import '../theme/app_theme.dart';
 import '../widgets/loading.dart';
 import '../widgets/captcha_field.dart';
 import '../formatters/cpf_input_formatter.dart';
@@ -29,6 +32,13 @@ class _LoginPageState extends State<LoginPage> {
 
   /// Evita processar 2× (initState + didChangeDependencies).
   bool _bootstrapped = false;
+
+  /// MSEC.3 — segundos restantes até o rate-limit do backend expirar.
+  /// > 0 = botão "Entrar" desabilitado + banner com contagem regressiva.
+  /// Zerado = botão liberado, banner some. `_throttleTimer` faz o
+  /// decremento a cada 1s.
+  int _throttleSecondsLeft = 0;
+  Timer? _throttleTimer;
 
   @override
   void didChangeDependencies() {
@@ -89,7 +99,45 @@ class _LoginPageState extends State<LoginPage> {
     cpfController.dispose();
     senhaController.dispose();
     captchaController.dispose();
+    _throttleTimer?.cancel();
     super.dispose();
+  }
+
+  /// MSEC.3 — inicia a contagem regressiva do rate-limit. Cancela
+  /// timer anterior (se houver), seta o contador, e agenda tick 1s.
+  /// Ao zerar, timer pára e botão libera.
+  void _iniciarThrottle(int segundos, String? mensagemBackend) {
+    _throttleTimer?.cancel();
+    setState(() => _throttleSecondsLeft = segundos > 0 ? segundos : 60);
+
+    _throttleTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        if (_throttleSecondsLeft > 0) _throttleSecondsLeft--;
+        if (_throttleSecondsLeft == 0) {
+          t.cancel();
+          _throttleTimer = null;
+        }
+      });
+    });
+
+    // Feedback imediato — snackbar breve, o banner permanente cuida
+    // do resto (contagem regressiva).
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            (mensagemBackend ?? '').trim().isNotEmpty
+                ? mensagemBackend!
+                : 'Muitas tentativas de login. Aguarde um momento.',
+          ),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
   }
 
   Future<void> _doLogin() async {
@@ -143,6 +191,14 @@ class _LoginPageState extends State<LoginPage> {
     // Reobtém o state atual pelo GlobalKey — a referência antiga capturada
     // antes do await pode estar defunct se o CaptchaField foi remontado.
     final captchaStateAtual = _captchaKey.currentState;
+
+    if (result.throttled) {
+      // MSEC.3 — backend disse 429. Inicia countdown que bloqueia o
+      // botão "Entrar" até zerar. Snackbar longo (não vai sumir sozinho
+      // — o timer decide) com contagem regressiva.
+      _iniciarThrottle(result.retryAfterSeconds, result.message);
+      return;
+    }
 
     if (result.captchaError) {
       // Backend rejeitou o captcha: o banner de erro dentro do
@@ -321,12 +377,50 @@ class _LoginPageState extends State<LoginPage> {
 
                         const SizedBox(height: 16),
 
+                        if (_throttleSecondsLeft > 0) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: AppTheme.danger.withValues(alpha: 0.08),
+                              border: Border.all(
+                                  color: AppTheme.danger, width: 1.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.timer_outlined,
+                                    color: AppTheme.danger, size: 22),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Muitas tentativas. Aguarde '
+                                    '${_throttleSecondsLeft}s antes de tentar novamente.',
+                                    style: const TextStyle(
+                                      color: AppTheme.danger,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         ElevatedButton(
-                          onPressed: _doLogin,
+                          // MSEC.3 — botão bloqueia enquanto rate-limit
+                          // do backend não zerar. Timer decrementa
+                          // `_throttleSecondsLeft` a cada 1s.
+                          onPressed: _throttleSecondsLeft > 0 ? null : _doLogin,
                           style: ElevatedButton.styleFrom(
                             minimumSize: const Size(double.infinity, 50),
                           ),
-                          child: const Text("Entrar"),
+                          child: Text(
+                            _throttleSecondsLeft > 0
+                                ? 'Aguarde ${_throttleSecondsLeft}s'
+                                : 'Entrar',
+                          ),
                         ),
                       ],
                     ),

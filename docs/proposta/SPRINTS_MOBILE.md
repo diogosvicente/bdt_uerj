@@ -337,18 +337,29 @@ reais em campo.
     fallback (não deveria, mas confirmar via log da fase 1), ele
     quebra na fase 2. Por isso as duas fases.
 
-- ⏳ **MSEC.3 — Rate limiting no `POST /transporte/api/login`** (~2h)
-  - **Hoje:** sem limite de tentativas. Brute force via mobile (ou
-    qualquer cliente HTTP com um dicionário) é totalmente viável.
-    O captcha mitiga parcialmente, mas é opcional via env.
-  - **Fazer:** aplicar CI4 `Services::throttler()` no endpoint
-    de login com regra tipo "10 tentativas/minuto por CPF + 30/min
-    por IP". Retornar `429 Too Many Requests` com header
-    `Retry-After`. UI mobile mostra "Muitas tentativas — aguarde
-    N segundos" (banner na `LoginPage`, similar ao banner de erro
-    do captcha).
-  - **Risco:** baixo — throttler é built-in do CI4 e adota fail-open
-    (se o store cair, deixa passar).
+- ✅ **MSEC.3 — Rate limit no `POST /transporte/api/login`** (2026-07-21)
+  - **Backend** (`AuthApiController::login`): `Services::throttler()`
+    aplicado ANTES do captcha check e ANTES de qualquer query no
+    banco. Regra: **10 tentativas por CPF por minuto**. Se estourar,
+    retorna `429 TOO_MANY_REQUESTS` com header `Retry-After` e body
+    `{status: 'TOO_MANY_REQUESTS', retry_after_seconds: N,
+    message: 'Aguarde N segundos...'}`. Testado via curl (12 requests
+    em sequência → 10 respondem CAPTCHA_ERROR, 11-12 respondem 429).
+    Rate limit **só por CPF** (não por IP) — condutores da UERJ
+    provavelmente compartilham NAT e limitar por IP bloquearia todos
+    juntos. Chave de cache `login_cpf_<cpf>` (underscore em vez de `:`
+    por causa dos reserved chars do CI4 CacheHandler).
+  - **Mobile** (`AuthService` + `LoginPage`):
+    - `LoginResult.throttledFailure(msg, retryAfter)` — novo caso.
+    - `AuthService.login` detecta `status=TOO_MANY_REQUESTS` e converte.
+    - `LoginPage`: novo state `_throttleSecondsLeft` + `Timer.periodic`
+      decrementa 1s. Botão "Entrar" desabilitado (label vira
+      "Aguarde Ns"). Banner vermelho com ícone timer + contagem
+      regressiva acima do botão. Timer cancela no `dispose`.
+    - Snackbar breve no início da penalidade + banner permanente.
+  - **Efeito:** brute force de senha via CPF conhecido fica limitado
+    a 10 tentativas/min (600/hora), inviável na prática. Captcha
+    continua ativo como camada extra quando `MOBILE_LOGIN_CAPTCHA_ENABLED`.
 
 - ⏳ **MSEC.4 — Expiração + refresh do token** (~4-8h)
   - **Hoje:** token não expira. Se vaza uma vez, vale pra sempre.
