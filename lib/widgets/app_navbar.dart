@@ -180,11 +180,15 @@ class _AppNavbarState extends State<AppNavbar> {
   }
 
   /// Menu do usuário logado. Substitui o `⋮` clássico por um avatar
-  /// com as iniciais do condutor — a identidade fica visível sem
-  /// abrir menu. Ao tocar: card do usuário (label + nome completo)
-  /// no topo, divisor, e "Sair" em vermelho como única ação.
+  /// — na primeira versão eram as iniciais do nome, mas isso gerava
+  /// combinações constrangedoras ("CU" para Cláudio Ulisses, "PP",
+  /// "VD", etc.). A foto real do condutor será implementada na
+  /// MSEC.6 (endpoint autenticado + cache local com TTL). Até lá,
+  /// mostramos um ícone `account_circle` genérico e neutro.
+  ///
+  /// Ao tocar: card do usuário no topo (avatar + label + nome
+  /// completo), divisor, e "Sair" em vermelho como única ação.
   Widget _buildUserMenu() {
-    final iniciais = _iniciaisNome(_nomeLogado);
     return PopupMenuButton<String>(
       tooltip: _nomeLogado.isEmpty
           ? 'Menu do usuário'
@@ -204,16 +208,13 @@ class _AppNavbarState extends State<AppNavbar> {
             height: 68,
             child: Row(
               children: [
-                CircleAvatar(
+                const CircleAvatar(
                   radius: 20,
                   backgroundColor: AppTheme.primary,
-                  child: Text(
-                    iniciais,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
+                  child: Icon(
+                    Icons.account_circle,
+                    color: Colors.white,
+                    size: 28,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -270,8 +271,10 @@ class _AppNavbarState extends State<AppNavbar> {
           ),
         ),
       ],
-      // O trigger do menu é o avatar. Se ainda não carregou nome, mostra
-      // ícone genérico de pessoa — sem avatar vazio esquisito.
+      // Trigger do menu — círculo branco com ícone person. Neutro e
+      // seguro (sem combinações de iniciais problemáticas). Quando a
+      // MSEC.6 entrar, aqui vira `Image.file(cachedFoto)` com este
+      // ícone como fallback.
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.all(2),
@@ -279,37 +282,17 @@ class _AppNavbarState extends State<AppNavbar> {
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white70, width: 1.5),
         ),
-        child: CircleAvatar(
+        child: const CircleAvatar(
           radius: 16,
           backgroundColor: Colors.white,
-          child: iniciais.isEmpty
-              ? const Icon(Icons.person, color: AppTheme.primary, size: 20)
-              : Text(
-                  iniciais,
-                  style: const TextStyle(
-                    color: AppTheme.primary,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
-                ),
+          child: Icon(
+            Icons.account_circle,
+            color: AppTheme.primary,
+            size: 26,
+          ),
         ),
       ),
     );
-  }
-
-  /// Extrai iniciais do nome do usuário para o avatar.
-  /// "Diogo da Silva Vicente" → "DV" (primeiro nome + último sobrenome).
-  /// "Diogo" → "D". Vazio → "" (o widget usa ícone person como fallback).
-  static String _iniciaisNome(String nome) {
-    final partes = nome
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((p) => p.isNotEmpty)
-        .toList();
-    if (partes.isEmpty) return '';
-    if (partes.length == 1) return partes.first.substring(0, 1).toUpperCase();
-    return (partes.first.substring(0, 1) + partes.last.substring(0, 1))
-        .toUpperCase();
   }
 }
 
