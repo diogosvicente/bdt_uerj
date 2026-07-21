@@ -545,6 +545,33 @@ refino desses, registrar aqui em vez de deixar só no commit
   `bdt/detalhes` mobile e no sync. Aguardando `ano/numero` do BDT
   que ele viu bugar + sequência exata de cliques pra reproduzir.
 
+- ✅ **Iniciar/Finalizar trecho — retorno de exec ignorado + spinner
+  travado** (2026-07-21) — usuário reportou "aqui sempre trava, não
+  avança" no dialog KM inicial. Achei **três bugs sobrepostos** no
+  `bdt_page`:
+  1. `isBusyThis` era declarado no **outer builder** do
+     `showModalBottomSheet` (só roda 1x), fora do `StatefulBuilder`.
+     Chamadas de `setLocal(() => showProgress = true)` não
+     reavaliavam a expressão — botão "Iniciar"/"Finalizar" continuava
+     clicável durante o processamento e sem spinner. Movido pra
+     dentro do `StatefulBuilder.builder`.
+  2. Retorno de `BdtService.atualizarTrechoExecucao(...)` era
+     ignorado nos dois sheets. Se o backend retornasse erro (ex:
+     coluna faltante no dev DB — ver item abaixo), o app fingia
+     sucesso: iniciava o tracking, fechava o sheet, mostrava
+     "Trecho iniciado" — mas hora/odômetro nunca chegavam ao
+     banco. Agora captura `okExec`; falso ⇒ mostra `formError`
+     no próprio sheet e aborta antes de fechar.
+  3. Causa raiz da manifestação "aqui sempre trava": este dev DB
+     estava sem a coluna `trnsp_solicitacao_trechos.distancia_km`
+     (migration `2026-05-13-100000_AddDistanciaKmToTrnspSolicitacaoTrechos`
+     estava registrada como `batch=1` em `migrations` mas a coluna
+     não existia — provavelmente restaurada de dump antigo). O
+     `AgendaTrechosModel::find()` fazia `SELECT ..., st.distancia_km, ...`
+     e falhava. Fix local: `ALTER TABLE ... ADD COLUMN distancia_km`.
+     Sem impacto pra outros ambientes (migration existente cobre
+     do zero).
+
 ---
 
 ## 🔀 Trabalho complementar (Web+Mobile) — encaixa nas sprints acima

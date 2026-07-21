@@ -1161,10 +1161,15 @@ class _BdtPageState extends State<BdtPage> {
       showDragHandle: true,
       builder: (ctx) {
         final pad = MediaQuery.of(ctx).viewInsets.bottom;
-        final bool isBusyThis = (busyTrechoId == trechoId) || showProgress;
 
         return StatefulBuilder(
           builder: (ctx, setLocal) {
+            // Precisa ficar dentro do StatefulBuilder pra reavaliar em
+            // cada setLocal — se estivesse no outer builder do sheet,
+            // showProgress mudaria mas isBusyThis nunca atualizaria.
+            final bool isBusyThis =
+                (busyTrechoId == trechoId) || showProgress;
+
             void clearErrors() {
               if (odoError != null || formError != null) {
                 setLocal(() {
@@ -1384,7 +1389,8 @@ class _BdtPageState extends State<BdtPage> {
                                             'Salvando dados do trecho…';
                                       });
 
-                                      await BdtService.atualizarTrechoExecucao(
+                                      final okExec =
+                                          await BdtService.atualizarTrechoExecucao(
                                         bdtId: bdtId,
                                         trechoId: trechoId,
                                         data: {
@@ -1396,6 +1402,23 @@ class _BdtPageState extends State<BdtPage> {
                                       );
 
                                       if (!mounted || !sheetOpen) return;
+
+                                      if (!okExec) {
+                                        // Trecho já foi iniciado no backend,
+                                        // mas os dados de execução (hora/odo)
+                                        // não foram salvos. Aborta o fluxo aqui
+                                        // e mostra erro pro condutor decidir —
+                                        // muito pior falhar silenciosamente:
+                                        // ele acreditaria que salvou.
+                                        setLocal(() {
+                                          showProgress = false;
+                                          formError =
+                                              'Trecho iniciado, mas hora/odômetro '
+                                              'não foram salvos. Tente novamente '
+                                              'ou reporte à equipe.';
+                                        });
+                                        return;
+                                      }
 
                                       setLocal(() {
                                         progressMsg = 'Ativando GPS…';
@@ -1500,10 +1523,13 @@ class _BdtPageState extends State<BdtPage> {
       showDragHandle: true,
       builder: (ctx) {
         final pad = MediaQuery.of(ctx).viewInsets.bottom;
-        final bool isBusyThis = (busyTrechoId == trechoId);
 
         return StatefulBuilder(
           builder: (ctx, setLocal) {
+            // Dentro do StatefulBuilder pra reavaliar em cada setLocal —
+            // mesmo motivo do sheet de "Iniciar trecho".
+            final bool isBusyThis = (busyTrechoId == trechoId);
+
             void clearErrors() {
               if (odoError != null || formError != null) {
                 setLocal(() {
@@ -1638,7 +1664,8 @@ class _BdtPageState extends State<BdtPage> {
                                     if (!mounted || !sheetOpen) return;
 
                                     if (ok) {
-                                      await BdtService.atualizarTrechoExecucao(
+                                      final okExec =
+                                          await BdtService.atualizarTrechoExecucao(
                                         bdtId: bdtId,
                                         trechoId: trechoId,
                                         data: {
@@ -1652,6 +1679,21 @@ class _BdtPageState extends State<BdtPage> {
                                       );
 
                                       if (!mounted || !sheetOpen) return;
+
+                                      if (!okExec) {
+                                        // Trecho já foi finalizado no backend,
+                                        // mas os dados (hora/odo chegada) não
+                                        // foram salvos. Aborta com erro pro
+                                        // condutor decidir — melhor que fingir
+                                        // sucesso silenciosamente.
+                                        setLocal(() {
+                                          formError =
+                                              'Trecho finalizado, mas hora/odômetro '
+                                              'de chegada não foram salvos. Tente '
+                                              'novamente ou reporte à equipe.';
+                                        });
+                                        return;
+                                      }
 
                                       _stopTracking();
 
