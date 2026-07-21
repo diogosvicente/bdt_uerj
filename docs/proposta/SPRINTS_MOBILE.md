@@ -284,7 +284,17 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
 > ⚠️ **Redefinição do BDT (nova W7 web):** o web passou a tratar o **BDT como uma VIAGEM** (veículo+condutor, dia/período) que atende **uma ou mais solicitações** (M:N), com **local de embarque + assinatura por solicitação** dentro do BDT e o **local de embarque definido pelo admin**. A consolidação fica no **Painel de BDTs** (filtros + folha de despacho em PDF) — **não** há entidade "Programação" separada. Isso muda o modelo que o app consome: a **criação de BDT/Pré-BDT (M3)** e o **"BDT sem solicitação"** (abaixo) seguem o **BDT = viagem**. As referências "**Sprint N web**" abaixo usam a **numeração do plano original** — **não** mudam com a renumeração dos W-labels no web (a antiga W7 virou W8, …, W15 → W16; foi inserida a nova W7 = Redefinição do BDT).
 
 ### Da Sprint 1 web (Pré-BDT)
-- ⏳ Modal de informações de segurança no BDT (telas + texto)
+- ✅ Modal de informações de segurança no BDT — entregue como
+  wrapper do serviço web existente (aplicando o princípio
+  arquitetural). Botão "Informações de segurança" no
+  `_openBdtActionsSheet` abre `SegurancaBdtDialog`, que consome
+  `POST /transporte/api/bdt/seguranca/textos` — endpoint mobile
+  novo que chama diretamente `SegurancaTextoService::getAtivosParaModal()`
+  (mesma fonte do modal web `_modal_seguranca.php`, dos mesmos
+  textos institucionais editáveis pelo admin em
+  `/transporte/admin/seguranca/textos`). Widget preserva quebras
+  de linha (`Text` já faz `pre-wrap` por padrão). Zero duplicação
+  de conteúdo.
 
 ### Da Sprint 4 web (Trabalho de campo)
 - ✅ Marcar presença/ausência de passageiros — entregue na Sprint M4

@@ -6,6 +6,7 @@ import '../models/bdt_resumo.dart';
 import '../models/feedback_condutor.dart';
 import '../models/passageiro.dart';
 import '../models/pre_bdt_pendente.dart';
+import '../models/seguranca_texto.dart';
 import '../models/veiculo.dart';
 import '../utils/logger.dart';
 import 'location_service.dart';
@@ -98,6 +99,30 @@ class BdtService {
     final data = res['data'];
     if (data is! Map) return null;
     return BdtKmEstado.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// Sprint M6 (Web+Mobile / Sprint 1 web) — textos institucionais de
+  /// segurança exibidos no dialog do BDT. Fonte: `SegurancaTextoService`
+  /// do web — mesma que alimenta o modal web `_modal_seguranca.php`.
+  /// Editável pelo admin sem redeploy.
+  ///
+  /// Retorna lista vazia em qualquer falha — o dialog trata como "não
+  /// há informações cadastradas" (mesmo fallback do modal web).
+  static Future<List<SegurancaTexto>> listarSegurancaTextos() async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/seguranca/textos',
+      {'usuario_id': usuarioId},
+    );
+    if (res['success'] != true) {
+      _log.warn('listarSegurancaTextos FALHOU: ${res['message']}');
+      return const [];
+    }
+    final list = (res['data'] as List<dynamic>? ?? const []);
+    return list
+        .whereType<Map>()
+        .map((e) => SegurancaTexto.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
   }
 
   /// Finaliza trecho (envia loc junto se tiver)

@@ -7,6 +7,7 @@ import '../services/bdt_service.dart';
 import '../services/gps_live_service.dart';
 import '../services/location_service.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/seguranca_bdt_dialog.dart';
 import 'package:flutter/services.dart';
 
 class BdtPage extends StatefulWidget {
@@ -100,6 +101,18 @@ class _BdtPageState extends State<BdtPage> {
                 onTap: () {
                   Navigator.pop(ctx);
                   Future.microtask(() => _openTrechoExtraSheet(bdtId));
+                },
+              ),
+              // Sprint M6 (Web+Mobile / Sprint 1 web) — informações de
+              // segurança. Reusa o mesmo conteúdo do modal web via
+              // endpoint bdt/seguranca/textos.
+              ListTile(
+                leading: const Icon(Icons.shield_outlined),
+                title: const Text("Informações de segurança"),
+                subtitle: const Text("Telefones, conduta, procedimentos"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Future.microtask(() => SegurancaBdtDialog.show(context));
                 },
               ),
               if (podeReabrir)
