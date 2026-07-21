@@ -675,91 +675,193 @@ class _BdtPageState extends State<BdtPage> {
   Future<void> _openTrechoExtraSheet(int bdtId) async {
     final origemCtrl = TextEditingController();
     final destinoCtrl = TextEditingController();
+    final obsCtrl = TextEditingController();
+    final horaSaidaCtrl = TextEditingController();
+    final horaChegadaCtrl = TextEditingController();
+
+    Future<void> pickHora(
+      TextEditingController c,
+      StateSetter setLocal,
+    ) async {
+      final t = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.now(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        ),
+      );
+      if (t == null) return;
+      String two(int v) => v.toString().padLeft(2, '0');
+      setLocal(() {
+        c.text = '${two(t.hour)}:${two(t.minute)}';
+      });
+    }
 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) {
-        final pad = MediaQuery.of(ctx).viewInsets.bottom;
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      "Adicionar trecho extra",
-                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final pad = MediaQuery.of(ctx).viewInsets.bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "Adicionar trecho extra",
+                            style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      "Um trecho que não veio de nenhuma solicitação — "
+                      "ex.: um deslocamento extra que surgiu na viagem.",
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: origemCtrl,
+                      maxLines: 2,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        labelText: "Origem *",
+                        hintText: "Ex.: UERJ Maracanã",
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: origemCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: "Origem",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: destinoCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: "Destino",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 14),
-              FilledButton.icon(
-                onPressed: () async {
-                  final origem = origemCtrl.text.trim();
-                  final destino = destinoCtrl.text.trim();
-
-                  if (origem.isEmpty || destino.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Informe origem e destino."),
-                      ),
-                    );
-                    return;
-                  }
-
-                  final ok = await BdtService.criarTrechoExtra(
-                    bdtId: bdtId,
-                    origem: origem,
-                    destino: destino,
-                  );
-
-                  if (!context.mounted) return;
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        ok
-                            ? "Trecho extra criado."
-                            : "Falha ao criar trecho extra.",
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: destinoCtrl,
+                      maxLines: 2,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        labelText: "Destino *",
+                        hintText: "Ex.: Hospital Pedro Ernesto",
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                  );
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: horaSaidaCtrl,
+                            readOnly: true,
+                            onTap: () => pickHora(horaSaidaCtrl, setLocal),
+                            decoration: const InputDecoration(
+                              labelText: "Saída (HH:MM)",
+                              border: OutlineInputBorder(),
+                              suffixIcon: Icon(Icons.schedule),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: horaChegadaCtrl,
+                            readOnly: true,
+                            onTap: () => pickHora(horaChegadaCtrl, setLocal),
+                            decoration: const InputDecoration(
+                              labelText: "Chegada (HH:MM)",
+                              border: OutlineInputBorder(),
+                              suffixIcon: Icon(Icons.schedule),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: obsCtrl,
+                      maxLines: 2,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        labelText: "Observação (opcional)",
+                        hintText: "Ex.: desvio pela Vermelha por obra",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: () async {
+                        final origem = origemCtrl.text.trim();
+                        final destino = destinoCtrl.text.trim();
 
-                  if (ok) {
-                    Navigator.pop(ctx);
-                    await _load(bdtId);
-                  }
-                },
-                icon: const Icon(Icons.add_road),
-                label: const Text("Cadastrar trecho extra"),
+                        if (origem.isEmpty || destino.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Informe origem e destino."),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final hs = horaSaidaCtrl.text.trim();
+                        final hc = horaChegadaCtrl.text.trim();
+                        // Se preencheu um dos horários, exige o outro
+                        // (senão saída sem chegada, ou vice-versa, fica
+                        // meia-boca no relatório).
+                        if ((hs.isNotEmpty) != (hc.isNotEmpty)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                "Preencha os DOIS horários (saída e chegada) ou nenhum.",
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final ok = await BdtService.criarTrechoExtra(
+                          bdtId: bdtId,
+                          origem: origem,
+                          destino: destino,
+                          horaSaida: hs.isEmpty ? null : hs,
+                          horaChegada: hc.isEmpty ? null : hc,
+                          obs: obsCtrl.text,
+                        );
+
+                        if (!context.mounted) return;
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok
+                                  ? "Trecho extra criado."
+                                  : "Falha ao criar trecho extra.",
+                            ),
+                          ),
+                        );
+
+                        if (ok) {
+                          Navigator.pop(ctx);
+                          await _load(bdtId);
+                        }
+                      },
+                      icon: const Icon(Icons.add_road),
+                      label: const Text("Cadastrar trecho extra"),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

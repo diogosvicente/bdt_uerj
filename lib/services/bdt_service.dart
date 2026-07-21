@@ -254,7 +254,14 @@ class BdtService {
     required int bdtId,
     required String origem,
     required String destino,
-    int? agendaId, // opcional
+    int? agendaId, // opcional (ignorado pelo backend refatorado)
+    // Refino trecho extra (2026-07-21): campos opcionais que trazem
+    // paridade com o form web (folha.php). O backend recém-refatorado
+    // é um wrapper de BdtViagemService::adicionarTrechoAvulso, que
+    // aceita hora_saida/hora_chegada em "HH:MM" e obs texto livre.
+    String? horaSaida,
+    String? horaChegada,
+    String? obs,
   }) async {
     final usuarioId = await _userId();
 
@@ -265,6 +272,11 @@ class BdtService {
       "fk_agenda": agendaId, // null => extra
       "origem": origem,
       "destino": destino,
+      if (horaSaida != null && horaSaida.trim().isNotEmpty)
+        "hora_saida": horaSaida.trim(),
+      if (horaChegada != null && horaChegada.trim().isNotEmpty)
+        "hora_chegada": horaChegada.trim(),
+      if (obs != null && obs.trim().isNotEmpty) "obs": obs.trim(),
     });
 
     return res["success"] == true;

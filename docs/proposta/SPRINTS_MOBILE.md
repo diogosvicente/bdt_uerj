@@ -519,9 +519,33 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
 - ⏳ Cancelar/redirecionar BDT por divergência de carga (UX do condutor)
 
 ### Da Sprint 9 web (Viagens avulsas)
-- ✅ Viagens avulsas no BDT (UX de adicionar) — base entregue
-  (`trecho_extra_form_page.dart` + `POST bdt/trecho-extra/criar`)
-- ⏳ Refinar adição de trechos (gaps de UX) — polimento contínuo
+- ✅ Viagens avulsas no BDT (UX de adicionar) — base já existia
+  (`_openTrechoExtraSheet` + `POST bdt/trechos/create`); o arquivo
+  `trecho_extra_form_page.dart` estava vazio (deletado, sheet cobre).
+- ✅ Refinar adição de trechos (gaps de UX) — **2026-07-21**
+  - **Bug arqueológico**: o `BdtApiService::criarTrechoExtra`
+    reimplementava a criação do trecho, mas o insert saía sem
+    `fk_dia` (NOT NULL na tabela) — passava porque o
+    `allowedFields` filtrava campos silenciosamente. Ao alterar
+    a assinatura pra passar horários eu descobri que o insert
+    nunca gravava nada de verdade nesses casos.
+  - **Fix (aplicando [[bdt_uerj_reusar_codigo_web]])**: refatorado
+    como **wrapper fino** de `BdtViagemService::adicionarTrechoAvulso`
+    (mesmo método que o form web `folha.php` usa). Cria solicitação
+    avulsa + designação + dia se necessário, insere trecho com ordem
+    sequencial + saida/chegada/obs, anexa designação ao BDT.
+    Guards mobile mantidos (`condutorIdOrFail` + `assertBdtPertence`).
+  - **Backend**: `criarTrechoExtra` ganhou params opcionais
+    `?string $horaSaida, $horaChegada, $obs` que viram
+    `hora_saida/hora_chegada/obs` no array passado pro service web.
+    Controller `BdtApiController::criarTrechoExtra` extrai esses
+    campos do JSON e passa adiante.
+  - **Mobile**: `BdtService.criarTrechoExtra` aceita 3 params opcionais.
+    Sheet `_openTrechoExtraSheet` reescrito com StatefulBuilder:
+    origem*, destino*, hora saída (TimePicker 24h), hora chegada
+    (TimePicker 24h), observação — todos com labels/hints inspirados
+    no form web. Valida "os dois horários ou nenhum" pra não gravar
+    trecho meia-boca. Botão mais alto (48px), scroll pra caber teclado.
 
 ### Da Sprint 11 web (Anexo carga)
 - ⏳ Anexo obrigatório de fotos para carga (validação no app)
