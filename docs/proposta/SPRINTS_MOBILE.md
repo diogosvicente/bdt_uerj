@@ -57,15 +57,15 @@ mobile.
 
 ---
 
-## Pré-requisitos (antes de começar mobile)
+## Pré-requisitos (antes de começar mobile) — todos ✅ resolvidos
 
-| | Requisito | Por quê |
+| | Requisito | Estado atual |
 |---|---|---|
-| ⏳ | Repo Flutter clonado e rodando local | Sem isso não dá pra editar nada |
-| ⏳ | Versão do Flutter conhecida (`flutter --version`) | Calibrar libs compatíveis (notifications, background services) |
-| ⏳ | Endpoints da API e-Prefeitura mapeados | Mobile depende de APIs do web |
-| ⏳ | Sprint 0 do `SPRINTS.md` aplicada na `development` | Os 8 roles novos precisam estar criados antes (mobile usa `Abrir BDT no App Mobile` etc.) |
-| ⏳ | Decisão sobre estado de gerenciamento (Provider / Riverpod / Bloc) | Se vai padronizar agora ou herdar o que já existe |
+| ✅ | Repo Flutter clonado e rodando local | `C:\Users\Diogo\Documents\bdt_uerj` — em uso desde M0 |
+| ✅ | Versão do Flutter conhecida | **Flutter 3.41.9 · Dart 3.11.5** (stable). Detalhes em `docs/ARCHITECTURE.md §1` |
+| ✅ | Endpoints da API e-Prefeitura mapeados | Todos sob `transporte/api/*` em `e-prefeitura/app/Config/Routes.php` (grupo mobile). Já em uso ativo pelas sprints M1-M5. |
+| ✅ | Sprint 0 do plano original (papéis novos) aplicada | Entregue como **W0** do plano web (`SPRINTS_WEB.md`). Migration `2026-05-26-100000_InsertTransporteBdtRoles.php` + `App\Constants\TransporteRoles` + `PapeisSeeder`. Papel `Abrir BDT no App Mobile` disponível. |
+| ✅ | Decisão sobre estado de gerenciamento | **StatefulWidget + setState nativo** — decisão por omissão desde M1, consolidada nas 5 sprints seguintes. Provou-se suficiente para o MVP (estado local por tela, sem estado global compartilhado). Migrar pra Provider/Riverpod/Bloc só se surgir necessidade real (ex.: estado compartilhado entre 3+ pages), o que não aconteceu ainda. |
 
 ---
 
