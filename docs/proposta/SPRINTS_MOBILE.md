@@ -284,32 +284,42 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
 > ⚠️ **Redefinição do BDT (nova W7 web):** o web passou a tratar o **BDT como uma VIAGEM** (veículo+condutor, dia/período) que atende **uma ou mais solicitações** (M:N), com **local de embarque + assinatura por solicitação** dentro do BDT e o **local de embarque definido pelo admin**. A consolidação fica no **Painel de BDTs** (filtros + folha de despacho em PDF) — **não** há entidade "Programação" separada. Isso muda o modelo que o app consome: a **criação de BDT/Pré-BDT (M3)** e o **"BDT sem solicitação"** (abaixo) seguem o **BDT = viagem**. As referências "**Sprint N web**" abaixo usam a **numeração do plano original** — **não** mudam com a renumeração dos W-labels no web (a antiga W7 virou W8, …, W15 → W16; foi inserida a nova W7 = Redefinição do BDT).
 
 ### Da Sprint 1 web (Pré-BDT)
-- Modal de informações de segurança no BDT (telas + texto)
+- ⏳ Modal de informações de segurança no BDT (telas + texto)
 
 ### Da Sprint 4 web (Trabalho de campo)
-- Marcar presença/ausência de passageiros
-- Trabalho de campo — exibição do PDF parseado e confirmação
+- ✅ Marcar presença/ausência de passageiros — entregue na Sprint M4
+  (`ValidacaoInicioPage` + `POST bdt/passageiros/marcar-presenca`)
+- ⏳ Trabalho de campo — exibição do PDF parseado e confirmação
+  (depende do parser web)
 
 ### Da Sprint 5 web (Marcos)
-- Marcos PARTIDA / APRESENTAR-SE / PASSAGEIRO (state machine UI)
-- Marco HORA DE SAÍDA (UX no app)
+- ✅ Marcos PARTIDA / APRESENTAR-SE / PASSAGEIRO (state machine UI)
+  — entregues na Sprint M4 (`validacao_inicio_page.dart` linhas
+  146-148: `partida`, `apresentacao`, `embarque_passageiro`; UI de
+  cada um em `_rowMarco` + `AssinaturaMarcoPage`)
+- ⏳ Marco HORA DE SAÍDA (UX no app) — 4º marco adicional, ainda
+  não implementado
 
 ### Da Sprint 6 web (Cargas)
-- Cancelar/redirecionar BDT por divergência de carga (UX do condutor)
+- ⏳ Cancelar/redirecionar BDT por divergência de carga (UX do condutor)
 
 ### Da Sprint 9 web (Viagens avulsas)
-- Viagens avulsas no BDT (UX de adicionar)
-- Refinar adição de trechos (gaps de UX)
+- ✅ Viagens avulsas no BDT (UX de adicionar) — base entregue
+  (`trecho_extra_form_page.dart` + `POST bdt/trecho-extra/criar`)
+- ⏳ Refinar adição de trechos (gaps de UX) — polimento contínuo
 
 ### Da Sprint 11 web (Anexo carga)
-- Anexo obrigatório de fotos para carga (validação no app)
+- ⏳ Anexo obrigatório de fotos para carga (validação no app)
+  — depende do fluxo web de "carga" (Sprint 11 web)
 
 ### Da Sprint 15 web (BDT sem solicitação)
-- Veículo/condutor reais ≠ agendados (UX de checkup no app)
+- ⏳ Veículo/condutor reais ≠ agendados (UX de checkup no app)
 
 ### Da Sprint 17 web (Ocorrências)
-- Anexos de fotos em ocorrências/manutenção (extensão no app)
-- Histórico institucional de ocorrências (visualização no app)
+- ⏳ Anexos de fotos em ocorrências/manutenção (extensão no app)
+  — depende do fluxo web de anexo em ocorrência
+- ⏳ Histórico institucional de ocorrências (visualização no app)
+  — depende do endpoint web de histórico
 
 ---
 
