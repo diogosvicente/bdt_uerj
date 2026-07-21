@@ -145,19 +145,25 @@ class _LoginPageState extends State<LoginPage> {
     final captchaStateAtual = _captchaKey.currentState;
 
     if (result.captchaError) {
-      // Backend rejeitou o captcha: marca o campo em vermelho com a
-      // mensagem específica. Snackbar seria redundante — a mensagem já
-      // aparece embaixo do campo (padrão Material errorText).
-      captchaStateAtual?.showError(
-        result.message ?? 'Captcha incorreto. Tente novamente.',
-      );
-      // O backend pode ter descartado o token; nesse caso recarrega a
-      // imagem para o usuário digitar um novo desafio.
-      if (result.captchaReloadRequired) {
+      // Backend rejeitou o captcha: o banner de erro dentro do
+      // CaptchaField já é destacado (borda vermelha, ícone e título),
+      // então não usa snackbar aqui — seria redundante e pior de ler.
+      // Se o backend descartou o token (captchaReloadRequired), pedimos
+      // um novo desafio ANTES de mostrar a mensagem final — assim o
+      // aviso é mais preciso ("uma nova imagem já foi carregada").
+      final novaImagem = result.captchaReloadRequired;
+      if (novaImagem) {
         captchaController.clear();
         // ignore: discarded_futures
         captchaStateAtual?.reload();
       }
+      final base = (result.message ?? '').trim().isEmpty
+          ? 'Confira as letras/números da imagem e tente novamente.'
+          : result.message!.trim();
+      final msgFinal = novaImagem
+          ? '$base Uma nova imagem foi carregada.'
+          : base;
+      captchaStateAtual?.showError(msgFinal);
       return;
     }
 

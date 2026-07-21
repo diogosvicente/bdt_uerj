@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../services/captcha_service.dart';
+import '../theme/app_theme.dart';
 
 /// Campo composto:
+///   [banner vermelho de erro, se houver]
 ///   [imagem do captcha]  [🔄 recarregar]
 ///   [TextField "Digite o texto acima"]
 ///
@@ -14,6 +16,7 @@ import '../services/captcha_service.dart';
 ///
 /// Para saber o token atual: `key.currentState?.token`
 /// Para recarregar após erro: `key.currentState?.reload()`
+/// Para exibir erro vindo do backend: `key.currentState?.showError(msg)`
 class CaptchaField extends StatefulWidget {
   final TextEditingController controller;
 
@@ -36,10 +39,10 @@ class CaptchaFieldState extends State<CaptchaField> {
   bool _loading = false;
   Object? _error;
 
-  /// Mensagem de validação exibida abaixo do campo (linha vermelha do
-  /// Material `errorText`). O LoginPage seta via [showError] quando o
-  /// backend responde CAPTCHA_ERROR. Some sozinho quando o usuário
-  /// começa a corrigir a digitação.
+  /// Mensagem de erro exibida em destaque (banner vermelho + borda
+  /// vermelha na imagem + `errorText` do campo). O LoginPage seta via
+  /// [showError] quando o backend responde CAPTCHA_ERROR. Some sozinho
+  /// quando o usuário começa a corrigir a digitação.
   String? _validationError;
 
   /// Token atual do desafio, ou null se o captcha está desligado / não carregou.
@@ -49,6 +52,8 @@ class CaptchaFieldState extends State<CaptchaField> {
   /// não precisa mostrar nada e o LoginPage pode pular a validação.
   bool get isDisabledByServer =>
       _challenge != null && !_challenge!.enabled;
+
+  bool get _hasError => _validationError != null;
 
   @override
   void initState() {
@@ -124,6 +129,10 @@ class CaptchaFieldState extends State<CaptchaField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_hasError) ...[
+          _buildErrorBanner(),
+          const SizedBox(height: 8),
+        ],
         Row(
           children: [
             Expanded(child: _buildImageArea()),
@@ -144,10 +153,58 @@ class CaptchaFieldState extends State<CaptchaField> {
           decoration: InputDecoration(
             labelText: 'Digite o texto da imagem',
             border: const OutlineInputBorder(),
-            errorText: _validationError,
+            // errorText mantém a linha vermelha padrão do Material
+            // abaixo do campo (redundância intencional com o banner:
+            // o usuário pode ter rolado a tela e não estar vendo o
+            // banner na hora que tenta re-enviar).
+            errorText: _hasError ? 'Verifique a imagem acima' : null,
           ),
         ),
       ],
+    );
+  }
+
+  /// Banner destacado com ícone, título e mensagem específica.
+  /// Fica acima da imagem do captcha e some assim que o usuário digita
+  /// (via `_clearValidationOnEdit`).
+  Widget _buildErrorBanner() {
+    final msg = _validationError!.trim().isEmpty
+        ? 'Captcha incorreto. Confira as letras/números da imagem e tente novamente.'
+        : _validationError!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.danger.withValues(alpha: 0.08),
+        border: Border.all(color: AppTheme.danger, width: 1.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline, color: AppTheme.danger, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Captcha incorreto',
+                  style: TextStyle(
+                    color: AppTheme.danger,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  msg,
+                  style: const TextStyle(fontSize: 12, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -184,8 +241,13 @@ class CaptchaFieldState extends State<CaptchaField> {
       height: imgHeight,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F7FA),
-        border: Border.all(color: Colors.black12),
+        color: _hasError
+            ? AppTheme.danger.withValues(alpha: 0.05)
+            : const Color(0xFFF5F7FA),
+        border: Border.all(
+          color: _hasError ? AppTheme.danger : Colors.black12,
+          width: _hasError ? 1.4 : 1,
+        ),
         borderRadius: BorderRadius.circular(4),
       ),
       padding: const EdgeInsets.symmetric(vertical: 4),
