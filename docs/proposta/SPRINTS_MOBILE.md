@@ -319,23 +319,26 @@ reais em campo.
     em dumps de storage plaintext. Complementa a senha (que já vivia
     no Keystore desde M1).
 
-- ⏳ **MSEC.2 — Deprecar fallback `usuario_id` no body** (~1h)
-  - **Hoje:** `BdtApiController::resolveUserId` aceita `usuario_id`
-    no body do POST quando o Bearer token não vem — o próprio
-    comentário no código diz *"enquanto você ajusta o app"*.
-    **Efeito:** qualquer requisição sem token, passando `usuario_id`
-    no body, é aceita. Spoofing trivial de identidade — o atacante
-    escolhe qual condutor é.
-  - **Fazer (fase 1, ainda tolerante):** logar `WARN` sempre que
-    `resolveUserId` cair no fallback, incluindo endpoint chamado e
-    IP de origem; garantir que nenhum caminho do app mobile atual
-    ainda depende desse fallback (todos usam Bearer desde M1).
-  - **Fazer (fase 2, após ~1 sprint sem WARN no log):** retornar
-    401 quando não houver token válido, ignorando `usuario_id` do
-    body por completo.
-  - **Risco:** médio — se algum caminho mobile ainda depende do
-    fallback (não deveria, mas confirmar via log da fase 1), ele
-    quebra na fase 2. Por isso as duas fases.
+- 🟡 **MSEC.2 — Deprecar fallback `usuario_id` no body** (2 fases)
+  - ✅ **Fase 1 (2026-07-21) — log WARN**: `BdtApiController::resolveUserId`
+    agora loga `warning` sempre que cai no fallback do body, incluindo
+    endpoint, IP e motivo (`tinha_token` = "token presente mas
+    inválido/expirado" vs "sem Authorization header"). Mensagem
+    prefixada com `[MSEC.2]` pra facilitar grep. Testado via curl:
+    `WARNING - [MSEC.2] fallback usuario_id=46 usado em
+    /transporte/api/bdt/dia (IP=..., motivo=sem Authorization header)`.
+  - ⏳ **Fase 2 (após ~1 sprint sem WARN no log)**: retornar 401
+    quando não houver token válido, ignorando `usuario_id` do body
+    por completo. Decisão de bloquear vem da análise do log da
+    fase 1 — se algum caminho mobile ainda depende do fallback,
+    corrigir esse caminho antes de bloquear.
+  - **Como observar em dev**: `docker compose exec apache
+    tail -f /var/www/html/e-prefeitura/writable/logs/log-YYYY-MM-DD.log
+    | grep MSEC.2`. Em produção, adicionar filtro no dashboard de
+    logs (Sentry/CloudWatch/etc.) por prefixo `[MSEC.2]`.
+  - **Efeito da fase 1:** zero mudança de comportamento observável
+    pelo usuário; ganha-se rastreabilidade completa do uso do
+    fallback antes de bloquear.
 
 - ✅ **MSEC.3 — Rate limit no `POST /transporte/api/login`** (2026-07-21)
   - **Backend** (`AuthApiController::login`): `Services::throttler()`
