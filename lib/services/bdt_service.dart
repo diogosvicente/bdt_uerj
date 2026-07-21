@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../models/bdt_km_estado.dart';
 import '../models/bdt_resumo.dart';
+import '../models/checkup_bdt.dart';
 import '../models/feedback_condutor.dart';
 import '../models/passageiro.dart';
 import '../models/pre_bdt_pendente.dart';
@@ -99,6 +100,27 @@ class BdtService {
     final data = res['data'];
     if (data is! Map) return null;
     return BdtKmEstado.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// Sprint W+M (Sprint 15 web) — checkup INFORMATIVO do BDT.
+  /// Mesma lógica de `BdtSemSolicitacaoService::checkup()` do web —
+  /// veículo em manutenção, veículo inativo, CNH vencida.
+  ///
+  /// NÃO bloqueia: o app só usa os avisos pra mostrar um banner amarelo
+  /// no topo do BDT. Retorna `null` em falha de rede (banner some).
+  static Future<CheckupBdt?> checkup(int bdtId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/checkup', {
+      'usuario_id': usuarioId,
+      'bdt_id': bdtId,
+    });
+    if (res['success'] != true) {
+      _log.warn('checkup#$bdtId FALHOU: ${res['message']}');
+      return null;
+    }
+    final data = res['data'];
+    if (data is! Map) return null;
+    return CheckupBdt.fromJson(Map<String, dynamic>.from(data));
   }
 
   /// Sprint M6 (Web+Mobile / Sprint 1 web) — textos institucionais de

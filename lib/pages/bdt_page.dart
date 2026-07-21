@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import '../models/checkup_bdt.dart';
 import '../services/background_location_service.dart';
 import '../services/bdt_service.dart';
 import '../services/gps_live_service.dart';
@@ -19,6 +20,12 @@ class BdtPage extends StatefulWidget {
 
 class _BdtPageState extends State<BdtPage> {
   Map<String, dynamic>? payload;
+
+  // Sprint W+M (Sprint 15 web) — resultado do checkup do BDT.
+  // Informativo: mostra banner amarelo no topo com veículo em
+  // manutenção/inativo, CNH vencida. Null enquanto não carrega
+  // ou em falha de rede — nesses casos o banner some.
+  CheckupBdt? _checkup;
 
   // busy só no trecho clicado
   int? busyTrechoId;
@@ -264,10 +271,18 @@ class _BdtPageState extends State<BdtPage> {
   }
 
   Future<void> _load(int bdtId) async {
-    final res = await BdtService.detalhes(bdtId);
+    // Detalhes e checkup em paralelo — o checkup é informativo e não
+    // pode segurar a UI. Se um falhar, o outro segue.
+    final results = await Future.wait<dynamic>([
+      BdtService.detalhes(bdtId),
+      BdtService.checkup(bdtId),
+    ]);
     if (!mounted) return;
 
-    setState(() => payload = res);
+    setState(() {
+      payload = results[0] as Map<String, dynamic>;
+      _checkup = results[1] as CheckupBdt?;
+    });
 
     // se existir trecho em andamento, liga o tracking automaticamente
     _syncTrackingFromPayload(bdtId);
@@ -2532,10 +2547,66 @@ class _BdtPageState extends State<BdtPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
               children: [
+                if (_checkup != null && _checkup!.avisos.isNotEmpty)
+                  _cardCheckupAvisos(_checkup!),
                 if (isTracking) _cardTrechoAtivo(),
                 _cardTrechosDoDia(bdtId, agendas, trechosExtras),
               ],
             ),
+    );
+  }
+
+  /// Sprint W+M — banner amarelo com avisos do checkup (não bloqueia).
+  /// Cada aviso é uma linha do array `avisos` devolvido pelo backend
+  /// (mesma string que o `BdtSemSolicitacaoService` do web usa).
+  Widget _cardCheckupAvisos(CheckupBdt c) {
+    return Card(
+      color: Colors.amber.shade50,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.amber.shade700, width: 1),
+      ),
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: Colors.amber.shade900),
+                const SizedBox(width: 8),
+                Text(
+                  'Atenção',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.amber.shade900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            for (final aviso in c.avisos)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('•  ', style: TextStyle(color: Colors.amber.shade900)),
+                    Expanded(
+                      child: Text(
+                        aviso,
+                        style: TextStyle(color: Colors.brown.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 

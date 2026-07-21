@@ -617,7 +617,20 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
   — depende do fluxo web de "carga" (Sprint 11 web)
 
 ### Da Sprint 15 web (BDT sem solicitação)
-- ⏳ Veículo/condutor reais ≠ agendados (UX de checkup no app)
+- ✅ Veículo/condutor reais ≠ agendados (UX de checkup no app) — 2026-07-21
+  - Backend: novo endpoint `POST transporte/api/bdt/checkup`,
+    wrapper fino de `BdtSemSolicitacaoService::checkup()` do web
+    (mesmo service que o admin usa em "Criar BDT sem solicitação").
+    Auth Bearer + `assertBdtPertence(bdtId, condutorId)` — só o
+    próprio condutor do BDT pode consultar. Retorna
+    `{ok, avisos, veiculo, condutor}` — não bloqueia (200 sempre).
+  - Flutter: `CheckupBdt` model + `BdtService.checkup(bdtId)`
+    chamado em paralelo com `detalhes(bdtId)` no `_load()`.
+    Banner amarelo `_cardCheckupAvisos` no topo da `bdt_page`
+    quando `avisos.isNotEmpty` (veículo em manutenção/inativo,
+    CNH vencida). Falha de rede = banner some, BDT segue normal.
+  - Aplica [[bdt_uerj_reusar_codigo_web]] — 0 lógica de negócio
+    reimplementada, só embrulhada com auth mobile.
 
 ### Da Sprint 17 web (Ocorrências)
 - ⏳ Anexos de fotos em ocorrências/manutenção (extensão no app)
