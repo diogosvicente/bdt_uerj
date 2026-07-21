@@ -32,6 +32,9 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+# Gerado pelo Flutter DevTools quando é aberto — preferências locais
+# de extensões, varia por máquina/dev.
+devtools_options.yaml
 
 # Symbolication related
 app.*.symbols
