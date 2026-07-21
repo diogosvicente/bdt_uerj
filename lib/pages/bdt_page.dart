@@ -2259,6 +2259,190 @@ class _BdtPageState extends State<BdtPage> {
     );
   }
 
+  /// Card visual de um único trecho — reusável para trechos de qualquer
+  /// agenda e para trechos extras (avulsos, `agendaId==0`). Extraído
+  /// do render anterior que tinha o mesmo bloco copiado em 2 loops
+  /// (agendas × extras). Refactor 2026-07-21: passamos a mostrar todos
+  /// os trechos em UMA lista única "Trechos do dia" — sem
+  /// ExpansionTile de agenda porque um BDT é sempre 1 dia só.
+  ///
+  /// `canDelete=true` só pra extras (a UI antiga não deixava excluir
+  /// trecho de agenda; mantido).
+  Widget _trechoCard({
+    required int bdtId,
+    required int agendaId,
+    required Map<String, dynamic> tt,
+    required bool canDelete,
+  }) {
+    final int trechoId = int.tryParse(tt['id'].toString()) ?? 0;
+    final String status = (tt['exec_status'] ?? 'pendente').toString();
+
+    final origem = (tt['origem'] ?? '').toString();
+    final destino = (tt['destino'] ?? '').toString();
+
+    final horaSaida = _fmtTimeOnly(tt['inicio_real'] ?? tt['datahora_saida']);
+    final odoSaida = _odoSaidaFromTrecho(tt);
+    final horaChegada = _fmtTimeOnly(tt['fim_real'] ?? tt['datahora_chegada']);
+    final odoChegada = _odoChegadaFromTrecho(tt);
+
+    final bool isBusyThis = (busyTrechoId == trechoId);
+    final bool hasAnyBusy = (busyTrechoId != null);
+    final bool isTrackingThis =
+        (trackingAgendaId == agendaId && trackingTrechoId == trechoId);
+
+    Widget mainButton;
+    if (isBusyThis) {
+      mainButton = const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    } else if (status == 'em_andamento') {
+      final bool canFinish = !hasAnyBusy && (!isTracking || isTrackingThis);
+      mainButton = FilledButton(
+        onPressed: canFinish
+            ? () => _openFinalizarTrechoSheet(
+                bdtId: bdtId, agendaId: agendaId, trecho: tt)
+            : null,
+        child: const Text("Finalizar"),
+      );
+    } else if (status == 'pendente') {
+      final bool canStart = !hasAnyBusy && (!isTracking || isTrackingThis);
+      mainButton = OutlinedButton(
+        onPressed: canStart
+            ? () => _openIniciarTrechoSheet(
+                bdtId: bdtId, agendaId: agendaId, trecho: tt)
+            : null,
+        child: const Text("Iniciar"),
+      );
+    } else {
+      mainButton = const Icon(Icons.check_circle_outline);
+    }
+
+    final bool canDeleteEffective =
+        canDelete && !hasAnyBusy && status != 'em_andamento' && !isTrackingThis;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(_statusIcon(status)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "$origem → $destino",
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Chip(
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: _chipBg(context, status),
+                      label: Text(
+                        _statusLabel(status),
+                        style: TextStyle(color: _chipFg(context, status)),
+                      ),
+                    ),
+                    if (isTrackingThis)
+                      const Chip(
+                        visualDensity: VisualDensity.compact,
+                        avatar: Icon(Icons.gps_fixed, size: 16),
+                        label: Text("GPS enviando"),
+                      ),
+                    if (isTracking && !isTrackingThis && status == 'pendente')
+                      const Chip(
+                        visualDensity: VisualDensity.compact,
+                        label: Text("Aguardando finalizar"),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (horaSaida.isNotEmpty ||
+                    odoSaida.isNotEmpty ||
+                    horaChegada.isNotEmpty ||
+                    odoChegada.isNotEmpty)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Saída: ${horaSaida.isEmpty ? '--:--' : horaSaida} • Odo: ${odoSaida.isEmpty ? '-' : odoSaida}",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      Text(
+                        "Chegada: ${horaChegada.isEmpty ? '--:--' : horaChegada} • Odo: ${odoChegada.isEmpty ? '-' : odoChegada}",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            children: [
+              mainButton,
+              const SizedBox(height: 6),
+              IconButton(
+                tooltip: "Editar",
+                onPressed: isBusyThis
+                    ? null
+                    : () => _openTrechoEditor(
+                        bdtId: bdtId, agendaId: agendaId, trecho: tt),
+                icon: const Icon(Icons.edit),
+              ),
+              if (canDelete)
+                IconButton(
+                  tooltip: "Excluir",
+                  onPressed: (isBusyThis || !canDeleteEffective)
+                      ? null
+                      : () => _deleteTrechoExtra(
+                          bdtId: bdtId,
+                          trechoId: trechoId,
+                          origem: origem,
+                          destino: destino,
+                        ),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Extrai timestamp de saída pra ordenar a lista. Prioriza a hora
+  /// REAL (`inicio_real`) se existe; senão a prevista (`datahora_saida`);
+  /// senão retorna algo grande pra jogar pro fim.
+  int _trechoSortKey(Map<String, dynamic> tt) {
+    final raw = tt['inicio_real'] ?? tt['datahora_saida'];
+    if (raw == null) return 1 << 30;
+    final s = raw.toString().trim();
+    if (s.isEmpty) return 1 << 30;
+    try {
+      return DateTime.parse(s.replaceFirst(' ', 'T')).millisecondsSinceEpoch ~/ 1000;
+    } catch (_) {
+      return 1 << 30;
+    }
+  }
+
   @override
   void dispose() {
     _stopTracking();
@@ -2349,524 +2533,97 @@ class _BdtPageState extends State<BdtPage> {
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
               children: [
                 if (isTracking) _cardTrechoAtivo(),
-                if (trechosExtras.isNotEmpty)
-                  Card(
-                    margin: const EdgeInsets.only(top: 12),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Theme(
-                      data: Theme.of(
-                        context,
-                      ).copyWith(dividerColor: Colors.transparent),
-                      child: ExpansionTile(
-                        tilePadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        childrenPadding: const EdgeInsets.fromLTRB(
-                          12,
-                          0,
-                          12,
-                          12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        collapsedShape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        title: const Text(
-                          "Trechos extras",
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        subtitle: Text(
-                          "${trechosExtras.length} trecho(s)",
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        children: trechosExtras.map((t) {
-                          final tt = (t is Map<String, dynamic>)
-                              ? t
-                              : Map<String, dynamic>.from(t as Map);
-
-                          const int agendaId = 0; // ✅ extra
-                          final int trechoId =
-                              int.tryParse(tt['id'].toString()) ?? 0;
-                          final String status =
-                              (tt['exec_status'] ?? 'pendente').toString();
-
-                          final origem = (tt['origem'] ?? '').toString();
-                          final destino = (tt['destino'] ?? '').toString();
-
-                          final horaSaida = _fmtTimeOnly(
-                            tt['inicio_real'] ?? tt['datahora_saida'],
-                          );
-                          final odoSaida = _odoSaidaFromTrecho(tt);
-
-                          final horaChegada = _fmtTimeOnly(
-                            tt['fim_real'] ?? tt['datahora_chegada'],
-                          );
-                          final odoChegada = _odoChegadaFromTrecho(tt);
-
-                          final bool isBusyThis = (busyTrechoId == trechoId);
-                          final bool hasAnyBusy = (busyTrechoId != null);
-
-                          final bool isTrackingThis =
-                              (trackingAgendaId == agendaId &&
-                              trackingTrechoId == trechoId);
-                          final bool canDelete =
-                              !hasAnyBusy &&
-                              status != 'em_andamento' &&
-                              !isTrackingThis;
-
-                          Widget mainButton;
-
-                          if (isBusyThis) {
-                            mainButton = const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            );
-                          } else if (status == 'em_andamento') {
-                            final bool canFinish =
-                                !hasAnyBusy && (!isTracking || isTrackingThis);
-
-                            mainButton = FilledButton(
-                              onPressed: canFinish
-                                  ? () => _openFinalizarTrechoSheet(
-                                      bdtId: bdtId,
-                                      agendaId: agendaId, // ✅ 0
-                                      trecho: tt,
-                                    )
-                                  : null,
-                              child: const Text("Finalizar"),
-                            );
-                          } else if (status == 'pendente') {
-                            final bool canStart =
-                                !hasAnyBusy && (!isTracking || isTrackingThis);
-
-                            mainButton = OutlinedButton(
-                              onPressed: canStart
-                                  ? () => _openIniciarTrechoSheet(
-                                      bdtId: bdtId,
-                                      agendaId: agendaId, // ✅ 0
-                                      trecho: tt,
-                                    )
-                                  : null,
-                              child: const Text("Iniciar"),
-                            );
-                          } else {
-                            mainButton = const Icon(Icons.check_circle_outline);
-                          }
-
-                          return Container(
-                            margin: const EdgeInsets.only(top: 10),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outlineVariant,
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Icon(_statusIcon(status)),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "$origem → $destino",
-                                        maxLines: 3,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 6,
-                                        crossAxisAlignment:
-                                            WrapCrossAlignment.center,
-                                        children: [
-                                          Chip(
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            backgroundColor: _chipBg(
-                                              context,
-                                              status,
-                                            ),
-                                            label: Text(
-                                              _statusLabel(status),
-                                              style: TextStyle(
-                                                color: _chipFg(context, status),
-                                              ),
-                                            ),
-                                          ),
-                                          if (isTrackingThis)
-                                            Chip(
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              avatar: const Icon(
-                                                Icons.gps_fixed,
-                                                size: 16,
-                                              ),
-                                              label: const Text("GPS enviando"),
-                                            ),
-                                          if (isTracking &&
-                                              !isTrackingThis &&
-                                              status == 'pendente')
-                                            const Chip(
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              label: Text(
-                                                "Aguardando finalizar",
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      if (horaSaida.isNotEmpty ||
-                                          odoSaida.isNotEmpty ||
-                                          horaChegada.isNotEmpty ||
-                                          odoChegada.isNotEmpty)
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              "Saída: ${horaSaida.isEmpty ? '--:--' : horaSaida} • Odo: ${odoSaida.isEmpty ? '-' : odoSaida}",
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                            Text(
-                                              "Chegada: ${horaChegada.isEmpty ? '--:--' : horaChegada} • Odo: ${odoChegada.isEmpty ? '-' : odoChegada}",
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                          ],
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Column(
-                                  children: [
-                                    mainButton,
-                                    const SizedBox(height: 6),
-                                    IconButton(
-                                      tooltip: "Editar",
-                                      onPressed: isBusyThis
-                                          ? null
-                                          : () => _openTrechoEditor(
-                                              bdtId: bdtId,
-                                              agendaId: agendaId, // ✅ 0
-                                              trecho: tt,
-                                            ),
-                                      icon: const Icon(Icons.edit),
-                                    ),
-                                    IconButton(
-                                      tooltip: "Excluir",
-                                      onPressed: (isBusyThis || !canDelete)
-                                          ? null
-                                          : () => _deleteTrechoExtra(
-                                              bdtId: bdtId,
-                                              trechoId: trechoId,
-                                              origem: origem,
-                                              destino: destino,
-                                            ),
-                                      icon: const Icon(Icons.delete_outline),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-
-                ...agendas.asMap().entries.map((entry) {
-                  final int idxAgenda = entry.key;
-                  final raw = entry.value;
-                  final a = raw as Map<String, dynamic>;
-                  final int agendaId =
-                      int.tryParse(a['fk_agenda'].toString()) ?? 0;
-                  final trechos = (a['trechos'] as List<dynamic>? ?? []);
-
-                  final saida = _fmtDt(a['datahora_saida']);
-                  final retorno = _fmtDt(a['datahora_retorno_previsto']);
-
-                  // Título da agenda sem expor o ID interno:
-                  // preferência: horário de saída (se houver) → "Agenda das HH:MM".
-                  // fallback: numeração sequencial → "Agenda 1", "Agenda 2".
-                  final horaSaidaAgenda = _fmtTimeOnly(a['datahora_saida']);
-                  final tituloAgenda = horaSaidaAgenda.isNotEmpty
-                      ? "Agenda das $horaSaidaAgenda"
-                      : "Agenda ${idxAgenda + 1}";
-
-                  return Card(
-                    margin: const EdgeInsets.only(top: 12),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Theme(
-                      data: Theme.of(
-                        context,
-                      ).copyWith(dividerColor: Colors.transparent),
-                      child: ExpansionTile(
-                        tilePadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        childrenPadding: const EdgeInsets.fromLTRB(
-                          12,
-                          0,
-                          12,
-                          12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        collapsedShape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        title: Text(
-                          tituloAgenda,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        subtitle: (saida.isNotEmpty || retorno.isNotEmpty)
-                            ? Text(
-                                "$saida → $retorno",
-                                style: Theme.of(context).textTheme.bodySmall,
-                              )
-                            : null,
-                        children: trechos.map((t) {
-                          final tt = t as Map<String, dynamic>;
-
-                          final int trechoId =
-                              int.tryParse(tt['id'].toString()) ?? 0;
-                          final String status =
-                              (tt['exec_status'] ?? 'pendente').toString();
-
-                          final origem = (tt['origem'] ?? '').toString();
-                          final destino = (tt['destino'] ?? '').toString();
-
-                          final horaSaida = _fmtTimeOnly(
-                            tt['inicio_real'] ?? tt['datahora_saida'],
-                          );
-
-                          final odoSaida = _odoSaidaFromTrecho(tt);
-
-                          final horaChegada = _fmtTimeOnly(
-                            tt['fim_real'] ?? tt['datahora_chegada'],
-                          );
-
-                          final odoChegada = _odoChegadaFromTrecho(tt);
-
-                          final bool isBusyThis = (busyTrechoId == trechoId);
-                          final bool hasAnyBusy = (busyTrechoId != null);
-
-                          final bool isTrackingThis =
-                              (trackingAgendaId == agendaId &&
-                              trackingTrechoId == trechoId);
-
-                          // regra: se tem um trecho em andamento, não pode iniciar outro
-                          final bool podeIniciarEste =
-                              !isTracking && !hasAnyBusy;
-
-                          Widget mainButton;
-
-                          if (isBusyThis) {
-                            mainButton = const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            );
-                          } else if (status == 'em_andamento') {
-                            // ✅ FINALIZAR de verdade (não abre editor)
-                            final bool canFinish =
-                                !hasAnyBusy && (!isTracking || isTrackingThis);
-
-                            mainButton = FilledButton(
-                              onPressed: canFinish
-                                  ? () => _openFinalizarTrechoSheet(
-                                      bdtId: bdtId,
-                                      agendaId: agendaId,
-                                      trecho: tt,
-                                    )
-                                  : null,
-                              child: const Text("Finalizar"),
-                            );
-                          } else if (status == 'pendente') {
-                            // ✅ INICIAR de verdade (não abre editor)
-                            final bool canStart =
-                                !hasAnyBusy && (!isTracking || isTrackingThis);
-
-                            mainButton = OutlinedButton(
-                              onPressed: canStart
-                                  ? () => _openIniciarTrechoSheet(
-                                      bdtId: bdtId,
-                                      agendaId: agendaId,
-                                      trecho: tt,
-                                    )
-                                  : null,
-                              child: const Text("Iniciar"),
-                            );
-                          } else {
-                            mainButton = const Icon(Icons.check_circle_outline);
-                          }
-
-                          return Container(
-                            margin: const EdgeInsets.only(top: 10),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outlineVariant,
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Icon(_statusIcon(status)),
-                                ),
-                                const SizedBox(width: 10),
-
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "$origem → $destino",
-                                        maxLines: 3,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 6,
-                                        crossAxisAlignment:
-                                            WrapCrossAlignment.center,
-                                        children: [
-                                          Chip(
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            backgroundColor: _chipBg(
-                                              context,
-                                              status,
-                                            ),
-                                            label: Text(
-                                              _statusLabel(status),
-                                              style: TextStyle(
-                                                color: _chipFg(context, status),
-                                              ),
-                                            ),
-                                          ),
-                                          if (isTrackingThis)
-                                            Chip(
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              avatar: const Icon(
-                                                Icons.gps_fixed,
-                                                size: 16,
-                                              ),
-                                              label: const Text("GPS enviando"),
-                                            ),
-                                          if (isTracking &&
-                                              !isTrackingThis &&
-                                              status == 'pendente')
-                                            const Chip(
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              label: Text(
-                                                "Aguardando finalizar",
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-
-                                      const SizedBox(height: 8),
-
-                                      // Linha "Saída/Chegada" (hora/odo)
-                                      if (horaSaida.isNotEmpty ||
-                                          odoSaida.isNotEmpty ||
-                                          horaChegada.isNotEmpty ||
-                                          odoChegada.isNotEmpty)
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              "Saída: ${horaSaida.isEmpty ? '--:--' : horaSaida} • Odo: ${odoSaida.isEmpty ? '-' : odoSaida}",
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                            Text(
-                                              "Chegada: ${horaChegada.isEmpty ? '--:--' : horaChegada} • Odo: ${odoChegada.isEmpty ? '-' : odoChegada}",
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                          ],
-                                        ),
-                                    ],
-                                  ),
-                                ),
-
-                                const SizedBox(width: 10),
-
-                                Column(
-                                  children: [
-                                    mainButton,
-                                    const SizedBox(height: 6),
-                                    IconButton(
-                                      tooltip: "Editar",
-                                      onPressed: isBusyThis
-                                          ? null
-                                          : () => _openTrechoEditor(
-                                              bdtId: bdtId,
-                                              agendaId: agendaId,
-                                              trecho: tt,
-                                            ),
-                                      icon: const Icon(Icons.edit),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  );
-                }),
+                _cardTrechosDoDia(bdtId, agendas, trechosExtras),
               ],
             ),
+    );
+  }
+
+  /// Card "Trechos do dia" — lista única (achatada) com TODOS os trechos
+  /// do BDT: os de cada agenda + os avulsos (extras). Ordenados por
+  /// hora de saída (real se já iniciou, senão a prevista).
+  ///
+  /// Refactor 2026-07-21: substitui os ExpansionTile "Agenda das HH:MM"
+  /// que existiam antes por trecho. Como um BDT sempre é 1 dia, não
+  /// faz sentido agrupar por agenda — o condutor quer ver a lista
+  /// direta do que fazer.
+  Widget _cardTrechosDoDia(
+    int bdtId,
+    List<dynamic> agendas,
+    List<dynamic> trechosExtras,
+  ) {
+    // Achata: cada elemento é (agendaId, trechoMap).
+    // agendaId=0 → trecho extra/avulso (mostra botão de excluir).
+    final itens = <({int agendaId, Map<String, dynamic> tt})>[];
+
+    for (final a in agendas) {
+      final am = a as Map<String, dynamic>;
+      final agId = int.tryParse((am['fk_agenda'] ?? 0).toString()) ?? 0;
+      for (final t in (am['trechos'] as List<dynamic>? ?? const [])) {
+        itens.add((agendaId: agId, tt: Map<String, dynamic>.from(t as Map)));
+      }
+    }
+    for (final t in trechosExtras) {
+      itens.add((
+        agendaId: 0,
+        tt: Map<String, dynamic>.from(t as Map),
+      ));
+    }
+
+    // Ordena por hora de saída (real se já rodou, senão prevista).
+    // Sem hora vai pro fim.
+    itens.sort((a, b) => _trechoSortKey(a.tt).compareTo(_trechoSortKey(b.tt)));
+
+    if (itens.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Center(
+          child: Text(
+            "Nenhum trecho neste BDT.",
+            style: TextStyle(color: Colors.black54),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.route_outlined, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    "Trechos do dia",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                Text(
+                  "${itens.length}",
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+            for (final item in itens)
+              _trechoCard(
+                bdtId: bdtId,
+                agendaId: item.agendaId,
+                tt: item.tt,
+                canDelete: item.agendaId == 0, // só extras podem excluir
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
