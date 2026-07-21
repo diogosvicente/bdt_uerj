@@ -403,7 +403,7 @@ reais em campo.
     Access curto (15min) limita janela de abuso se vazar; refresh
     rotacionado detecta uso concorrente por atacante.
 
-- ⏳ **MSEC.6 — Foto do condutor no avatar (LGPD-safe)** (~3-4h)
+- ✅ **MSEC.6 — Foto do condutor no avatar (LGPD-safe)** (2026-07-21)
   - **Origem:** feedback do usuário em 2026-07-21 sobre o avatar da
     AppBar. As iniciais do nome (v1) geram combinações
     constrangedoras (`CU` para Cláudio Ulisses, `PP`, `VD`, etc.).
@@ -449,6 +449,20 @@ reais em campo.
     - [ ] Logout apaga arquivo local
   - **Risco:** baixo — endpoint aditivo, cache local isolado, se
     algo falhar cai no ícone genérico.
+  - **Entregue**: backend `72a361a1` + mobile no próximo commit.
+    Endpoint reusa `DocumentoService::getDocumentosByReferencia('condutores', condutorId)`
+    (mesma fonte que a tela web do condutor usa — zero duplicação).
+    Bearer only; userId sempre do token (ignora `usuario_id` do body).
+    ETag/If-None-Match: 304 evita rebaixar bytes; 200 com mime real +
+    `Cache-Control: private, max-age=86400`; 204 quando não tem foto.
+    Mobile: `UsuarioFotoStorage` grava em `getApplicationDocumentsDirectory`
+    (privado ao app no Android), `UsuarioFotoService` faz refetch com
+    TTL 24h + revalidação por ETag + retry 1x se receber 401
+    TOKEN_EXPIRED (integração com refresh do MSEC.4). AppNavbar
+    renderiza `FileImage` quando cache existe, fallback pra
+    `Icons.account_circle` senão. `AuthService.logout` chama
+    `UsuarioFotoStorage.clear()` — próximo condutor logando não vê
+    foto do anterior.
 
 - ⏸️ **MSEC.5 — Certificate pinning** (opcional, adiado)
   - **Ganho:** protege contra MITM via CA maliciosa instalada no

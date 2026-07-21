@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/auth_service.dart';
+import '../services/usuario_foto_service.dart';
 import '../theme/app_theme.dart';
 
 /// Barra superior do app.
@@ -48,17 +51,33 @@ class _AppNavbarState extends State<AppNavbar> {
   /// enquanto a AppBar está montada).
   String _nomeLogado = '';
 
+  /// MSEC.6 — arquivo local da foto do condutor. Null enquanto carrega,
+  /// ou se o condutor não tem foto cadastrada. Se veio, os avatares
+  /// mostram a foto real; senão, fallback pra `Icons.account_circle`.
+  File? _fotoLocal;
+
   @override
   void initState() {
     super.initState();
     // ignore: discarded_futures
     _carregarNome();
+    // ignore: discarded_futures
+    _carregarFoto();
   }
 
   Future<void> _carregarNome() async {
     final nome = await AuthService.getNomeLogado();
     if (!mounted || nome.isEmpty) return;
     setState(() => _nomeLogado = nome);
+  }
+
+  Future<void> _carregarFoto() async {
+    // Carrega o cache local imediato (pode retornar null); dispara
+    // refetch em bg se o TTL expirou. Se o refetch trouxer novo binário,
+    // uma segunda leitura pega — mas hoje só rebusca no próximo build.
+    final f = await UsuarioFotoService.obterCached();
+    if (!mounted) return;
+    if (f != null) setState(() => _fotoLocal = f);
   }
 
   Future<void> _handleRefresh() async {
@@ -208,14 +227,20 @@ class _AppNavbarState extends State<AppNavbar> {
             height: 68,
             child: Row(
               children: [
-                const CircleAvatar(
+                // MSEC.6 — foto real se tem, senão fallback ícone.
+                CircleAvatar(
                   radius: 20,
                   backgroundColor: AppTheme.primary,
-                  child: Icon(
-                    Icons.account_circle,
-                    color: Colors.white,
-                    size: 28,
-                  ),
+                  backgroundImage: _fotoLocal != null
+                      ? FileImage(_fotoLocal!)
+                      : null,
+                  child: _fotoLocal == null
+                      ? const Icon(
+                          Icons.account_circle,
+                          color: Colors.white,
+                          size: 28,
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -271,10 +296,9 @@ class _AppNavbarState extends State<AppNavbar> {
           ),
         ),
       ],
-      // Trigger do menu — círculo branco com ícone person. Neutro e
-      // seguro (sem combinações de iniciais problemáticas). Quando a
-      // MSEC.6 entrar, aqui vira `Image.file(cachedFoto)` com este
-      // ícone como fallback.
+      // Trigger do menu — foto real se cached, senão ícone genérico
+      // account_circle (MSEC.6). Border branca destaca sobre o
+      // gradient azul da AppBar.
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.all(2),
@@ -282,14 +306,18 @@ class _AppNavbarState extends State<AppNavbar> {
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white70, width: 1.5),
         ),
-        child: const CircleAvatar(
+        child: CircleAvatar(
           radius: 16,
           backgroundColor: Colors.white,
-          child: Icon(
-            Icons.account_circle,
-            color: AppTheme.primary,
-            size: 26,
-          ),
+          backgroundImage:
+              _fotoLocal != null ? FileImage(_fotoLocal!) : null,
+          child: _fotoLocal == null
+              ? const Icon(
+                  Icons.account_circle,
+                  color: AppTheme.primary,
+                  size: 26,
+                )
+              : null,
         ),
       ),
     );

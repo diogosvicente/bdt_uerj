@@ -52,6 +52,11 @@ dependencies:
   # transitiva de flutter_local_notifications; declaramos explícito
   # porque importamos direto (`tz.local`, `tz.TZDateTime`).
   timezone: ^0.9.4
+  # Sprint MSEC.6 — usado pelo UsuarioFotoStorage para gravar a foto
+  # em getApplicationDocumentsDirectory (privado ao app no Android).
+  # Já é dep transitiva de sqflite; declaramos explícito porque
+  # importamos direto.
+  path_provider: ^2.1.4
   permission_handler: ^11.3.1
 
   # Armazenamento seguro para credenciais (Android Keystore / iOS Keychain)

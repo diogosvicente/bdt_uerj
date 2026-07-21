@@ -133,7 +133,7 @@ class ApiClient {
     final isExpired = resp['http_status'] == 401 &&
         (resp['status']?.toString() == 'TOKEN_EXPIRED');
     if (isExpired && !isRetry && !_isRefreshCall(endpoint)) {
-      final refreshOk = await _refreshTokens();
+      final refreshOk = await refreshTokens();
       if (refreshOk) {
         debugPrint("🔄 Retry após refresh: $endpoint");
         return post(endpoint, data, isRetry: true);
@@ -192,7 +192,7 @@ class ApiClient {
 
   /// Chama `bdt/token/refresh` (dedupado). Retorna true se OK e o par
   /// novo já foi gravado no `TokenStorage`; false em qualquer falha.
-  static Future<bool> _refreshTokens() async {
+  static Future<bool> refreshTokens() async {
     // Dedup: se já tem refresh em andamento, espera ele.
     final existing = _refreshInFlight;
     if (existing != null) return existing;

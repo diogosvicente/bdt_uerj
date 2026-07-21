@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import 'token_storage.dart';
+import 'usuario_foto_storage.dart';
 
 /// Resultado do login. Precisamos distinguir os casos para que a UI possa,
 /// por exemplo, recarregar o captcha se ele falhar.
@@ -143,6 +144,10 @@ class AuthService {
 
     // MSEC.1 — token no secure storage (Keystore/Keychain).
     await TokenStorage.clear();
+    // MSEC.6 — apaga a foto cached do condutor. Sem isso, o próximo
+    // condutor logando enxerga a foto do anterior por 1 segundo até
+    // o refetch trocar (leak visual).
+    await UsuarioFotoStorage.clear();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('usuario_id');
     await prefs.remove('usuario_nome');
