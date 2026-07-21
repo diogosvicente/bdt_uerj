@@ -32,13 +32,35 @@ class UsuarioFotoService {
   /// 304 e a gente só reseta o TTL — sem baixar bytes de novo.
   static const Duration _ttl = Duration(hours: 24);
 
-  /// Retorna o arquivo local imediatamente. Se expirou, dispara refetch
-  /// em bg (sem esperar).
+  /// Retorna o arquivo local da foto, atualizando conforme o estado
+  /// do cache:
+  ///
+  /// - **Cache vazio (primeira vez)** — faz `refetch()` em **foreground**
+  ///   e aguarda; retorna o arquivo recém-baixado (ou null se o
+  ///   condutor não tem foto cadastrada).
+  /// - **Cache válido (idade < TTL)** — retorna imediato, sem tocar
+  ///   no backend.
+  /// - **Cache velho (idade >= TTL)** — retorna o velho **agora** +
+  ///   dispara `refetch()` em background (fire-and-forget) pra atualizar
+  ///   pra próxima leitura. Assim a UI nunca fica "esperando" quando
+  ///   já tem uma versão razoável mostrada.
   static Future<File?> obterCached() async {
     final file = await UsuarioFotoStorage.read();
+
+    // Primeira vez sem cache — espera o download pra a UI já mostrar
+    // a foto no primeiro render (senão o AppNavbar mostraria o ícone
+    // fallback até o próximo abrir da tela).
+    if (file == null) {
+      final novo = await refetch();
+      if (novo) return UsuarioFotoStorage.read();
+      return null;
+    }
+
     final age = await UsuarioFotoStorage.age();
     if (age > _ttl) {
-      // fire-and-forget
+      // Cache velho — não atrasa a UI, refetch em bg. Se veio versão
+      // nova, aparece no próximo `_carregarFoto()` (próximo abrir da
+      // tela) — a atual continua servindo até lá.
       // ignore: discarded_futures
       refetch();
     }

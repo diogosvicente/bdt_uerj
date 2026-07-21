@@ -72,12 +72,19 @@ class _AppNavbarState extends State<AppNavbar> {
   }
 
   Future<void> _carregarFoto() async {
-    // Carrega o cache local imediato (pode retornar null); dispara
-    // refetch em bg se o TTL expirou. Se o refetch trouxer novo binário,
-    // uma segunda leitura pega — mas hoje só rebusca no próximo build.
+    // Se o cache está vazio, `obterCached` agora espera o refetch em
+    // foreground (fix do bug: antes voltava null imediato e a foto
+    // só aparecia no próximo abrir da tela).
     final f = await UsuarioFotoService.obterCached();
     if (!mounted) return;
-    if (f != null) setState(() => _fotoLocal = f);
+    if (f != null) {
+      debugPrint('AppNavbar: foto carregada (${f.path})');
+      setState(() => _fotoLocal = f);
+    } else {
+      // null = condutor não tem foto cadastrada OU download falhou —
+      // fallback pro ícone genérico já está renderizado.
+      debugPrint('AppNavbar: sem foto no cache (fallback ícone)');
+    }
   }
 
   Future<void> _handleRefresh() async {
