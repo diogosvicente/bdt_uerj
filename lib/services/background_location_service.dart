@@ -13,6 +13,7 @@ import '../api/ssl_bootstrap.dart';
 import '../utils/logger.dart';
 import 'location_outlier_filter.dart';
 import 'location_queue_db.dart';
+import 'token_storage.dart';
 
 /// Serviço de captura contínua de GPS em foreground service Android.
 ///
@@ -370,8 +371,12 @@ class BackgroundLocationService {
 
     _log.info('drenando fila: ${lote.length} ponto(s) para enviar');
 
+    // MSEC.1 — token vem do secure storage. O flutter_secure_storage
+    // funciona neste isolate porque `_onServiceStart` chama
+    // `DartPluginRegistrant.ensureInitialized()` + `SslBootstrap.install()`
+    // no início — o binding necessário já está de pé.
+    final token = await TokenStorage.read();
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
     final usuarioId = prefs.getInt('usuario_id') ?? 0;
 
     if (token == null || token.isEmpty || usuarioId <= 0) {

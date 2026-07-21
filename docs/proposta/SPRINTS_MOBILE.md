@@ -300,17 +300,24 @@ o app pra piloto real com condutores") e cabe em um bloco.
 **Objetivo:** fechar os 4 gaps antes de rodar o app com condutores
 reais em campo.
 
-- ⏳ **MSEC.1 — Mover token para `flutter_secure_storage`** (~30min)
-  - **Hoje:** token de sessão vive em `SharedPreferences` **plaintext**.
-    Se o device for rootado (ou o backup for extraído), o token vaza
-    e — como não expira (ver MSEC.4) — o abuso é indefinido.
-  - **Fazer:** criar `TokenStorage` (categoria STORAGE) espelhando
-    `CredentialsStorage`; migração transparente do valor atual em
-    SharedPreferences pra secure_storage no bootstrap; atualizar
-    `ApiClient.post()` (lê token), `AuthService.login/logout/
-    verifyToken` (escreve/apaga).
-  - **Risco:** baixo — mudança local; migração faz fallback pra
-    SharedPreferences se secure_storage não tiver ainda.
+- ✅ **MSEC.1 — Token no `flutter_secure_storage`** (2026-07-21)
+  - Novo `lib/services/token_storage.dart` (STORAGE) espelhando
+    `CredentialsStorage`: `read/write/clear` + `_migrateLegacyIfNeeded`
+    executado 1x na primeira leitura (copia `SharedPreferences.'token'`
+    → secure storage e marca `auth_token_migrado_secure=true` para
+    não repetir). Namespace novo `auth_token_secure` pra deixar óbvio
+    que é local diferente.
+  - 4 pontos de uso atualizados: `ApiClient.post()` (leitura por
+    request), `AuthService.login` (grava após login OK),
+    `AuthService.logout` (apaga junto com os demais prefs do usuário),
+    `AuthService.verifyToken` (leitura no bootstrap), `LoginPage._bootstrap`
+    (auto-login manter-conectado) e `BackgroundLocationService._drainQueue`
+    (isolate do foreground service — `secure_storage` funciona porque
+    `_onServiceStart` já inicializa binding + SSL). Import de
+    `shared_preferences` removido do `login_page.dart` (não usava mais).
+  - **Efeito:** token não fica mais legível em backup do device nem
+    em dumps de storage plaintext. Complementa a senha (que já vivia
+    no Keystore desde M1).
 
 - ⏳ **MSEC.2 — Deprecar fallback `usuario_id` no body** (~1h)
   - **Hoje:** `BdtApiController::resolveUserId` aceita `usuario_id`

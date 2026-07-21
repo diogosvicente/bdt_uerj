@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/credentials_storage.dart';
+import '../services/token_storage.dart';
 import '../widgets/loading.dart';
 import '../widgets/captcha_field.dart';
 import '../formatters/cpf_input_formatter.dart';
@@ -51,8 +51,8 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     if (_manterConectado) {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      // MSEC.1 — token lido do secure storage, não mais SharedPreferences.
+      final token = await TokenStorage.read();
       if (token != null && token.isNotEmpty) {
         // Valida o token contra o backend antes de auto-logar.
         // Se estiver expirado/inválido, cai pra tela de login normal.

@@ -3,7 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/token_storage.dart';
 
 class ApiClient {
   // ==========================================================================
@@ -80,8 +81,7 @@ class ApiClient {
     Map<String, dynamic> data,
   ) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString("token");
+      final token = await TokenStorage.read();
 
       final uri = _buildUri(endpoint);
 

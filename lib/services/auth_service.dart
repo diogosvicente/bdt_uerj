@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
+import 'token_storage.dart';
 
 /// Resultado do login. Precisamos distinguir os casos para que a UI possa,
 /// por exemplo, recarregar o captcha se ele falhar.
@@ -68,7 +69,9 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
 
     if (res['token'] != null) {
-      await prefs.setString('token', res['token'].toString());
+      // MSEC.1 — token vive no Keystore/Keychain via TokenStorage,
+      // não mais em SharedPreferences plaintext.
+      await TokenStorage.write(res['token'].toString());
     }
 
     final dynamic rawId = usuario['id'];
@@ -93,8 +96,9 @@ class AuthService {
   }
 
   static Future<void> logout() async {
+    // MSEC.1 — token no secure storage (Keystore/Keychain).
+    await TokenStorage.clear();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
     await prefs.remove('usuario_id');
     await prefs.remove('usuario_nome');
     await prefs.remove('usuario_email');
@@ -119,8 +123,7 @@ class AuthService {
   /// o backend precisa resolver o usuário pelo Bearer token; se ele
   /// estiver expirado/inválido, responde 401.
   static Future<bool> verifyToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = await TokenStorage.read();
     if (token == null || token.isEmpty) return false;
 
     final res = await ApiClient.post('transporte/api/bdt/dia', const {});
