@@ -1156,8 +1156,16 @@ class _BdtPageState extends State<BdtPage> {
     final kmInicialCtrl = TextEditingController();
 
     final odoFocus = FocusNode();
+    final kmInicialFocus = FocusNode();
     String? odoError;
+    String? kmInicialError;
     String? formError;
+
+    // Sprint MUX — escape hatch pro caso do condutor realmente não
+    // saber a KM inicial (equivalente ao botão "Pular" do dialog
+    // antigo). Sem esse flag, campo vazio bloqueia o iniciar-trecho
+    // — pra não passar batido silenciosamente.
+    bool pulouKmInicial = false;
 
     // ✅ NOVO: banner de progresso destacado
     bool showProgress = false;
@@ -1286,22 +1294,59 @@ class _BdtPageState extends State<BdtPage> {
                   if (precisaKmInicial) ...[
                     // Sprint MUX (2026-07-22) — campo inline, substitui
                     // o dialog KM inicial que abria em cima do sheet
-                    // (causava ANR reprodutível em Pixel c/ teclado
-                    // numérico). Opcional: se ficar vazio, iniciamos
-                    // o trecho sem gravar KM — o admin ou o condutor
-                    // preencham depois pela web.
+                    // (ANR em Pixel c/ teclado numérico). Obrigatório:
+                    // vazio bloqueia o "Iniciar" pra não passar batido.
+                    // Se o condutor realmente não sabe, "Pular" libera.
                     TextField(
                       controller: kmInicialCtrl,
-                      enabled: !isBusyThis,
+                      focusNode: kmInicialFocus,
+                      enabled: !isBusyThis && !pulouKmInicial,
                       keyboardType: TextInputType.number,
                       inputFormatters: [
                         FilteringTextInputFormatter.digitsOnly,
                       ],
-                      decoration: const InputDecoration(
-                        labelText: 'KM inicial do BDT (opcional)',
-                        helperText: 'Odômetro no início do BDT — pode pular',
-                        border: OutlineInputBorder(),
+                      onChanged: (_) {
+                        if (kmInicialError != null || formError != null) {
+                          setLocal(() {
+                            kmInicialError = null;
+                            formError = null;
+                          });
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: pulouKmInicial
+                            ? 'KM inicial do BDT (pulada)'
+                            : 'KM inicial do BDT',
+                        helperText: pulouKmInicial
+                            ? 'Você optou por pular. Preencha depois pela web.'
+                            : 'Odômetro no início do BDT (primeiro trecho)',
+                        border: const OutlineInputBorder(),
                         suffixText: 'km',
+                        errorText: kmInicialError,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: isBusyThis
+                            ? null
+                            : () {
+                                setLocal(() {
+                                  pulouKmInicial = !pulouKmInicial;
+                                  kmInicialError = null;
+                                  if (pulouKmInicial) {
+                                    kmInicialCtrl.clear();
+                                  }
+                                });
+                              },
+                        icon: Icon(
+                          pulouKmInicial
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                          size: 18,
+                        ),
+                        label: const Text('Pular KM inicial (não sei o valor)'),
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -1373,6 +1418,21 @@ class _BdtPageState extends State<BdtPage> {
                                       odoError = 'Informe o odômetro de saída.';
                                     });
                                     FocusScope.of(ctx).requestFocus(odoFocus);
+                                    return;
+                                  }
+
+                                  // Sprint MUX — bloqueia iniciar se o BDT
+                                  // precisa da KM inicial, o campo apareceu
+                                  // e ficou vazio (nem digitou nem pulou).
+                                  if (precisaKmInicial &&
+                                      !pulouKmInicial &&
+                                      kmInicialCtrl.text.trim().isEmpty) {
+                                    setLocal(() {
+                                      kmInicialError =
+                                          'Informe a KM inicial ou toque em "Pular".';
+                                    });
+                                    FocusScope.of(ctx)
+                                        .requestFocus(kmInicialFocus);
                                     return;
                                   }
 
@@ -1530,6 +1590,7 @@ class _BdtPageState extends State<BdtPage> {
     odoCtrl.dispose();
     kmInicialCtrl.dispose();
     odoFocus.dispose();
+    kmInicialFocus.dispose();
   }
 
   Future<void> _openFinalizarTrechoSheet({

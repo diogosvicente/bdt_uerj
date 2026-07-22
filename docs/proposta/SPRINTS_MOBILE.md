@@ -552,11 +552,15 @@ refino desses, registrar aqui em vez de deixar só no commit
   com autofocus + teclado numérico em Android é fonte conhecida de
   freeze da main thread. Fix: remove o dialog; se o backend informar
   `precisaPerguntarKmInicial=true`, o sheet mostra um `TextField`
-  inline "KM inicial do BDT (opcional)" **antes** dos campos de hora/odômetro.
-  Vazio ⇒ envia `null` (backend não sobrescreve, condição igual ao
-  fluxo `Pular` do dialog antigo). Alinha com o web, que também pede
-  a KM na mesma tela sem popup. `_askKmInicialSePreciso` fica
-  disponível pro `_openTrechoEditor` (outro sheet) até refatorar.
+  inline "KM inicial do BDT" **antes** dos campos de hora/odômetro,
+  **obrigatório por padrão** (vazio bloqueia o botão Iniciar com
+  erro no campo) — preserva a proteção do dialog antigo contra
+  "passar batido". Escape-hatch: botão "Pular KM inicial (não sei o
+  valor)" toggla um flag que desabilita o campo, mostra label
+  "(pulada)" e libera o Iniciar mandando `null` pro backend. Alinha
+  com o web, que também pede a KM na mesma tela sem popup.
+  `_askKmInicialSePreciso` fica disponível pro `_openTrechoEditor`
+  (outro sheet) até refatorar.
 
 - ✅ **Iniciar/Finalizar trecho — retorno de exec ignorado + spinner
   travado** (2026-07-21) — usuário reportou "aqui sempre trava, não
