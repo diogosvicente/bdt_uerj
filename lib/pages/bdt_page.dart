@@ -1608,7 +1608,6 @@ class _BdtPageState extends State<BdtPage> {
 
                                   setState(() => busyTrechoId = trechoId);
                                   try {
-                                    debugPrint('[iniciar] chamando iniciarTrecho bdt=$bdtId agenda=$agendaId trecho=$trechoId km=$kmInicialSend');
                                     final ok = await BdtService.iniciarTrecho(
                                       bdtId: bdtId,
                                       agendaId: (agendaId > 0)
@@ -1617,7 +1616,6 @@ class _BdtPageState extends State<BdtPage> {
                                       trechoId: trechoId,
                                       kmInicial: kmInicialSend,
                                     );
-                                    debugPrint('[iniciar] iniciarTrecho retornou ok=$ok');
 
                                     if (!mounted || !sheetOpen) return;
 
@@ -1627,7 +1625,6 @@ class _BdtPageState extends State<BdtPage> {
                                             'Salvando dados do trecho…';
                                       });
 
-                                      debugPrint('[iniciar] chamando atualizarTrechoExecucao');
                                       final odoTrim = odoCtrl.text.trim();
                                       final okExec =
                                           await BdtService.atualizarTrechoExecucao(
@@ -1641,7 +1638,6 @@ class _BdtPageState extends State<BdtPage> {
                                             "odometro_saida": odoTrim,
                                         },
                                       );
-                                      debugPrint('[iniciar] atualizarTrechoExecucao retornou okExec=$okExec');
 
                                       if (!mounted || !sheetOpen) return;
 
@@ -1666,9 +1662,7 @@ class _BdtPageState extends State<BdtPage> {
                                         progressMsg = 'Ativando GPS…';
                                       });
 
-                                      debugPrint('[iniciar] chamando _startTracking');
                                       _startTracking(bdtId, agendaId, trechoId);
-                                      debugPrint('[iniciar] _startTracking retornou');
 
                                       if (!mounted) return;
                                       Navigator.pop(ctx);
