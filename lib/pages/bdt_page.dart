@@ -1133,6 +1133,16 @@ class _BdtPageState extends State<BdtPage> {
       return;
     }
 
+    // Sprint MUX (2026-07-22) — antes de abrir o sheet, consulta se o
+    // BDT precisa que a KM inicial seja informada (mesma lógica do
+    // dialog KM inicial que existia, agora inline). Falha de rede →
+    // não pergunta (pula) — não bloqueia o condutor por um GET
+    // secundário; a KM pode ser preenchida depois pela web.
+    final estadoKm = await BdtService.obterEstadoKm(bdtId);
+    if (!mounted) return;
+    final bool precisaKmInicial =
+        estadoKm != null && estadoKm.precisaPerguntarKmInicial;
+
     final horaCtrl = TextEditingController(
       text: _fmtTimeOnly(trecho['inicio_real'] ?? trecho['datahora_saida']),
     );
@@ -1143,6 +1153,7 @@ class _BdtPageState extends State<BdtPage> {
     }
 
     final odoCtrl = TextEditingController(text: _odoSaidaFromTrecho(trecho));
+    final kmInicialCtrl = TextEditingController();
 
     final odoFocus = FocusNode();
     String? odoError;
@@ -1272,6 +1283,30 @@ class _BdtPageState extends State<BdtPage> {
                     const SizedBox(height: 12),
                   ],
 
+                  if (precisaKmInicial) ...[
+                    // Sprint MUX (2026-07-22) — campo inline, substitui
+                    // o dialog KM inicial que abria em cima do sheet
+                    // (causava ANR reprodutível em Pixel c/ teclado
+                    // numérico). Opcional: se ficar vazio, iniciamos
+                    // o trecho sem gravar KM — o admin ou o condutor
+                    // preencham depois pela web.
+                    TextField(
+                      controller: kmInicialCtrl,
+                      enabled: !isBusyThis,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'KM inicial do BDT (opcional)',
+                        helperText: 'Odômetro no início do BDT — pode pular',
+                        border: OutlineInputBorder(),
+                        suffixText: 'km',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
                   Row(
                     children: [
                       Expanded(
@@ -1354,15 +1389,25 @@ class _BdtPageState extends State<BdtPage> {
 
                                   if (!mounted || !sheetOpen) return;
 
-                                  // Sprint M4 (patch) — se o BDT ainda não tem
-                                  // KM inicial, pergunta antes. Cancelar =
-                                  // aborta o iniciar-trecho (respeita o clique
-                                  // em "Cancelar" do dialog).
-                                  final kmDecision =
-                                      await _askKmInicialSePreciso(bdtId);
-                                  debugPrint('[iniciar] kmDecision cancelled=${kmDecision.cancelled} value=${kmDecision.value}');
-                                  if (!mounted || !sheetOpen) return;
-                                  if (kmDecision.cancelled) return;
+                                  // Sprint MUX (2026-07-22) — KM inicial
+                                  // veio do campo inline no próprio sheet
+                                  // (não mais de um dialog aninhado). Só
+                                  // envia se o campo apareceu (bdt sem
+                                  // km_inicial ainda) E o usuário digitou
+                                  // algo. Vazio ⇒ null ⇒ backend não
+                                  // sobrescreve.
+                                  double? kmInicialSend;
+                                  if (precisaKmInicial) {
+                                    final rawKm = kmInicialCtrl.text.trim();
+                                    if (rawKm.isNotEmpty) {
+                                      final parsed = double.tryParse(
+                                        rawKm.replaceAll(',', '.'),
+                                      );
+                                      if (parsed != null && parsed > 0) {
+                                        kmInicialSend = parsed;
+                                      }
+                                    }
+                                  }
 
                                   // ✅ NOVO: mostra banner de progresso IMEDIATAMENTE
                                   setLocal(() {
@@ -1373,14 +1418,14 @@ class _BdtPageState extends State<BdtPage> {
 
                                   setState(() => busyTrechoId = trechoId);
                                   try {
-                                    debugPrint('[iniciar] chamando iniciarTrecho bdt=$bdtId agenda=$agendaId trecho=$trechoId km=${kmDecision.value}');
+                                    debugPrint('[iniciar] chamando iniciarTrecho bdt=$bdtId agenda=$agendaId trecho=$trechoId km=$kmInicialSend');
                                     final ok = await BdtService.iniciarTrecho(
                                       bdtId: bdtId,
                                       agendaId: (agendaId > 0)
                                           ? agendaId
                                           : null,
                                       trechoId: trechoId,
-                                      kmInicial: kmDecision.value,
+                                      kmInicial: kmInicialSend,
                                     );
                                     debugPrint('[iniciar] iniciarTrecho retornou ok=$ok');
 
@@ -1483,6 +1528,7 @@ class _BdtPageState extends State<BdtPage> {
     await Future.delayed(const Duration(milliseconds: 350));
     horaCtrl.dispose();
     odoCtrl.dispose();
+    kmInicialCtrl.dispose();
     odoFocus.dispose();
   }
 
