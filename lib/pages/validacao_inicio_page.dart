@@ -142,10 +142,13 @@ class _ValidacaoInicioPageState extends State<ValidacaoInicioPage> {
   }
 
   Widget _cardMarcos() {
+    // Ordem cronológica alinhada com BdtJornadaService::ORDEM do backend.
+    // Sprint 5 W+M: 4º marco `hora_saida` (saída efetiva após embarque).
     const rows = [
       ('partida',             'Partida'),
       ('apresentacao',        'Apresentação'),
       ('embarque_passageiro', 'Embarque do passageiro'),
+      ('hora_saida',          'Hora de saída'),
     ];
     final marcos = (_estadoMarcos?['marcos'] as Map?) ?? const {};
 

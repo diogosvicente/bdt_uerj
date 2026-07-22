@@ -215,10 +215,13 @@ class BdtService {
   // ==========================================================
 
   /// Marcos válidos aceitos pelo backend (BdtJornadaService::ORDEM).
+  /// Ordem cronológica — o backend recusa registro fora de ordem.
   static const List<String> marcosValidos = <String>[
     "partida",
     "apresentacao",
     "embarque_passageiro",
+    // Sprint 5 W+M — 4º marco: saída efetiva do veículo (após embarque).
+    "hora_saida",
   ];
 
   /// Registra um marco da jornada. O backend grava origem="mobile"
