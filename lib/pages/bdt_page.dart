@@ -637,29 +637,55 @@ class _BdtPageState extends State<BdtPage> {
     );
   }
 
+  /// Dialog de confirmação padrão. Aceita ícone opcional pra diferenciar
+  /// alertas (warning amber) de confirmações normais (sem ícone).
   Future<bool> _confirmDialog({
     required String title,
     required String message,
     String cancelText = "Cancelar",
     String confirmText = "Confirmar",
+    IconData? icon,
+    Color? iconColor,
   }) async {
     final res = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (dctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dctx, false),
-            child: Text(cancelText),
+      builder: (dctx) {
+        final cs = Theme.of(dctx).colorScheme;
+        final tt = Theme.of(dctx).textTheme;
+
+        return AlertDialog(
+          icon: icon != null
+              ? Icon(icon, size: 40, color: iconColor ?? cs.primary)
+              : null,
+          title: Text(
+            title,
+            textAlign: icon != null ? TextAlign.center : TextAlign.start,
+            style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w800),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dctx, true),
-            child: Text(confirmText),
+          content: SingleChildScrollView(
+            child: Text(
+              message,
+              style: (tt.bodyMedium ?? const TextStyle()).copyWith(
+                height: 1.5,
+                fontSize: 15,
+              ),
+            ),
           ),
-        ],
-      ),
+          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dctx, false),
+              child: Text(cancelText),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dctx, true),
+              child: Text(confirmText),
+            ),
+          ],
+        );
+      },
     );
 
     return res ?? false;
@@ -1454,13 +1480,14 @@ class _BdtPageState extends State<BdtPage> {
                                     final segueSemOdo = await _confirmDialog(
                                       title: 'Sem odômetro de saída',
                                       message:
-                                          'Você não informou o odômetro de saída. '
-                                          'Isso é importante para o cálculo de KM '
-                                          'do trecho.\n\n'
-                                          'Deseja iniciar assim mesmo? '
-                                          '(pode preencher depois pela web)',
+                                          'Você não informou o odômetro de saída — '
+                                          'ele é usado no cálculo de KM do trecho.\n\n'
+                                          'Você pode iniciar assim mesmo e '
+                                          'preencher depois pela web.',
                                       cancelText: 'Informar agora',
                                       confirmText: 'Iniciar sem odômetro',
+                                      icon: Icons.warning_amber_rounded,
+                                      iconColor: Colors.amber.shade800,
                                     );
                                     if (!segueSemOdo) {
                                       if (!mounted || !sheetOpen) return;
@@ -1523,6 +1550,8 @@ class _BdtPageState extends State<BdtPage> {
                                           'Deseja prosseguir mesmo assim?',
                                       cancelText: 'Ajustar',
                                       confirmText: 'Prosseguir assim mesmo',
+                                      icon: Icons.warning_amber_rounded,
+                                      iconColor: Colors.amber.shade800,
                                     );
                                     if (!segueMesmoAssim) {
                                       if (!mounted || !sheetOpen) return;
@@ -1857,13 +1886,14 @@ class _BdtPageState extends State<BdtPage> {
                                     final segueSemOdo = await _confirmDialog(
                                       title: 'Sem odômetro de chegada',
                                       message:
-                                          'Você não informou o odômetro de chegada. '
-                                          'Isso é importante para o cálculo de KM '
-                                          'do trecho.\n\n'
-                                          'Deseja finalizar assim mesmo? '
-                                          '(pode preencher depois pela web)',
+                                          'Você não informou o odômetro de chegada — '
+                                          'ele é usado no cálculo de KM do trecho.\n\n'
+                                          'Você pode finalizar assim mesmo e '
+                                          'preencher depois pela web.',
                                       cancelText: 'Informar agora',
                                       confirmText: 'Finalizar sem odômetro',
+                                      icon: Icons.warning_amber_rounded,
+                                      iconColor: Colors.amber.shade800,
                                     );
                                     if (!segueSemOdo) {
                                       if (!mounted || !sheetOpen) return;
