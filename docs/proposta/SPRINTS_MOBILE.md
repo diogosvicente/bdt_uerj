@@ -545,6 +545,16 @@ refino desses, registrar aqui em vez de deixar só no commit
   `bdt/detalhes` mobile e no sync. Aguardando `ano/numero` do BDT
   que ele viu bugar + sequência exata de cliques pra reproduzir.
 
+- ✅ **Trecho extra — erros inline em vez de SnackBar invisível**
+  (2026-07-22) — usuário reportou que "clicar em Cadastrar trecho
+  extra não faz nada". Causa: o sheet é `isScrollControlled: true`,
+  então o SnackBar do `ScaffoldMessenger.of(context)` era mostrado
+  atrás do sheet + teclado — invisível. Fix: mesmos padrões dos
+  outros sheets desta página — `String? formError` renderizado em
+  `errorContainer` no topo do sheet, `bool busy` bloqueia rebound
+  no botão, spinner in-line, snackbar de sucesso só após `Navigator.pop`
+  do sheet (aí sim é visível).
+
 - ✅ **Alerta odômetro saída < KM inicial** (2026-07-22) — validação
   client-side no sheet "Iniciar trecho": se o `odometro_saida` digitado
   for menor que a KM inicial efetiva (a que o condutor acabou de

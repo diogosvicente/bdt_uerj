@@ -694,6 +694,12 @@ class _BdtPageState extends State<BdtPage> {
     final horaSaidaCtrl = TextEditingController();
     final horaChegadaCtrl = TextEditingController();
 
+    // Sprint MUX (2026-07-22) — erros inline em vez de SnackBar. O sheet
+    // é fullscreen com o teclado aberto, então SnackBar do ScaffoldMessenger
+    // aparece atrás e o condutor não vê ("cliquei mas nada acontece").
+    String? formError;
+    bool busy = false;
+
     Future<void> pickHora(
       TextEditingController c,
       StateSetter setLocal,
@@ -747,6 +753,24 @@ class _BdtPageState extends State<BdtPage> {
                       style: TextStyle(fontSize: 12, color: Colors.black54),
                     ),
                     const SizedBox(height: 12),
+                    if (formError != null) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          color: Theme.of(ctx).colorScheme.errorContainer,
+                        ),
+                        child: Text(
+                          formError!,
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.onErrorContainer,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     TextField(
                       controller: origemCtrl,
                       maxLines: 2,
@@ -811,62 +835,70 @@ class _BdtPageState extends State<BdtPage> {
                     ),
                     const SizedBox(height: 14),
                     FilledButton.icon(
-                      onPressed: () async {
-                        final origem = origemCtrl.text.trim();
-                        final destino = destinoCtrl.text.trim();
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              final origem = origemCtrl.text.trim();
+                              final destino = destinoCtrl.text.trim();
 
-                        if (origem.isEmpty || destino.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("Informe origem e destino."),
-                            ),
-                          );
-                          return;
-                        }
+                              if (origem.isEmpty || destino.isEmpty) {
+                                setLocal(() => formError =
+                                    'Informe origem e destino.');
+                                return;
+                              }
 
-                        final hs = horaSaidaCtrl.text.trim();
-                        final hc = horaChegadaCtrl.text.trim();
-                        // Se preencheu um dos horários, exige o outro
-                        // (senão saída sem chegada, ou vice-versa, fica
-                        // meia-boca no relatório).
-                        if ((hs.isNotEmpty) != (hc.isNotEmpty)) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                "Preencha os DOIS horários (saída e chegada) ou nenhum.",
-                              ),
-                            ),
-                          );
-                          return;
-                        }
+                              final hs = horaSaidaCtrl.text.trim();
+                              final hc = horaChegadaCtrl.text.trim();
+                              // Se preencheu um dos horários, exige o outro
+                              // (senão fica meia-boca no relatório).
+                              if ((hs.isNotEmpty) != (hc.isNotEmpty)) {
+                                setLocal(() => formError =
+                                    'Preencha os DOIS horários (saída e chegada) '
+                                    'ou deixe ambos vazios.');
+                                return;
+                              }
 
-                        final ok = await BdtService.criarTrechoExtra(
-                          bdtId: bdtId,
-                          origem: origem,
-                          destino: destino,
-                          horaSaida: hs.isEmpty ? null : hs,
-                          horaChegada: hc.isEmpty ? null : hc,
-                          obs: obsCtrl.text,
-                        );
+                              setLocal(() {
+                                formError = null;
+                                busy = true;
+                              });
+                              final ok = await BdtService.criarTrechoExtra(
+                                bdtId: bdtId,
+                                origem: origem,
+                                destino: destino,
+                                horaSaida: hs.isEmpty ? null : hs,
+                                horaChegada: hc.isEmpty ? null : hc,
+                                obs: obsCtrl.text,
+                              );
 
-                        if (!context.mounted) return;
+                              if (!context.mounted) return;
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              ok
-                                  ? "Trecho extra criado."
-                                  : "Falha ao criar trecho extra.",
-                            ),
-                          ),
-                        );
+                              if (!ok) {
+                                setLocal(() {
+                                  busy = false;
+                                  formError = 'Falha ao criar trecho extra. '
+                                      'Verifique a conexão e tente novamente.';
+                                });
+                                return;
+                              }
 
-                        if (ok) {
-                          Navigator.pop(ctx);
-                          await _load(bdtId);
-                        }
-                      },
-                      icon: const Icon(Icons.add_road),
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context)
+                                ..clearSnackBars()
+                                ..showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Trecho extra criado.'),
+                                  ),
+                                );
+                              await _load(bdtId);
+                            },
+                      icon: busy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_road),
                       label: const Text("Cadastrar trecho extra"),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
