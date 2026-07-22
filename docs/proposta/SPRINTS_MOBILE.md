@@ -545,6 +545,28 @@ refino desses, registrar aqui em vez de deixar só no commit
   `bdt/detalhes` mobile e no sync. Aguardando `ano/numero` do BDT
   que ele viu bugar + sequência exata de cliques pra reproduzir.
 
+- ✅ **Alerta odômetro saída < KM inicial** (2026-07-22) — validação
+  client-side no sheet "Iniciar trecho": se o `odometro_saida` digitado
+  for menor que a KM inicial efetiva (a que o condutor acabou de
+  digitar OU a já persistida no BDT), abre um `_confirmDialog` de
+  aviso. Botões: **Ajustar** (foca de volta no campo odômetro) e
+  **Prosseguir assim mesmo** (segue direto pro `_confirmDialog` final
+  de "Iniciar trecho?"). Filosofia: "quase tudo aqui é informativo"
+  — nunca bloqueia. Se o condutor pulou a KM inicial, não valida
+  (nada pra comparar).
+
+- ✅ **Migration self-healing pro `distancia_km`** (2026-07-22, backend
+  `feature/027-mobile-support`) — segunda vez esta semana que o dev DB
+  ficou sem a coluna `trnsp_solicitacao_trechos.distancia_km` (bug já
+  registrado no item "Iniciar/Finalizar trecho — retorno de exec
+  ignorado"). A migration `2026-05-13-100000_AddDistanciaKm...` fica
+  registrada como executada em `migrations` mas a coluna some em
+  rollbacks/dumps parciais, e o `AgendaTrechosModel::find()` explode
+  em toda request que usa. Fix: nova migration
+  `2026-07-22-000001_EnsureDistanciaKmOnTrnspSolicitacaoTrechos` com
+  `if (! fieldExists)` — no-op onde já existe, adiciona onde faltar.
+  Idempotente, roda toda vez que `spark migrate` sobe.
+
 - ✅ **KM inicial vira campo inline no sheet "Iniciar trecho"**
   (2026-07-22) — usuário reportou ANR ("BDT UERJ não está respondendo")
   reprodutível ao digitar no dialog "KM inicial" que abria por cima do

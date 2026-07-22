@@ -1436,6 +1436,53 @@ class _BdtPageState extends State<BdtPage> {
                                     return;
                                   }
 
+                                  // Sprint MUX (2026-07-22) — alerta se o
+                                  // odômetro de saída ficou menor que a KM
+                                  // inicial do BDT. Só alerta, permite
+                                  // prosseguir (mesma filosofia do checkup:
+                                  // "quase tudo aqui é informativo"). KM
+                                  // inicial efetiva = valor recém-digitado
+                                  // OU o já persistido (se o campo nem
+                                  // apareceu). Se pulou, não valida.
+                                  final odoValor = double.tryParse(
+                                    odoCtrl.text.trim().replaceAll(',', '.'),
+                                  );
+                                  double? kmInicialEfetivo;
+                                  if (precisaKmInicial) {
+                                    if (!pulouKmInicial) {
+                                      kmInicialEfetivo = double.tryParse(
+                                        kmInicialCtrl.text
+                                            .trim()
+                                            .replaceAll(',', '.'),
+                                      );
+                                    }
+                                  } else {
+                                    kmInicialEfetivo = estadoKm?.kmInicial;
+                                  }
+                                  if (odoValor != null &&
+                                      kmInicialEfetivo != null &&
+                                      odoValor < kmInicialEfetivo) {
+                                    final segueMesmoAssim =
+                                        await _confirmDialog(
+                                      title: 'Odômetro abaixo da KM inicial',
+                                      message:
+                                          'O odômetro de saída (${odoValor.toStringAsFixed(0)} km) '
+                                          'está abaixo da KM inicial do BDT '
+                                          '(${kmInicialEfetivo.toStringAsFixed(0)} km).\n\n'
+                                          'Isso normalmente indica engano de digitação. '
+                                          'Deseja prosseguir mesmo assim?',
+                                      cancelText: 'Ajustar',
+                                      confirmText: 'Prosseguir assim mesmo',
+                                    );
+                                    if (!segueMesmoAssim) {
+                                      if (!mounted || !sheetOpen) return;
+                                      FocusScope.of(ctx)
+                                          .requestFocus(odoFocus);
+                                      return;
+                                    }
+                                    if (!mounted || !sheetOpen) return;
+                                  }
+
                                   final confirmed = await _confirmDialog(
                                     title: 'Iniciar trecho?',
                                     message:
