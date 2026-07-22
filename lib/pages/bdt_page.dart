@@ -1445,12 +1445,30 @@ class _BdtPageState extends State<BdtPage> {
                               : () async {
                                   clearErrors();
 
+                                  // Sprint MUX (2026-07-22) — odômetro
+                                  // OPCIONAL. Se vazio, alerta permitindo
+                                  // prosseguir (mesma filosofia do resto:
+                                  // informar, não bloquear). O condutor
+                                  // preenche depois pela web se esqueceu.
                                   if (odoCtrl.text.trim().isEmpty) {
-                                    setLocal(() {
-                                      odoError = 'Informe o odômetro de saída.';
-                                    });
-                                    FocusScope.of(ctx).requestFocus(odoFocus);
-                                    return;
+                                    final segueSemOdo = await _confirmDialog(
+                                      title: 'Sem odômetro de saída',
+                                      message:
+                                          'Você não informou o odômetro de saída. '
+                                          'Isso é importante para o cálculo de KM '
+                                          'do trecho.\n\n'
+                                          'Deseja iniciar assim mesmo? '
+                                          '(pode preencher depois pela web)',
+                                      cancelText: 'Informar agora',
+                                      confirmText: 'Iniciar sem odômetro',
+                                    );
+                                    if (!segueSemOdo) {
+                                      if (!mounted || !sheetOpen) return;
+                                      FocusScope.of(ctx)
+                                          .requestFocus(odoFocus);
+                                      return;
+                                    }
+                                    if (!mounted || !sheetOpen) return;
                                   }
 
                                   // Sprint MUX — bloqueia iniciar se o BDT
@@ -1515,12 +1533,16 @@ class _BdtPageState extends State<BdtPage> {
                                     if (!mounted || !sheetOpen) return;
                                   }
 
+                                  final odoResumo =
+                                      odoCtrl.text.trim().isEmpty
+                                          ? '(não informado)'
+                                          : odoCtrl.text.trim();
                                   final confirmed = await _confirmDialog(
                                     title: 'Iniciar trecho?',
                                     message:
                                         'Tem certeza que deseja iniciar este trecho?\n\n'
                                         'Hora de saída: ${horaCtrl.text.trim()}\n'
-                                        'Odômetro: ${odoCtrl.text.trim()}',
+                                        'Odômetro: $odoResumo',
                                     cancelText: 'Não',
                                     confirmText: 'Sim, iniciar',
                                   );
@@ -1577,6 +1599,7 @@ class _BdtPageState extends State<BdtPage> {
                                       });
 
                                       debugPrint('[iniciar] chamando atualizarTrechoExecucao');
+                                      final odoTrim = odoCtrl.text.trim();
                                       final okExec =
                                           await BdtService.atualizarTrechoExecucao(
                                         bdtId: bdtId,
@@ -1585,7 +1608,8 @@ class _BdtPageState extends State<BdtPage> {
                                           "datahora_saida": _apiDateTimeFromHm(
                                             horaCtrl.text.trim(),
                                           ),
-                                          "odometro_saida": odoCtrl.text.trim(),
+                                          if (odoTrim.isNotEmpty)
+                                            "odometro_saida": odoTrim,
                                         },
                                       );
                                       debugPrint('[iniciar] atualizarTrechoExecucao retornou okExec=$okExec');
@@ -1825,21 +1849,41 @@ class _BdtPageState extends State<BdtPage> {
                               : () async {
                                   clearErrors();
 
+                                  // Sprint MUX (2026-07-22) — odômetro
+                                  // OPCIONAL. Se vazio, alerta permitindo
+                                  // prosseguir. Filosofia "informar, não
+                                  // bloquear".
                                   if (odoCtrl.text.trim().isEmpty) {
-                                    setLocal(() {
-                                      odoError =
-                                          'Informe o odômetro de chegada.';
-                                    });
-                                    FocusScope.of(ctx).requestFocus(odoFocus);
-                                    return;
+                                    final segueSemOdo = await _confirmDialog(
+                                      title: 'Sem odômetro de chegada',
+                                      message:
+                                          'Você não informou o odômetro de chegada. '
+                                          'Isso é importante para o cálculo de KM '
+                                          'do trecho.\n\n'
+                                          'Deseja finalizar assim mesmo? '
+                                          '(pode preencher depois pela web)',
+                                      cancelText: 'Informar agora',
+                                      confirmText: 'Finalizar sem odômetro',
+                                    );
+                                    if (!segueSemOdo) {
+                                      if (!mounted || !sheetOpen) return;
+                                      FocusScope.of(ctx)
+                                          .requestFocus(odoFocus);
+                                      return;
+                                    }
+                                    if (!mounted || !sheetOpen) return;
                                   }
 
+                                  final odoResumo =
+                                      odoCtrl.text.trim().isEmpty
+                                          ? '(não informado)'
+                                          : odoCtrl.text.trim();
                                   final confirmed = await _confirmDialog(
                                     title: 'Finalizar trecho?',
                                     message:
                                         'Tem certeza que deseja finalizar este trecho?\n\n'
                                         'Hora de chegada: ${horaCtrl.text.trim()}\n'
-                                        'Odômetro: ${odoCtrl.text.trim()}',
+                                        'Odômetro: $odoResumo',
                                     cancelText: 'Não',
                                     confirmText: 'Sim, finalizar',
                                   );
@@ -1857,6 +1901,8 @@ class _BdtPageState extends State<BdtPage> {
                                     if (!mounted || !sheetOpen) return;
 
                                     if (ok) {
+                                      final odoChegadaTrim =
+                                          odoCtrl.text.trim();
                                       final okExec =
                                           await BdtService.atualizarTrechoExecucao(
                                         bdtId: bdtId,
@@ -1866,8 +1912,9 @@ class _BdtPageState extends State<BdtPage> {
                                               _apiDateTimeFromHm(
                                                 horaCtrl.text.trim(),
                                               ),
-                                          "odometro_chegada": odoCtrl.text
-                                              .trim(),
+                                          if (odoChegadaTrim.isNotEmpty)
+                                            "odometro_chegada":
+                                                odoChegadaTrim,
                                         },
                                       );
 

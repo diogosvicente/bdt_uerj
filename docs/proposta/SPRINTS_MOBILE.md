@@ -545,6 +545,17 @@ refino desses, registrar aqui em vez de deixar só no commit
   `bdt/detalhes` mobile e no sync. Aguardando `ano/numero` do BDT
   que ele viu bugar + sequência exata de cliques pra reproduzir.
 
+- ✅ **Odômetro saída/chegada opcional com alerta** (2026-07-22) — os
+  sheets "Iniciar trecho" e "Finalizar trecho" **bloqueavam** o botão
+  quando o campo odômetro estava vazio (erro `odoError` inline).
+  Trocado por `_confirmDialog` — se vazio, mostra "Sem odômetro de
+  saída/chegada", explicando que é importante pro cálculo de KM, com
+  botões **Informar agora** (foca no campo) e **Iniciar/Finalizar sem
+  odômetro** (segue). O `_confirmDialog` de resumo mostra "Odômetro:
+  (não informado)" nesse caso. No `atualizarTrechoExecucao`, o campo
+  `odometro_*` só é enviado se preenchido — vazio ⇒ nem manda ⇒
+  backend deixa NULL sem exceção. Filosofia "informar, não bloquear".
+
 - ✅ **Trecho extra — erros inline em vez de SnackBar invisível**
   (2026-07-22) — usuário reportou que "clicar em Cadastrar trecho
   extra não faz nada". Causa: o sheet é `isScrollControlled: true`,
