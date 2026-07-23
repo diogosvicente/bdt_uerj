@@ -16,18 +16,22 @@ class _BdtFormPageState extends State<BdtFormPage> {
   bool _loadedOnce = false;
 
   // ====== Marcos da Jornada (substitui os antigos campos do BDT) ======
-  // Chaves esperadas pelo backend: 'partida' | 'apresentacao' | 'embarque_passageiro'
+  // Chaves esperadas pelo backend (BdtJornadaService::ORDEM):
+  //   'partida' | 'apresentacao' | 'embarque_passageiro' | 'hora_saida'
+  // (o 4º entrou na Sprint 5 W+M — datahora_hora_saida DATETIME NULL).
   // Cada entrada guarda o timestamp já registrado (vindo do BDT) e nome de quem
   // registrou (quando vier do endpoint /jornada/estado).
   final Map<String, String?> _marcoDatahora = {
     'partida': null,
     'apresentacao': null,
     'embarque_passageiro': null,
+    'hora_saida': null,
   };
   final Map<String, String?> _marcoAutor = {
     'partida': null,
     'apresentacao': null,
     'embarque_passageiro': null,
+    'hora_saida': null,
   };
   String? _registrandoMarco; // chave do marco em progresso (lock visual)
 
@@ -51,6 +55,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
     'partida': 'Partida',
     'apresentacao': 'Apresentação',
     'embarque_passageiro': 'Embarque do passageiro',
+    'hora_saida': 'Hora de saída',
   };
 
   // ícones por marco
@@ -58,6 +63,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
     'partida': Icons.flag_outlined,
     'apresentacao': Icons.front_hand_outlined,
     'embarque_passageiro': Icons.directions_walk,
+    'hora_saida': Icons.play_arrow_outlined,
   };
 
   @override
@@ -143,6 +149,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
         (bdt['datahora_embarque_passageiro'] ?? '').toString().isEmpty
         ? null
         : bdt['datahora_embarque_passageiro'].toString();
+    _marcoDatahora['hora_saida'] =
+        (bdt['datahora_hora_saida'] ?? '').toString().isEmpty
+        ? null
+        : bdt['datahora_hora_saida'].toString();
 
     // Busca o estado canônico dos marcos (timestamps + assinaturas).
     // Falha aqui é silenciosa: já temos fallback nos timestamps acima.
@@ -302,7 +312,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
   Future<void> _openAbastecimentoSheet({Map<String, dynamic>? existing}) async {
     final isEdit = existing != null;
-    final id = isEdit ? (int.tryParse(existing!['id'].toString()) ?? 0) : 0;
+    final id = isEdit ? (int.tryParse(existing['id'].toString()) ?? 0) : 0;
 
     final dataHoraCtrl = TextEditingController(
       text: (existing?['data_hora'] ?? '').toString(),
@@ -324,7 +334,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
     );
 
     String? tipo = (existing?['tipo_combustivel'] ?? '').toString();
-    if (tipo != null && tipo.trim().isEmpty) tipo = null;
+    if (tipo.trim().isEmpty) tipo = null;
 
     await showModalBottomSheet(
       context: context,
@@ -404,7 +414,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: tipo,
+                initialValue: tipo,
                 items: const [
                   DropdownMenuItem(value: "gasolina", child: Text("Gasolina")),
                   DropdownMenuItem(value: "etanol", child: Text("Etanol")),
@@ -539,7 +549,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
   Future<void> _openManutencaoSheet({Map<String, dynamic>? existing}) async {
     final isEdit = existing != null;
-    final id = isEdit ? (int.tryParse(existing!['id'].toString()) ?? 0) : 0;
+    final id = isEdit ? (int.tryParse(existing['id'].toString()) ?? 0) : 0;
 
     final inicioCtrl = TextEditingController(
       text: (existing?['data_hora_inicio'] ?? '').toString(),

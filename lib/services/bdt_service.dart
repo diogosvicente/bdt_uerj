@@ -30,7 +30,7 @@ class BdtService {
       "usuario_id": usuarioId,
     });
 
-    if (res == null || res['success'] != true) return [];
+    if (res['success'] != true) return [];
 
     final list = (res['data'] as List<dynamic>? ?? const []);
     return list
@@ -81,7 +81,7 @@ class BdtService {
       "transporte/api/bdt/trecho/iniciar",
       payload,
     );
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   /// Sprint M4 (patch) — consulta rápida do estado da KM do BDT.
@@ -167,7 +167,7 @@ class BdtService {
       "transporte/api/bdt/trecho/finalizar",
       payload,
     );
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   /// Envia 1 ponto de localização (tracking)
@@ -323,7 +323,7 @@ class BdtService {
       "destino": destino,
     });
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   static Future<bool> atualizarTrechoExecucao({
@@ -343,7 +343,7 @@ class BdtService {
       },
     );
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   static Future<bool> excluirTrecho({
@@ -358,7 +358,7 @@ class BdtService {
       "trecho_id": trechoId,
     });
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   // =========================
@@ -375,7 +375,7 @@ class BdtService {
       "usuario_id": usuarioId,
     });
 
-    if (res == null || res["success"] != true) return [];
+    if (res["success"] != true) return [];
     final list = (res["data"] as List<dynamic>? ?? const []);
     return list
         .whereType<Map>()
@@ -394,7 +394,7 @@ class BdtService {
       {"bdt_id": bdtId, "usuario_id": usuarioId, ...data},
     );
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   static Future<bool> atualizarAbastecimento({
@@ -412,7 +412,7 @@ class BdtService {
           ...data,
         });
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   static Future<bool> excluirAbastecimento({
@@ -430,7 +430,7 @@ class BdtService {
       },
     );
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   // =========================
@@ -447,7 +447,7 @@ class BdtService {
       "usuario_id": usuarioId,
     });
 
-    if (res == null || res["success"] != true) return [];
+    if (res["success"] != true) return [];
     final list = (res["data"] as List<dynamic>? ?? const []);
     return list
         .whereType<Map>()
@@ -467,7 +467,7 @@ class BdtService {
       ...data,
     });
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   static Future<bool> atualizarManutencao({
@@ -484,7 +484,7 @@ class BdtService {
       ...data,
     });
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   static Future<bool> excluirManutencao({
@@ -499,7 +499,7 @@ class BdtService {
       "manutencao_id": manutencaoId,
     });
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   static Future<bool> excluirTrechoExtra({
@@ -514,7 +514,7 @@ class BdtService {
       "trecho_id": trechoId,
     });
 
-    return res != null && res["success"] == true;
+    return res["success"] == true;
   }
 
   // ==========================================================
@@ -539,10 +539,6 @@ class BdtService {
       "usuario_id": usuarioId,
       "justificativa": justificativa.trim(),
     });
-
-    if (res == null) {
-      return {"success": false, "message": "Falha de comunicação."};
-    }
     // ApiClient já padroniza a resposta com success/message
     return Map<String, dynamic>.from(res);
   }

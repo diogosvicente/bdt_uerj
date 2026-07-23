@@ -196,13 +196,19 @@ class _HistoricoOcorrenciasPageState extends State<HistoricoOcorrenciasPage> {
     required int? value,
     required void Function(int?) onChanged,
   }) {
+    // `isDense: true` no InputDecoration deixava o topo do OutlineBorder
+    // engolir o `labelText` (o "V" de "Veículo" ficava cortado no print
+    // do usuário). Substituído por contentPadding explícito que reserva
+    // espaço acima pro label caber inteiro sem overlap.
     return DropdownButtonFormField<int?>(
-      value: value,
+      initialValue: value,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
+        floatingLabelBehavior: FloatingLabelBehavior.always,
         border: const OutlineInputBorder(),
-        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       ),
       items: [
         const DropdownMenuItem<int?>(value: null, child: Text('Todos')),

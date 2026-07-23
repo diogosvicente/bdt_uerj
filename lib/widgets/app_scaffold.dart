@@ -9,7 +9,6 @@ class AppScaffold extends StatelessWidget {
     required this.subtitle,
     this.onRefresh,
     this.onLogout,
-    this.onHistoricoOcorrencias,
     this.showBackButton = true,
     this.floatingActionButton,
   });
@@ -22,11 +21,6 @@ class AppScaffold extends StatelessWidget {
   // `() async { doStuff(); }`.
   final Future<void> Function()? onRefresh;
   final VoidCallback? onLogout;
-
-  /// Sprint W+M (Sprint 17 web) — atalho pra histórico institucional de
-  /// ocorrências, disponível no menu do avatar. Só aparece se != null.
-  final VoidCallback? onHistoricoOcorrencias;
-
   final bool showBackButton;
   final Widget? floatingActionButton;
 
@@ -38,7 +32,6 @@ class AppScaffold extends StatelessWidget {
         subtitle: subtitle,
         onRefresh: onRefresh,
         onLogout: onLogout,
-        onHistoricoOcorrencias: onHistoricoOcorrencias,
         showBackButton: showBackButton,
       ),
       body: body,

@@ -154,8 +154,6 @@ class _HomePageState extends State<HomePage> {
       subtitle: _uiDate(selectedDate),
       onRefresh: _reload,
       onLogout: _logout,
-      onHistoricoOcorrencias: () =>
-          Navigator.pushNamed(context, '/ocorrencias/historico'),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _abrirPreBdtForm,
         icon: const Icon(Icons.rocket_launch_outlined),
@@ -169,6 +167,64 @@ class _HomePageState extends State<HomePage> {
           _secaoPendentes(),
           const SizedBox(height: 10),
           _secaoBdtsDoDia(),
+          const SizedBox(height: 10),
+          _cardFerramentas(),
+        ],
+      ),
+    );
+  }
+
+  /// Card compacto de atalhos institucionais que não dependem de um BDT
+  /// específico. Hoje só o histórico de ocorrências; a ideia é que
+  /// abastecimento livre e manutenção livre (fora do BDT) entrem aqui
+  /// no futuro, sem poluir a AppBar / o menu do avatar.
+  Widget _cardFerramentas() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE0E0E0)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: const [
+                Icon(Icons.apps, size: 18, color: Colors.black54),
+                SizedBox(width: 8),
+                Text(
+                  'Ferramentas',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    letterSpacing: 0.3,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: Color(0xFFFFF3CD),
+              foregroundColor: Color(0xFF856404),
+              child: Icon(Icons.warning_amber_rounded),
+            ),
+            title: const Text(
+              'Histórico de ocorrências',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text(
+              'Ocorrências registradas no sistema (todos os veículos)',
+              style: TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: Colors.black38),
+            onTap: () => Navigator.pushNamed(
+              context,
+              '/ocorrencias/historico',
+            ),
+          ),
         ],
       ),
     );
