@@ -22,6 +22,7 @@ class AppNavbar extends StatefulWidget implements PreferredSizeWidget {
     required this.subtitle,
     this.onRefresh,
     this.onLogout,
+    this.onHistoricoOcorrencias,
     this.showBackButton = true,
   });
 
@@ -31,6 +32,11 @@ class AppNavbar extends StatefulWidget implements PreferredSizeWidget {
   /// Retorna Future<void> pra permitir mostrar spinner enquanto executa.
   final Future<void> Function()? onRefresh;
   final VoidCallback? onLogout;
+
+  /// Atalho pra histórico institucional de ocorrências (Sprint 17 W+M).
+  /// Aparece no menu do avatar antes de "Sair" quando != null.
+  final VoidCallback? onHistoricoOcorrencias;
+
   final bool showBackButton;
 
   /// Altura visível (fora da status bar).
@@ -223,6 +229,9 @@ class _AppNavbarState extends State<AppNavbar> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: (v) {
         if (v == 'logout') widget.onLogout!();
+        if (v == 'ocorrencias' && widget.onHistoricoOcorrencias != null) {
+          widget.onHistoricoOcorrencias!();
+        }
       },
       itemBuilder: (context) => [
         // Cabeçalho do menu — card do usuário. `enabled: false` deixa
@@ -281,6 +290,29 @@ class _AppNavbarState extends State<AppNavbar> {
             ),
           ),
         if (_nomeLogado.isNotEmpty) const PopupMenuDivider(height: 6),
+
+        // Sprint W+M (Sprint 17 web) — atalho pro histórico institucional
+        // de ocorrências. Só aparece se a página passou o callback.
+        if (widget.onHistoricoOcorrencias != null)
+          const PopupMenuItem(
+            value: 'ocorrencias',
+            height: 44,
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 20, color: Colors.black87),
+                SizedBox(width: 12),
+                Text(
+                  'Histórico de ocorrências',
+                  style: TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (widget.onHistoricoOcorrencias != null)
+          const PopupMenuDivider(height: 6),
 
         // "Sair" com cor de ação destrutiva — ícone e texto em vermelho
         // (AppTheme.danger). Antes o ícone padrão ficava quase invisível

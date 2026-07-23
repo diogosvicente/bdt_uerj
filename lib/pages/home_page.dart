@@ -154,6 +154,8 @@ class _HomePageState extends State<HomePage> {
       subtitle: _uiDate(selectedDate),
       onRefresh: _reload,
       onLogout: _logout,
+      onHistoricoOcorrencias: () =>
+          Navigator.pushNamed(context, '/ocorrencias/historico'),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _abrirPreBdtForm,
         icon: const Icon(Icons.rocket_launch_outlined),
