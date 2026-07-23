@@ -5,6 +5,7 @@ import '../services/bdt_service.dart';
 import '../utils/date_fmt.dart';
 import '../utils/logger.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/assinatura_preview.dart';
 import 'assinatura_marco_page.dart';
 
 /// Página de validação de INÍCIO do atendimento (Sprint M4.1).
@@ -185,41 +186,57 @@ class _ValidacaoInicioPageState extends State<ValidacaoInicioPage> {
     final tipo = assinaturaMap != null
         ? (assinaturaMap['signatario_tipo'] ?? '').toString()
         : '';
+    final svg = assinaturaMap != null
+        ? assinaturaMap['assinatura_svg']?.toString()
+        : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            registrado ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: registrado ? Colors.green : Colors.grey,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                registrado ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: registrado ? Colors.green : Colors.grey,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    if (registrado) ...[
+                      Text(DateFmt.dataHoraBr(dh),
+                          style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                      if (autor.isNotEmpty)
+                        Text(
+                          tipo.isNotEmpty ? '$autor • $tipo' : autor,
+                          style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                    ] else
+                      const Text('Não registrado',
+                          style: TextStyle(fontSize: 12, color: Colors.black54)),
+                  ],
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () => _abrirAssinatura(marco, label),
+                icon: const Icon(Icons.edit_note),
+                label: Text(registrado ? 'Refazer' : 'Registrar'),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
-                if (registrado) ...[
-                  Text(DateFmt.dataHoraBr(dh),
-                      style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                  if (autor.isNotEmpty)
-                    Text(
-                      tipo.isNotEmpty ? '$autor • $tipo' : autor,
-                      style: const TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                ] else
-                  const Text('Não registrado',
-                      style: TextStyle(fontSize: 12, color: Colors.black54)),
-              ],
+          if (registrado && svg != null && svg.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Padding(
+              // Alinha com o texto (pula ícone + gap).
+              padding: const EdgeInsets.only(left: 34),
+              child: AssinaturaPreview(svg: svg, height: 72),
             ),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: () => _abrirAssinatura(marco, label),
-            icon: const Icon(Icons.edit_note),
-            label: Text(registrado ? 'Refazer' : 'Registrar'),
-          ),
+          ],
         ],
       ),
     );

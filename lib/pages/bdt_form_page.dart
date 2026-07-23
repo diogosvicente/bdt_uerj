@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/bdt_service.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/assinatura_preview.dart';
 
 class BdtFormPage extends StatefulWidget {
   const BdtFormPage({super.key});
@@ -28,6 +29,15 @@ class _BdtFormPageState extends State<BdtFormPage> {
     'hora_saida': null,
   };
   final Map<String, String?> _marcoAutor = {
+    'partida': null,
+    'apresentacao': null,
+    'embarque_passageiro': null,
+    'hora_saida': null,
+  };
+  // Sprint W+M — SVG cru da assinatura ativa por marco (preview no card).
+  // Populado a partir de est['marcos'][slug]['assinatura']['assinatura_svg']
+  // no /jornada/estado. `null` = ainda sem assinatura pra esse marco.
+  final Map<String, String?> _marcoAssinaturaSvg = {
     'partida': null,
     'apresentacao': null,
     'embarque_passageiro': null,
@@ -168,7 +178,14 @@ class _BdtFormPageState extends State<BdtFormPage> {
           }
           final ass = entry['assinatura'];
           if (ass is Map) {
-            _marcoAutor[k] = (ass['criado_por_nome'] ?? '').toString();
+            _marcoAutor[k] = (ass['signatario_nome'] ??
+                    ass['criado_por_nome'] ??
+                    '')
+                .toString();
+            final svg = ass['assinatura_svg'];
+            if (svg != null && svg.toString().trim().isNotEmpty) {
+              _marcoAssinaturaSvg[k] = svg.toString();
+            }
           }
         }
       }
@@ -917,57 +934,71 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final jaRegistrado = dh != null && dh.isNotEmpty;
     final emProgresso = _registrandoMarco == marco;
     final liberado = _marcoPodeRegistrar(marco);
+    final svg = _marcoAssinaturaSvg[marco];
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          _marcoIcone[marco],
-          size: 28,
-          color: jaRegistrado
-              ? Colors.green
-              : (liberado
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).disabledColor),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _marcoLabel[marco] ?? marco,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(
+              _marcoIcone[marco],
+              size: 28,
+              color: jaRegistrado
+                  ? Colors.green
+                  : (liberado
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).disabledColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _marcoLabel[marco] ?? marco,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    jaRegistrado
+                        ? "${_fmtDatahoraBr(dh)}${(autor != null && autor.isNotEmpty) ? ' • $autor' : ''}"
+                        : (liberado ? "Aguardando registro" : "Bloqueado"),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                jaRegistrado
-                    ? "${_fmtDatahoraBr(dh)}${(autor != null && autor.isNotEmpty) ? ' • $autor' : ''}"
-                    : (liberado ? "Aguardando registro" : "Bloqueado"),
-                style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (jaRegistrado)
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Icon(Icons.check_circle, color: Colors.green),
+              )
+            else
+              FilledButton.tonalIcon(
+                onPressed: (emProgresso || !liberado)
+                    ? null
+                    : () => _registrarMarco(bdtId, marco),
+                icon: emProgresso
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.play_arrow, size: 18),
+                label: const Text("Registrar"),
               ),
-            ],
-          ),
+          ],
         ),
-        if (jaRegistrado)
-          const Padding(
-            padding: EdgeInsets.only(left: 8),
-            child: Icon(Icons.check_circle, color: Colors.green),
-          )
-        else
-          FilledButton.tonalIcon(
-            onPressed: (emProgresso || !liberado)
-                ? null
-                : () => _registrarMarco(bdtId, marco),
-            icon: emProgresso
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.play_arrow, size: 18),
-            label: const Text("Registrar"),
+        if (jaRegistrado && svg != null && svg.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Padding(
+            // Alinha com o texto (pula ícone 28 + gap 12).
+            padding: const EdgeInsets.only(left: 40),
+            child: AssinaturaPreview(svg: svg, height: 72),
           ),
+        ],
       ],
     );
   }
