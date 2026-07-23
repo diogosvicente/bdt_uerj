@@ -922,7 +922,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                 _cardManutencoes(),
                 const SizedBox(height: 12),
 
-                _cardAcidentesPlaceholder(),
+                _cardOcorrencias(bdtId),
               ],
             ),
     );
@@ -1197,7 +1197,17 @@ class _BdtFormPageState extends State<BdtFormPage> {
     );
   }
 
-  Widget _cardAcidentesPlaceholder() {
+  /// Sprint W+M (Sprint 17 web F2) — card de ocorrências do BDT.
+  /// Substitui o `_cardAcidentesPlaceholder` antigo, que era só um
+  /// placeholder especulativo. Estrutura correta do Formulário do BDT
+  /// é Abastecimentos + Manutenções + Ocorrências (não "Acidentes" —
+  /// acidente/sinistro é apenas UM dos tipos de ocorrência).
+  ///
+  /// Sem lista aqui por ora — o painel institucional já mostra tudo
+  /// em Menu → Ferramentas → Histórico de ocorrências. Ação primária
+  /// é REGISTRAR (mesmo botão do sheet "Ações" da BdtPage — dois
+  /// pontos de entrada é intencional pra reduzir cliques).
+  Widget _cardOcorrencias(int bdtId) {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1210,20 +1220,32 @@ class _BdtFormPageState extends State<BdtFormPage> {
               children: [
                 const Expanded(
                   child: Text(
-                    "Acidentes",
+                    "Ocorrências",
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: null,
-                  icon: const Icon(Icons.car_crash),
-                  label: const Text("Em breve"),
+                  onPressed: () async {
+                    final ok = await Navigator.pushNamed(
+                      context,
+                      '/ocorrencia/nova',
+                      arguments: bdtId,
+                    );
+                    if (ok == true && mounted) {
+                      // ignore: discarded_futures
+                      _load(bdtId);
+                    }
+                  },
+                  icon: const Icon(Icons.warning_amber_rounded),
+                  label: const Text("Registrar"),
                 ),
               ],
             ),
             const SizedBox(height: 10),
             Text(
-              "Ainda não existe tabela/endpoint para acidentes. Assim que você criar, eu completo o CRUD aqui.",
+              "Avaria, atraso, sinistro, desvio de itinerário… "
+              "O histórico completo fica em Menu → Ferramentas → "
+              "Histórico de ocorrências.",
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

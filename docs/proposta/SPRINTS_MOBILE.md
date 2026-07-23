@@ -740,6 +740,17 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     reimplementada, só embrulhada com auth mobile.
 
 ### Da Sprint 17 web (Ocorrências)
+- ✅ **Substitui card "Acidentes" (placeholder) por "Ocorrências" real**
+  (2026-07-23) — a `BdtFormPage` mostrava um card "Acidentes (Em breve)"
+  com nota "Ainda não existe tabela/endpoint para acidentes, assim que
+  você criar eu completo o CRUD aqui." Foi um assumed placeholder
+  especulativo meu — **nunca deveria ter existido**. A estrutura
+  correta do Formulário do BDT é: **Abastecimentos + Manutenções +
+  Ocorrências** (acidente/sinistro é apenas UM dos tipos de ocorrência).
+  Substituído pelo card real `_cardOcorrencias(bdtId)` — botão
+  "Registrar" (mesmo destino do sheet Ações) + nota apontando pro
+  histórico institucional (Menu → Ferramentas).
+
 - 🟡 **Registrar ocorrência do BDT (Fase 1: sem fotos)** (2026-07-23) —
   condutor abre ocorrência de dentro do BDT em andamento. Segue o
   ARCHITECTURE.md mobile §4.3 (Service categoria API) + §4.7 (Page
