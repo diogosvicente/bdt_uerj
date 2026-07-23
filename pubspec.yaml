@@ -81,6 +81,10 @@ dependencies:
   # escopo agora — app é Android-first).
   image_picker: ^1.1.2
 
+  # Sprint W+M — abrir tel:/mailto:/whatsapp:/https: nos contatos do
+  # modal "Informações de segurança" (telefones da UERJ, seguradora, etc).
+  url_launcher: ^6.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

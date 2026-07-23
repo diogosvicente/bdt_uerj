@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/seguranca_texto.dart';
 import '../services/bdt_service.dart';
 import '../theme/app_theme.dart';
+import 'contato_auto_link.dart';
 
 /// Dialog "Informações de Segurança" do BDT (Sprint M6 / Sprint 1 web).
 ///
@@ -142,12 +143,11 @@ class _SegurancaBdtDialogState extends State<SegurancaBdtDialog> {
             ),
           ),
           const SizedBox(height: 8),
-          // `Text` já preserva '\n' automaticamente — mesmo comportamento
-          // do `white-space: pre-wrap` no CSS do modal web.
-          Text(
-            t.conteudo,
-            style: const TextStyle(fontSize: 13, height: 1.4),
-          ),
+          // Sprint W+M — o `ContatoAutoLink` preserva '\n' (SelectableText.rich)
+          // E parseia telefone / WhatsApp / email / URL virando link
+          // clicável (tel:/wa.me/mailto:/https:). Antes o condutor
+          // precisava copiar/discar manualmente.
+          ContatoAutoLink(texto: t.conteudo),
         ],
       ),
     );

@@ -122,27 +122,10 @@ class _BdtPageState extends State<BdtPage> {
                   Future.microtask(() => SegurancaBdtDialog.show(context));
                 },
               ),
-              // Sprint W+M (Sprint 17 web F2) — registrar ocorrência
-              // durante a viagem (avaria, atraso, sinistro etc). Fotos
-              // entram na Fase 2 dessa sprint.
-              ListTile(
-                leading: const Icon(Icons.warning_amber_rounded,
-                    color: Color(0xFF856404)),
-                title: const Text("Registrar ocorrência"),
-                subtitle: const Text("Avaria, atraso, sinistro, desvio…"),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  final ok = await Navigator.pushNamed(
-                    context,
-                    '/ocorrencia/nova',
-                    arguments: bdtId,
-                  );
-                  if (ok == true && mounted) {
-                    // ignore: discarded_futures
-                    _load(bdtId);
-                  }
-                },
-              ),
+              // "Registrar ocorrência" removido daqui — o Formulário do
+              // BDT (card "Ocorrências") já tem o botão. Duplicar polui
+              // o sheet Ações sem ganho (o condutor abre uma tela via
+              // outra, mesmo destino).
               if (podeReabrir)
                 ListTile(
                   leading: const Icon(

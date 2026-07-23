@@ -383,36 +383,54 @@ class BdtService {
         .toList();
   }
 
-  static Future<bool> criarAbastecimento({
+  /// Sprint W+M — vocabulário fechado do web (`App\Constants\CombustivelTipo`).
+  /// Antes o mobile tinha ["gasolina", "etanol", …] (minúsculo) e o
+  /// backend recusava com `in_list`. Agora buscamos do web pra manter
+  /// sincronia (se o admin adicionar tipo novo, aparece sozinho).
+  ///
+  /// Retorna lista de strings — o próprio valor é o rótulo (a coluna
+  /// no banco é `varchar` que grava o texto). Falha ⇒ lista vazia
+  /// (UI cai num dropdown vazio, avisa o condutor).
+  static Future<List<String>> listarTiposCombustivel() async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      "transporte/api/bdt/abastecimentos/tipos",
+      {"usuario_id": usuarioId},
+    );
+    if (res['success'] != true) {
+      _log.warn('listarTiposCombustivel FALHOU: ${res['message']}');
+      return const [];
+    }
+    final list = (res['data'] as List<dynamic>? ?? const []);
+    return list.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+  }
+
+  /// Retorna o Map cru do backend — a UI extrai `success` + `message`
+  /// pra mostrar erro específico. Antes era `Future<bool>` e o app
+  /// só mostrava "Não foi possível salvar…" genérico.
+  static Future<Map<String, dynamic>> criarAbastecimento({
     required int bdtId,
     required Map<String, dynamic> data,
   }) async {
     final usuarioId = await _userId();
-
-    final res = await ApiClient.post(
+    return ApiClient.post(
       "transporte/api/bdt/abastecimentos/create",
       {"bdt_id": bdtId, "usuario_id": usuarioId, ...data},
     );
-
-    return res["success"] == true;
   }
 
-  static Future<bool> atualizarAbastecimento({
+  static Future<Map<String, dynamic>> atualizarAbastecimento({
     required int bdtId,
     required int abastecimentoId,
     required Map<String, dynamic> data,
   }) async {
     final usuarioId = await _userId();
-
-    final res =
-        await ApiClient.post("transporte/api/bdt/abastecimentos/update", {
-          "bdt_id": bdtId,
-          "usuario_id": usuarioId,
-          "abastecimento_id": abastecimentoId,
-          ...data,
-        });
-
-    return res["success"] == true;
+    return ApiClient.post("transporte/api/bdt/abastecimentos/update", {
+      "bdt_id": bdtId,
+      "usuario_id": usuarioId,
+      "abastecimento_id": abastecimentoId,
+      ...data,
+    });
   }
 
   static Future<bool> excluirAbastecimento({

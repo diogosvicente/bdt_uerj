@@ -384,6 +384,14 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final valorCtrl = TextEditingController(
       text: (existing?['valor_total'] ?? '').toString(),
     );
+    // Sprint W+M — preço/litro (opcional). Paridade com o web (folha.php
+    // L1610-1635): vazio → backend calcula automático (`valor_total/litros`
+    // com 2 casas em `normalizeAbastecimentoData`); preenchido → o valor
+    // digitado é gravado como manual. Hint mostra qual dos dois modos
+    // está ativo (verde = calculado, azul = manual).
+    final precoUnitCtrl = TextEditingController(
+      text: (existing?['preco_unit'] ?? '').toString(),
+    );
     final notaCtrl = TextEditingController(
       text: (existing?['nota_fiscal'] ?? '').toString(),
     );
@@ -393,6 +401,12 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
     String? tipo = (existing?['tipo_combustivel'] ?? '').toString();
     if (tipo.trim().isEmpty) tipo = null;
+
+    // Tipos vêm do endpoint /bdt/abastecimentos/tipos — fonte única
+    // (`App\Constants\CombustivelTipo`) do web. Antes tinha lista
+    // hardcoded ["gasolina","etanol",…] em minúsculo, que o backend
+    // recusava silenciosamente ("Não é possível salvar").
+    final futureTipos = BdtService.listarTiposCombustivel();
 
     // Sprint W+M — validação inline paridade com o web (folha.php
     // linhas 1847-1869): data_hora, tipo_combustivel, litros, valor_total
@@ -516,32 +530,48 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: tipo,
-                      isExpanded: true,
-                      items: const [
-                        DropdownMenuItem(value: "gasolina", child: Text("Gasolina")),
-                        DropdownMenuItem(value: "etanol", child: Text("Etanol")),
-                        DropdownMenuItem(value: "diesel", child: Text("Diesel")),
-                        DropdownMenuItem(value: "gnv", child: Text("GNV")),
-                        DropdownMenuItem(value: "outro", child: Text("Outro")),
-                      ],
-                      onChanged: busy
-                          ? null
-                          : (v) => setLocal(() {
-                                tipo = v;
-                                errTipo = null;
-                              }),
-                      decoration: InputDecoration(
-                        labelText: "Tipo combustível *",
-                        floatingLabelBehavior: FloatingLabelBehavior.always,
-                        border: const OutlineInputBorder(),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 14,
-                        ),
-                        errorText: errTipo,
-                      ),
+                    FutureBuilder<List<String>>(
+                      future: futureTipos,
+                      builder: (context, snap) {
+                        final tipos = snap.data ?? const <String>[];
+                        final loading =
+                            snap.connectionState != ConnectionState.done;
+                        // Se o tipo do registro edit não está mais na
+                        // lista (raro: enum antigo), preserva no dropdown
+                        // pra não perder o valor silenciosamente.
+                        final items = <String>{...tipos, if (tipo != null) tipo!}
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+
+                        return DropdownButtonFormField<String>(
+                          initialValue: tipo,
+                          isExpanded: true,
+                          items: items
+                              .map((v) => DropdownMenuItem(
+                                    value: v,
+                                    child: Text(v),
+                                  ))
+                              .toList(),
+                          onChanged: (busy || loading)
+                              ? null
+                              : (v) => setLocal(() {
+                                    tipo = v;
+                                    errTipo = null;
+                                  }),
+                          decoration: InputDecoration(
+                            labelText: "Tipo combustível *",
+                            floatingLabelBehavior:
+                                FloatingLabelBehavior.always,
+                            border: const OutlineInputBorder(),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
+                            errorText: errTipo,
+                            helperText: loading ? 'Carregando…' : null,
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -567,9 +597,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
                             keyboardType: TextInputType.number,
                             inputFormatters: [_decimal2],
                             onChanged: (_) {
-                              if (errLitros != null) {
-                                setLocal(() => errLitros = null);
-                              }
+                              // Limpa erro do campo E reavalia o hint
+                              // do preço/litro logo abaixo.
+                              setLocal(() {
+                                if (errLitros != null) errLitros = null;
+                              });
                             },
                             decoration: InputDecoration(
                               labelText: "Litros *",
@@ -588,12 +620,58 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       inputFormatters: [_decimal2],
                       onChanged: (_) {
                         if (errValor != null) setLocal(() => errValor = null);
+                        setLocal(() {}); // reavalia hint do preço/litro
                       },
                       decoration: InputDecoration(
                         labelText: "Valor total *",
                         border: const OutlineInputBorder(),
                         errorText: errValor,
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Preço por litro — regra do web (folha.php L1610):
+                    // - vazio + litros>0 + valor>0 => hint verde
+                    //   "Calculado automaticamente: R$ X,XX"
+                    // - preenchido => hint azul "Valor informado manualmente"
+                    // - senão => hint neutro
+                    Builder(
+                      builder: (_) {
+                        final l = double.tryParse(_normDecimal(litrosCtrl.text)) ?? 0;
+                        final v = double.tryParse(_normDecimal(valorCtrl.text)) ?? 0;
+                        final digitado =
+                            precoUnitCtrl.text.trim().isNotEmpty;
+                        String helper;
+                        TextStyle? helperStyle;
+                        if (digitado) {
+                          helper = 'Valor informado manualmente';
+                          helperStyle =
+                              const TextStyle(color: Color(0xFF0D47A1));
+                        } else if (l > 0 && v > 0) {
+                          final calc = (v / l).toStringAsFixed(2).replaceAll('.', ',');
+                          helper =
+                              'Calculado automaticamente: R\$ $calc (valor total ÷ litros)';
+                          helperStyle =
+                              const TextStyle(color: Color(0xFF2E7D32));
+                        } else {
+                          helper =
+                              'Deixe em branco pra o sistema calcular a partir de valor ÷ litros.';
+                          helperStyle = null;
+                        }
+                        return TextField(
+                          controller: precoUnitCtrl,
+                          enabled: !busy,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [_decimal2],
+                          onChanged: (_) => setLocal(() {}),
+                          decoration: InputDecoration(
+                            labelText: 'Preço por litro (R\$)',
+                            border: const OutlineInputBorder(),
+                            helperText: helper,
+                            helperStyle: helperStyle,
+                            helperMaxLines: 2,
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -668,6 +746,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
                                 "odometro_km": _normDecimal(odoCtrl.text),
                                 "litros": _normDecimal(litrosCtrl.text),
                                 "valor_total": _normDecimal(valorCtrl.text),
+                                // Preço/litro só vai se preenchido —
+                                // vazio => backend calcula automático.
+                                "preco_unit":
+                                    _normDecimal(precoUnitCtrl.text),
                                 "nota_fiscal": notaCtrl.text.trim(),
                                 "observacoes": obsCtrl.text.trim(),
                               };
@@ -677,7 +759,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                                     (v is String && v.trim().isEmpty),
                               );
 
-                              final ok = isEdit
+                              final res = isEdit
                                   ? await BdtService.atualizarAbastecimento(
                                       bdtId: bdtId,
                                       abastecimentoId: id,
@@ -690,11 +772,17 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
                               if (!context.mounted) return;
 
-                              if (!ok) {
+                              if (res['success'] != true) {
+                                // Mostra a mensagem REAL do backend
+                                // (ex: "Selecione um tipo de combustível
+                                // válido.", "Este BDT não tem veículo
+                                // vinculado…"). Antes era msg genérica.
+                                final msg = (res['message']?.toString().trim() ?? '');
                                 setLocal(() {
                                   busy = false;
-                                  formError =
-                                      "Não foi possível salvar. Verifique os campos e tente de novo.";
+                                  formError = msg.isNotEmpty
+                                      ? msg
+                                      : 'Não foi possível salvar. Verifique os campos e tente de novo.';
                                 });
                                 return;
                               }
