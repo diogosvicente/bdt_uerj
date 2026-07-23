@@ -607,6 +607,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
                               labelText: "Litros *",
                               border: const OutlineInputBorder(),
                               errorText: errLitros,
+                              // Reserva a mesma altura do "Opcional"
+                              // do Odômetro ao lado — sem isso os dois
+                              // ficam com bases desalinhadas na Row.
+                              helperText: ' ',
                             ),
                           ),
                         ),
