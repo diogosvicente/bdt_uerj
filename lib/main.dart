@@ -13,6 +13,7 @@ import 'pages/conclusao_page.dart';
 import 'pages/historico_ocorrencias_page.dart';
 import 'pages/ocorrencia_detalhe_page.dart';
 import 'pages/nova_ocorrencia_page.dart';
+import 'pages/foto_viewer_page.dart';
 import 'services/alertas_service.dart';
 import 'services/background_location_service.dart';
 import 'theme/app_theme.dart';
@@ -93,6 +94,7 @@ class BdtUerjApp extends StatelessWidget {
         "/ocorrencias/historico": (_) => const HistoricoOcorrenciasPage(),
         "/ocorrencia/detalhe":    (_) => const OcorrenciaDetalhePage(), // arg: int id
         "/ocorrencia/nova":       (_) => const NovaOcorrenciaPage(),    // arg: int bdtId
+        "/foto/viewer":           (_) => const FotoViewerPage(),        // arg: int docId
       },
 
       theme: AppTheme.light(),

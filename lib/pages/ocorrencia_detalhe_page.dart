@@ -4,6 +4,7 @@ import '../models/ocorrencia.dart';
 import '../services/ocorrencia_service.dart';
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/foto_ocorrencia_thumb.dart';
 
 /// Sprint W+M (Sprint 17 web — W15 F3) — Detalhe de uma ocorrência
 /// do histórico institucional. Route: `/ocorrencia/detalhe` com `int id`
@@ -20,6 +21,7 @@ class OcorrenciaDetalhePage extends StatefulWidget {
 
 class _OcorrenciaDetalhePageState extends State<OcorrenciaDetalhePage> {
   Future<Ocorrencia?>? _future;
+  Future<List<OcorrenciaFotoRef>>? _futureFotos;
 
   @override
   void didChangeDependencies() {
@@ -27,6 +29,7 @@ class _OcorrenciaDetalhePageState extends State<OcorrenciaDetalhePage> {
     if (_future != null) return;
     final id = ModalRoute.of(context)!.settings.arguments as int;
     _future = OcorrenciaService.detalhes(id);
+    _futureFotos = OcorrenciaService.listarFotos(id);
   }
 
   Future<void> _reload() async {
@@ -34,6 +37,7 @@ class _OcorrenciaDetalhePageState extends State<OcorrenciaDetalhePage> {
     final id = ModalRoute.of(context)!.settings.arguments as int;
     setState(() {
       _future = OcorrenciaService.detalhes(id);
+      _futureFotos = OcorrenciaService.listarFotos(id);
     });
     await _future;
   }
@@ -76,8 +80,95 @@ class _OcorrenciaDetalhePageState extends State<OcorrenciaDetalhePage> {
         const SizedBox(height: 12),
         if ((o.descricao ?? '').isNotEmpty) _cardDescricao(o.descricao!),
         const SizedBox(height: 12),
+        _cardFotos(),
+        const SizedBox(height: 12),
         _cardContexto(o),
       ],
+    );
+  }
+
+  Widget _cardFotos() {
+    return FutureBuilder<List<OcorrenciaFotoRef>>(
+      future: _futureFotos,
+      builder: (context, snap) {
+        final loading = snap.connectionState != ConnectionState.done;
+        final fotos = snap.data ?? const <OcorrenciaFotoRef>[];
+
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: Color(0xFFE0E0E0)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.photo_library,
+                        size: 16, color: Colors.black54),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'Fotos',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    if (!loading) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '(${fotos.length})',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black45,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (loading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                else if (fotos.isEmpty)
+                  const Text(
+                    'Sem fotos anexadas.',
+                    style: TextStyle(color: Colors.black45, fontSize: 13),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: fotos
+                        .map((f) => FotoOcorrenciaThumb(
+                              docId: f.id,
+                              size: 92,
+                              onTap: () => Navigator.pushNamed(
+                                context,
+                                '/foto/viewer',
+                                arguments: f.id,
+                              ),
+                            ))
+                        .toList(),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

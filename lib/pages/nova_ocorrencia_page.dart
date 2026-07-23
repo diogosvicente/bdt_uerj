@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/ocorrencia_filtros.dart';
 import '../services/ocorrencia_service.dart';
@@ -28,12 +31,19 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
   final _tituloCtrl = TextEditingController();
   final _descricaoCtrl = TextEditingController();
   final _tituloFocus = FocusNode();
+  final _picker = ImagePicker();
   int? _tipoId;
 
   bool _busy = false;
   String? _formError;
   String? _tituloError;
   String? _tipoError;
+
+  /// Fotos escolhidas em memória (ainda não subidas). Ao clicar
+  /// "Registrar", cria a ocorrência primeiro e depois faz upload
+  /// de cada uma em sequência. Se um upload falhar, avisa mas mantém
+  /// a ocorrência (podem ser tentadas de novo na tela de detalhe).
+  final List<XFile> _fotosPending = [];
 
   @override
   void didChangeDependencies() {
@@ -50,6 +60,48 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
   }
 
   int get _bdtId => ModalRoute.of(context)!.settings.arguments as int;
+
+  Future<void> _adicionarFoto() async {
+    // Bottom sheet perguntando câmera ou galeria — imagePicker do
+    // package pede permissão nativa em runtime automaticamente.
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Tirar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Escolher da galeria'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    try {
+      final file = await _picker.pickImage(
+        source: source,
+        // Reduz consumo de banda no upload — o backend já converte pra WebP.
+        maxWidth: 1600,
+        imageQuality: 82,
+      );
+      if (file == null || !mounted) return;
+      setState(() => _fotosPending.add(file));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao acessar câmera/galeria: $e')),
+      );
+    }
+  }
 
   Future<void> _salvar() async {
     if (_busy) return;
@@ -81,22 +133,54 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
     );
     if (!mounted) return;
 
-    if (res['success'] == true) {
-      Navigator.pop(context, true);
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          const SnackBar(content: Text('Ocorrência registrada.')),
-        );
+    if (res['success'] != true) {
+      setState(() {
+        _busy = false;
+        _formError = (res['message']?.toString().trim().isNotEmpty ?? false)
+            ? res['message'].toString()
+            : 'Não foi possível registrar a ocorrência.';
+      });
       return;
     }
 
-    setState(() {
-      _busy = false;
-      _formError = (res['message']?.toString().trim().isNotEmpty ?? false)
-          ? res['message'].toString()
-          : 'Não foi possível registrar a ocorrência.';
-    });
+    final ocId = ((res['data'] as Map?)?['id'] as int?) ?? 0;
+
+    // Upload das fotos pendentes (sequencial pra manter ordem visual).
+    int fotosOk = 0;
+    int fotosFail = 0;
+    if (ocId > 0 && _fotosPending.isNotEmpty) {
+      for (final xfile in _fotosPending) {
+        try {
+          final bytes = await File(xfile.path).readAsBytes();
+          final docId = await OcorrenciaService.uploadFoto(
+            ocorrenciaId: ocId,
+            bytes: bytes,
+            filename: xfile.name,
+          );
+          if (docId > 0) {
+            fotosOk++;
+          } else {
+            fotosFail++;
+          }
+        } catch (_) {
+          fotosFail++;
+        }
+        if (!mounted) return;
+      }
+    }
+
+    Navigator.pop(context, true);
+
+    final msg = fotosFail > 0
+        ? 'Ocorrência registrada — $fotosOk foto(s) OK, $fotosFail falhou(aram). '
+            'Tente subir de novo pela tela de detalhe.'
+        : (fotosOk > 0
+            ? 'Ocorrência registrada com $fotosOk foto(s).'
+            : 'Ocorrência registrada.');
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
@@ -171,6 +255,8 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
                 alignLabelWithHint: true,
               ),
             ),
+            const SizedBox(height: 16),
+            _cardFotos(),
             const SizedBox(height: 20),
             Row(
               children: [
@@ -196,15 +282,80 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Fotos entram numa próxima versão do app — por enquanto, '
-              'anexe pela web depois se precisar.',
-              style: TextStyle(fontSize: 11, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _cardFotos() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAFA),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Fotos (opcional)',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _busy ? null : _adicionarFoto,
+                icon: const Icon(Icons.add_a_photo, size: 18),
+                label: const Text('Adicionar'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (_fotosPending.isEmpty)
+            const Text(
+              'Anexe se ajudar a documentar (avaria, marca no veículo, cena…).',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List.generate(_fotosPending.length, (i) {
+                final file = _fotosPending[i];
+                return Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(file.path),
+                        width: 84,
+                        height: 84,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      right: 2,
+                      top: 2,
+                      child: InkWell(
+                        onTap: _busy
+                            ? null
+                            : () => setState(() => _fotosPending.removeAt(i)),
+                        child: const CircleAvatar(
+                          radius: 12,
+                          backgroundColor: Colors.black54,
+                          child: Icon(Icons.close, size: 14, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ),
+        ],
       ),
     );
   }

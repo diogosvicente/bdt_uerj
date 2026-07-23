@@ -190,6 +190,113 @@ class ApiClient {
     };
   }
 
+  /// Sprint W+M — POST multipart pra endpoints de upload de arquivo
+  /// (Sprint 17 W+M Fase 2: fotos de ocorrência). Adiciona Bearer +
+  /// TIMEOUT maior (30s) porque upload de foto é grande. Retorna o
+  /// mesmo Map padronizado do `post()`.
+  ///
+  /// [fields] são os campos texto do form (equivalente aos `-F` do curl).
+  /// [fileField] é o nome do campo (ex: "foto"), [fileBytes] o conteúdo,
+  /// [filename] o nome do arquivo (o backend usa a extensão).
+  ///
+  /// Diferente do `post()`, este método **não** retenta em TOKEN_EXPIRED —
+  /// upload é grande demais pra fazer 2x; se o access expirou, a chamada
+  /// falha e o app pede login/refresh na próxima interação leve.
+  static Future<Map<String, dynamic>> postMultipart(
+    String endpoint, {
+    required Map<String, String> fields,
+    required String fileField,
+    required List<int> fileBytes,
+    required String filename,
+  }) async {
+    try {
+      final token = await TokenStorage.readAccess();
+      final uri = _buildUri(endpoint);
+
+      debugPrint("➡️ POST-multipart $uri (${fileBytes.length} bytes)");
+
+      final req = http.MultipartRequest('POST', uri);
+      if (token != null && token.isNotEmpty) {
+        req.headers['Authorization'] = 'Bearer $token';
+      }
+      req.fields.addAll(fields);
+      req.files.add(http.MultipartFile.fromBytes(
+        fileField,
+        fileBytes,
+        filename: filename,
+      ));
+
+      final streamed =
+          await req.send().timeout(const Duration(seconds: 30));
+      final res = await http.Response.fromStream(streamed);
+
+      final body = res.body.trim();
+      debugPrint("⬅️ Response ${res.statusCode}: ${body.substring(0, body.length > 200 ? 200 : body.length)}");
+
+      final decoded = _tryDecodeJsonMap(body);
+      if (decoded != null) {
+        decoded["http_status"] = res.statusCode;
+        return decoded;
+      }
+      return {
+        "success": false,
+        "status": "HTTP_ERROR",
+        "http_status": res.statusCode,
+        "message": body.isNotEmpty
+            ? "Resposta inválida do servidor."
+            : "Servidor retornou resposta vazia.",
+        "raw": res.body,
+      };
+    } on TimeoutException {
+      return {
+        "success": false,
+        "status": "TIMEOUT",
+        "message": "Timeout no upload da foto.",
+      };
+    } catch (e, st) {
+      debugPrint("❌ Exceção HTTP multipart em $endpoint: $e\n$st");
+      return {
+        "success": false,
+        "status": "EXCEPTION",
+        "message": "Falha de rede no upload.",
+      };
+    }
+  }
+
+  /// Sprint W+M — GET/POST que retorna binário cru (ex: foto de ocorrência
+  /// via `bdt/ocorrencias/fotos/obter`). Envia Bearer e retorna os bytes
+  /// da resposta se 200, ou `null` se 204/404/erro. Não usa retry.
+  ///
+  /// Backend espera POST + JSON body (mesma convenção dos outros
+  /// endpoints), então esta chamada é POST mesmo devolvendo binário.
+  static Future<List<int>?> postForBytes(
+    String endpoint,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final token = await TokenStorage.readAccess();
+      final uri = _buildUri(endpoint);
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              if (token != null && token.isNotEmpty)
+                'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(data),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) return res.bodyBytes;
+      debugPrint("postForBytes $endpoint: http=${res.statusCode}");
+      return null;
+    } catch (e) {
+      debugPrint("❌ postForBytes $endpoint exception: $e");
+      return null;
+    }
+  }
+
   /// Chama `bdt/token/refresh` (dedupado). Retorna true se OK e o par
   /// novo já foi gravado no `TokenStorage`; false em qualquer falha.
   static Future<bool> refreshTokens() async {

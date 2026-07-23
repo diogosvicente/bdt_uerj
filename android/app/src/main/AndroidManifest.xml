@@ -38,6 +38,14 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
+    <!-- ✅ Sprint 17 W+M Fase 2: fotos de ocorrência (câmera + galeria via
+         image_picker). O plugin cuida do pedido em runtime.
+         Android 13+ separou READ_EXTERNAL_STORAGE em READ_MEDIA_IMAGES;
+         pra Android <13, image_picker fallback pra READ_EXTERNAL_STORAGE
+         que já é implícita no target sdk atual (Flutter default). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
     <application
         android:label="BDT UERJ"
         android:name="${applicationName}"

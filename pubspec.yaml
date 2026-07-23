@@ -75,6 +75,12 @@ dependencies:
   # nas telas de marcos (ValidacaoInicioPage, BdtFormPage).
   flutter_svg: ^2.0.10+1
 
+  # Câmera + galeria pra fotos das ocorrências (Sprint 17 W+M Fase 2)
+  # e futuramente fotos de carga (Sprint 11) / manutenção. Android pede
+  # permissão em runtime; iOS precisa das keys em Info.plist (fora de
+  # escopo agora — app é Android-first).
+  image_picker: ^1.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
