@@ -394,208 +394,339 @@ class _BdtFormPageState extends State<BdtFormPage> {
     String? tipo = (existing?['tipo_combustivel'] ?? '').toString();
     if (tipo.trim().isEmpty) tipo = null;
 
+    // Sprint W+M — validação inline paridade com o web (folha.php
+    // linhas 1847-1869): data_hora, tipo_combustivel, litros, valor_total
+    // são REQUIRED. `fk_condutor` também é required no backend mas
+    // é auto-preenchido como condutor logado (BdtApiService::criarAbastecimento
+    // linha 441) — não vai como campo do form.
+    String? errData;
+    String? errTipo;
+    String? errLitros;
+    String? errValor;
+    String? formError;
+    bool busy = false;
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) {
+      builder: (ctx) {
         final pad = MediaQuery.of(context).viewInsets.bottom;
-        return Padding(
-          padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      isEdit
-                          ? "Editar abastecimento"
-                          : "Adicionar abastecimento",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                  if (isEdit && id > 0)
-                    IconButton(
-                      tooltip: "Excluir",
-                      onPressed: () async {
-                        final ok = await _confirmDelete(
-                          "Excluir este abastecimento?",
-                        );
-                        if (!ok) return;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            void clearAllErrors() {
+              if (errData != null ||
+                  errTipo != null ||
+                  errLitros != null ||
+                  errValor != null ||
+                  formError != null) {
+                setLocal(() {
+                  errData = null;
+                  errTipo = null;
+                  errLitros = null;
+                  errValor = null;
+                  formError = null;
+                });
+              }
+            }
 
-                        final bdtId =
-                            ModalRoute.of(context)!.settings.arguments as int;
-
-                        final delOk = await BdtService.excluirAbastecimento(
-                          bdtId: bdtId,
-                          abastecimentoId: id,
-                        );
-
-                        if (!context.mounted) return;
-
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              delOk
-                                  ? "Abastecimento excluído."
-                                  : "Falha ao excluir.",
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isEdit
+                                ? "Editar abastecimento"
+                                : "Adicionar abastecimento",
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
                             ),
                           ),
-                        );
+                        ),
+                        if (isEdit && id > 0)
+                          IconButton(
+                            tooltip: "Excluir",
+                            onPressed: busy
+                                ? null
+                                : () async {
+                                    final ok = await _confirmDelete(
+                                      "Excluir este abastecimento?",
+                                    );
+                                    if (!ok) return;
 
-                        Navigator.pop(context);
-                        await _load(bdtId);
-                      },
-                      icon: const Icon(Icons.delete_outline),
+                                    final bdtId = ModalRoute.of(context)!
+                                        .settings
+                                        .arguments as int;
+
+                                    final delOk =
+                                        await BdtService.excluirAbastecimento(
+                                      bdtId: bdtId,
+                                      abastecimentoId: id,
+                                    );
+
+                                    if (!context.mounted) return;
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          delOk
+                                              ? "Abastecimento excluído."
+                                              : "Falha ao excluir.",
+                                        ),
+                                      ),
+                                    );
+
+                                    Navigator.pop(context);
+                                    await _load(bdtId);
+                                  },
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                      ],
                     ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: dataHoraCtrl,
-                readOnly: true,
-                onTap: () async {
-                  final picked = await _pickDateTimeString(
-                    initial: dataHoraCtrl.text,
-                  );
-                  if (picked != null) dataHoraCtrl.text = picked;
-                },
-                decoration: const InputDecoration(
-                  labelText: "Data/Hora",
-                  border: OutlineInputBorder(),
-                  suffixIcon: Icon(Icons.schedule),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: tipo,
-                items: const [
-                  DropdownMenuItem(value: "gasolina", child: Text("Gasolina")),
-                  DropdownMenuItem(value: "etanol", child: Text("Etanol")),
-                  DropdownMenuItem(value: "diesel", child: Text("Diesel")),
-                  DropdownMenuItem(value: "gnv", child: Text("GNV")),
-                  DropdownMenuItem(value: "outro", child: Text("Outro")),
-                ],
-                onChanged: (v) => tipo = v,
-                decoration: const InputDecoration(
-                  labelText: "Tipo combustível",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: odoCtrl,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [_decimal1],
-                      decoration: const InputDecoration(
-                        labelText: "Odômetro (km)",
-                        border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    if (formError != null) ...[
+                      _bannerErro(formError!),
+                      const SizedBox(height: 12),
+                    ],
+                    TextField(
+                      controller: dataHoraCtrl,
+                      readOnly: true,
+                      enabled: !busy,
+                      onTap: () async {
+                        final picked = await _pickDateTimeString(
+                          initial: dataHoraCtrl.text,
+                        );
+                        if (picked != null) {
+                          dataHoraCtrl.text = picked;
+                          if (errData != null) setLocal(() => errData = null);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: "Data/Hora *",
+                        border: const OutlineInputBorder(),
+                        suffixIcon: const Icon(Icons.schedule),
+                        errorText: errData,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: litrosCtrl,
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: tipo,
+                      isExpanded: true,
+                      items: const [
+                        DropdownMenuItem(value: "gasolina", child: Text("Gasolina")),
+                        DropdownMenuItem(value: "etanol", child: Text("Etanol")),
+                        DropdownMenuItem(value: "diesel", child: Text("Diesel")),
+                        DropdownMenuItem(value: "gnv", child: Text("GNV")),
+                        DropdownMenuItem(value: "outro", child: Text("Outro")),
+                      ],
+                      onChanged: busy
+                          ? null
+                          : (v) => setLocal(() {
+                                tipo = v;
+                                errTipo = null;
+                              }),
+                      decoration: InputDecoration(
+                        labelText: "Tipo combustível *",
+                        floatingLabelBehavior: FloatingLabelBehavior.always,
+                        border: const OutlineInputBorder(),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 14,
+                        ),
+                        errorText: errTipo,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: odoCtrl,
+                            enabled: !busy,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [_decimal1],
+                            decoration: const InputDecoration(
+                              labelText: "Odômetro (km)",
+                              border: OutlineInputBorder(),
+                              helperText: "Opcional",
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: litrosCtrl,
+                            enabled: !busy,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [_decimal2],
+                            onChanged: (_) {
+                              if (errLitros != null) {
+                                setLocal(() => errLitros = null);
+                              }
+                            },
+                            decoration: InputDecoration(
+                              labelText: "Litros *",
+                              border: const OutlineInputBorder(),
+                              errorText: errLitros,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: valorCtrl,
+                      enabled: !busy,
                       keyboardType: TextInputType.number,
                       inputFormatters: [_decimal2],
+                      onChanged: (_) {
+                        if (errValor != null) setLocal(() => errValor = null);
+                      },
+                      decoration: InputDecoration(
+                        labelText: "Valor total *",
+                        border: const OutlineInputBorder(),
+                        errorText: errValor,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notaCtrl,
+                      enabled: !busy,
                       decoration: const InputDecoration(
-                        labelText: "Litros",
+                        labelText: "Nota fiscal",
                         border: OutlineInputBorder(),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: valorCtrl,
-                keyboardType: TextInputType.number,
-                inputFormatters: [_decimal2],
-                decoration: const InputDecoration(
-                  labelText: "Valor total",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: notaCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Nota fiscal",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: obsCtrl,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: "Observações",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 14),
-              FilledButton.icon(
-                onPressed: () async {
-                  final bdtId =
-                      ModalRoute.of(context)!.settings.arguments as int;
-
-                  final data = <String, dynamic>{
-                    "data_hora": dataHoraCtrl.text.trim(),
-                    "tipo_combustivel": tipo,
-                    "odometro_km": _normDecimal(odoCtrl.text),
-                    "litros": _normDecimal(litrosCtrl.text),
-                    "valor_total": _normDecimal(valorCtrl.text),
-                    "nota_fiscal": notaCtrl.text.trim(),
-                    "observacoes": obsCtrl.text.trim(),
-                  };
-
-                  data.removeWhere(
-                    (k, v) => v == null || (v is String && v.trim().isEmpty),
-                  );
-
-                  final ok = isEdit
-                      ? await BdtService.atualizarAbastecimento(
-                          bdtId: bdtId,
-                          abastecimentoId: id,
-                          data: data,
-                        )
-                      : await BdtService.criarAbastecimento(
-                          bdtId: bdtId,
-                          data: data,
-                        );
-
-                  if (!context.mounted) return;
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        ok
-                            ? "Abastecimento salvo."
-                            : "Falha ao salvar abastecimento.",
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: obsCtrl,
+                      enabled: !busy,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: "Observações",
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                  );
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              clearAllErrors();
 
-                  if (ok) {
-                    Navigator.pop(context);
-                    await _load(bdtId);
-                  }
-                },
-                icon: const Icon(Icons.save),
-                label: Text(
-                  isEdit ? "Salvar alterações" : "Adicionar abastecimento",
+                              // Valida os 4 required (paridade com web).
+                              String? eData;
+                              String? eTipo;
+                              String? eLitros;
+                              String? eValor;
+                              if (dataHoraCtrl.text.trim().isEmpty) {
+                                eData = "Informe a data/hora.";
+                              }
+                              if (tipo == null || tipo!.trim().isEmpty) {
+                                eTipo = "Selecione o tipo de combustível.";
+                              }
+                              final litrosVal = double.tryParse(
+                                _normDecimal(litrosCtrl.text),
+                              );
+                              if (litrosVal == null || litrosVal <= 0) {
+                                eLitros = "Informe os litros (> 0).";
+                              }
+                              final valorVal = double.tryParse(
+                                _normDecimal(valorCtrl.text),
+                              );
+                              if (valorVal == null || valorVal <= 0) {
+                                eValor = "Informe o valor total (> 0).";
+                              }
+                              if (eData != null ||
+                                  eTipo != null ||
+                                  eLitros != null ||
+                                  eValor != null) {
+                                setLocal(() {
+                                  errData = eData;
+                                  errTipo = eTipo;
+                                  errLitros = eLitros;
+                                  errValor = eValor;
+                                });
+                                return;
+                              }
+
+                              setLocal(() => busy = true);
+                              final bdtId = ModalRoute.of(context)!
+                                  .settings
+                                  .arguments as int;
+
+                              final data = <String, dynamic>{
+                                "data_hora": dataHoraCtrl.text.trim(),
+                                "tipo_combustivel": tipo,
+                                "odometro_km": _normDecimal(odoCtrl.text),
+                                "litros": _normDecimal(litrosCtrl.text),
+                                "valor_total": _normDecimal(valorCtrl.text),
+                                "nota_fiscal": notaCtrl.text.trim(),
+                                "observacoes": obsCtrl.text.trim(),
+                              };
+                              data.removeWhere(
+                                (k, v) =>
+                                    v == null ||
+                                    (v is String && v.trim().isEmpty),
+                              );
+
+                              final ok = isEdit
+                                  ? await BdtService.atualizarAbastecimento(
+                                      bdtId: bdtId,
+                                      abastecimentoId: id,
+                                      data: data,
+                                    )
+                                  : await BdtService.criarAbastecimento(
+                                      bdtId: bdtId,
+                                      data: data,
+                                    );
+
+                              if (!context.mounted) return;
+
+                              if (!ok) {
+                                setLocal(() {
+                                  busy = false;
+                                  formError =
+                                      "Não foi possível salvar. Verifique os campos e tente de novo.";
+                                });
+                                return;
+                              }
+
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context)
+                                ..clearSnackBars()
+                                ..showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Abastecimento salvo."),
+                                  ),
+                                );
+                              await _load(bdtId);
+                            },
+                      icon: busy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save),
+                      label: Text(
+                        isEdit
+                            ? "Salvar alterações"
+                            : "Adicionar abastecimento",
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -604,6 +735,26 @@ class _BdtFormPageState extends State<BdtFormPage> {
   // =========================
   // CRUD Manutenções
   // =========================
+
+  /// Banner de erro genérico (backend recusou / falha de rede) —
+  /// mesmo padrão dos sheets de trecho e da NovaOcorrenciaPage.
+  Widget _bannerErro(String msg) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: Theme.of(context).colorScheme.errorContainer,
+      ),
+      child: Text(
+        msg,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onErrorContainer,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
 
   Future<void> _openManutencaoSheet({Map<String, dynamic>? existing}) async {
     final isEdit = existing != null;
@@ -631,6 +782,17 @@ class _BdtFormPageState extends State<BdtFormPage> {
       text: (existing?['valor_gasto'] ?? '').toString(),
     );
 
+    // Sprint W+M — validação inline. Backend mobile
+    // (BdtApiService::criarManutencao) exige `descricao`; o `fk_tipo`
+    // do web fica de fora aqui de propósito (o service passa
+    // exigirTipo=false — nasce como "Não classificada", admin classifica
+    // depois). Data de início também é required no backend web e útil
+    // no mobile (senão vira `now()` implícito, o que confunde o admin).
+    String? errInicio;
+    String? errDesc;
+    String? formError;
+    bool busy = false;
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -641,200 +803,261 @@ class _BdtFormPageState extends State<BdtFormPage> {
           builder: (ctx, setLocal) {
             return Padding(
               padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          isEdit ? "Editar manutenção" : "Adicionar manutenção",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isEdit
+                                ? "Editar manutenção"
+                                : "Adicionar manutenção",
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
-                      ),
-                      if (isEdit && id > 0)
-                        IconButton(
-                          tooltip: "Excluir",
-                          onPressed: () async {
-                            final ok = await _confirmDelete(
-                              "Excluir esta manutenção?",
-                            );
-                            if (!ok) return;
+                        if (isEdit && id > 0)
+                          IconButton(
+                            tooltip: "Excluir",
+                            onPressed: busy
+                                ? null
+                                : () async {
+                                    final ok = await _confirmDelete(
+                                      "Excluir esta manutenção?",
+                                    );
+                                    if (!ok) return;
 
-                            final bdtId =
-                                ModalRoute.of(context)!.settings.arguments
-                                    as int;
+                                    final bdtId = ModalRoute.of(context)!
+                                        .settings
+                                        .arguments as int;
 
-                            final delOk = await BdtService.excluirManutencao(
-                              bdtId: bdtId,
-                              manutencaoId: id,
-                            );
+                                    final delOk =
+                                        await BdtService.excluirManutencao(
+                                      bdtId: bdtId,
+                                      manutencaoId: id,
+                                    );
 
-                            if (!context.mounted) return;
+                                    if (!context.mounted) return;
 
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  delOk
-                                      ? "Manutenção excluída."
-                                      : "Falha ao excluir.",
-                                ),
-                              ),
-                            );
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          delOk
+                                              ? "Manutenção excluída."
+                                              : "Falha ao excluir.",
+                                        ),
+                                      ),
+                                    );
 
-                            Navigator.pop(context);
-                            await _load(bdtId);
-                          },
-                          icon: const Icon(Icons.delete_outline),
-                        ),
+                                    Navigator.pop(context);
+                                    await _load(bdtId);
+                                  },
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (formError != null) ...[
+                      _bannerErro(formError!),
+                      const SizedBox(height: 12),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: inicioCtrl,
-                    readOnly: true,
-                    onTap: () async {
-                      final picked = await _pickDateTimeString(
-                        initial: inicioCtrl.text,
-                      );
-                      if (picked != null) inicioCtrl.text = picked;
-                    },
-                    decoration: const InputDecoration(
-                      labelText: "Início (data/hora)",
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.schedule),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: fimCtrl,
-                    readOnly: true,
-                    onTap: () async {
-                      final picked = await _pickDateTimeString(
-                        initial: fimCtrl.text,
-                      );
-                      if (picked != null) fimCtrl.text = picked;
-                    },
-                    decoration: const InputDecoration(
-                      labelText: "Fim (data/hora) (opcional)",
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.schedule),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: odoCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [_decimal1],
-                    decoration: const InputDecoration(
-                      labelText: "Odômetro (km)",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: descCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: "Descrição",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: houveGasto,
-                    onChanged: (v) => setLocal(() => houveGasto = v),
-                    title: const Text("Houve gasto?"),
-                  ),
-                  if (houveGasto) ...[
-                    const SizedBox(height: 8),
                     TextField(
-                      controller: valorCtrl,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [_decimal2],
+                      controller: inicioCtrl,
+                      readOnly: true,
+                      enabled: !busy,
+                      onTap: () async {
+                        final picked = await _pickDateTimeString(
+                          initial: inicioCtrl.text,
+                        );
+                        if (picked != null) {
+                          inicioCtrl.text = picked;
+                          if (errInicio != null) {
+                            setLocal(() => errInicio = null);
+                          }
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: "Início (data/hora) *",
+                        border: const OutlineInputBorder(),
+                        suffixIcon: const Icon(Icons.schedule),
+                        errorText: errInicio,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: fimCtrl,
+                      readOnly: true,
+                      enabled: !busy,
+                      onTap: () async {
+                        final picked = await _pickDateTimeString(
+                          initial: fimCtrl.text,
+                        );
+                        if (picked != null) fimCtrl.text = picked;
+                      },
                       decoration: const InputDecoration(
-                        labelText: "Valor gasto",
+                        labelText: "Fim (data/hora)",
+                        border: OutlineInputBorder(),
+                        helperText: "Opcional",
+                        suffixIcon: Icon(Icons.schedule),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: odoCtrl,
+                      enabled: !busy,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [_decimal1],
+                      decoration: const InputDecoration(
+                        labelText: "Odômetro (km)",
+                        border: OutlineInputBorder(),
+                        helperText: "Opcional",
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descCtrl,
+                      enabled: !busy,
+                      maxLines: 3,
+                      textCapitalization: TextCapitalization.sentences,
+                      onChanged: (_) {
+                        if (errDesc != null) setLocal(() => errDesc = null);
+                      },
+                      decoration: InputDecoration(
+                        labelText: "Descrição *",
+                        helperText:
+                            "Ex.: \"Troca de pneu traseiro direito\"",
+                        border: const OutlineInputBorder(),
+                        errorText: errDesc,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: houveGasto,
+                      onChanged: busy
+                          ? null
+                          : (v) => setLocal(() => houveGasto = v),
+                      title: const Text("Houve gasto?"),
+                    ),
+                    if (houveGasto) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: valorCtrl,
+                        enabled: !busy,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [_decimal2],
+                        decoration: const InputDecoration(
+                          labelText: "Valor gasto",
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: obsCtrl,
+                      enabled: !busy,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: "Observações",
                         border: OutlineInputBorder(),
                       ),
                     ),
-                  ],
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: obsCtrl,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: "Observações",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton.icon(
-                    onPressed: () async {
-                      final bdtId =
-                          ModalRoute.of(context)!.settings.arguments as int;
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              String? eIni;
+                              String? eDesc;
+                              if (inicioCtrl.text.trim().isEmpty) {
+                                eIni = "Informe o início da manutenção.";
+                              }
+                              if (descCtrl.text.trim().isEmpty) {
+                                eDesc =
+                                    "Descreva rapidamente o que foi feito.";
+                              }
+                              if (eIni != null || eDesc != null) {
+                                setLocal(() {
+                                  errInicio = eIni;
+                                  errDesc = eDesc;
+                                  formError = null;
+                                });
+                                return;
+                              }
 
-                      if (descCtrl.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Informe a descrição da manutenção."),
-                          ),
-                        );
-                        return;
-                      }
+                              setLocal(() => busy = true);
+                              final bdtId = ModalRoute.of(context)!
+                                  .settings
+                                  .arguments as int;
 
-                      final data = <String, dynamic>{
-                        "data_hora_inicio": inicioCtrl.text.trim(),
-                        "data_hora_fim": fimCtrl.text.trim(),
-                        "odometro_km": _normDecimal(odoCtrl.text),
-                        "descricao": descCtrl.text.trim(),
-                        "houve_gasto": houveGasto,
-                        "valor_gasto": _normDecimal(valorCtrl.text),
-                        "observacoes": obsCtrl.text.trim(),
-                      };
+                              final data = <String, dynamic>{
+                                "data_hora_inicio": inicioCtrl.text.trim(),
+                                "data_hora_fim": fimCtrl.text.trim(),
+                                "odometro_km": _normDecimal(odoCtrl.text),
+                                "descricao": descCtrl.text.trim(),
+                                "houve_gasto": houveGasto,
+                                "valor_gasto": _normDecimal(valorCtrl.text),
+                                "observacoes": obsCtrl.text.trim(),
+                              };
 
-                      data.removeWhere(
-                        (k, v) =>
-                            v == null || (v is String && v.trim().isEmpty),
-                      );
+                              data.removeWhere(
+                                (k, v) =>
+                                    v == null ||
+                                    (v is String && v.trim().isEmpty),
+                              );
 
-                      final ok = isEdit
-                          ? await BdtService.atualizarManutencao(
-                              bdtId: bdtId,
-                              manutencaoId: id,
-                              data: data,
+                              final ok = isEdit
+                                  ? await BdtService.atualizarManutencao(
+                                      bdtId: bdtId,
+                                      manutencaoId: id,
+                                      data: data,
+                                    )
+                                  : await BdtService.criarManutencao(
+                                      bdtId: bdtId,
+                                      data: data,
+                                    );
+
+                              if (!context.mounted) return;
+
+                              if (!ok) {
+                                setLocal(() {
+                                  busy = false;
+                                  formError =
+                                      "Não foi possível salvar. Verifique os campos e tente de novo.";
+                                });
+                                return;
+                              }
+
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context)
+                                ..clearSnackBars()
+                                ..showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Manutenção salva."),
+                                  ),
+                                );
+                              await _load(bdtId);
+                            },
+                      icon: busy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : await BdtService.criarManutencao(
-                              bdtId: bdtId,
-                              data: data,
-                            );
-
-                      if (!context.mounted) return;
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            ok
-                                ? "Manutenção salva."
-                                : "Falha ao salvar manutenção.",
-                          ),
-                        ),
-                      );
-
-                      if (ok) {
-                        Navigator.pop(context);
-                        await _load(bdtId);
-                      }
-                    },
-                    icon: const Icon(Icons.save),
-                    label: Text(
-                      isEdit ? "Salvar alterações" : "Adicionar manutenção",
+                          : const Icon(Icons.save),
+                      label: Text(
+                        isEdit
+                            ? "Salvar alterações"
+                            : "Adicionar manutenção",
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
