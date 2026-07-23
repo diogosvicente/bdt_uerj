@@ -321,8 +321,9 @@ class _BdtPageState extends State<BdtPage> {
 
         if (status == 'em_andamento') {
           final int trechoId = int.tryParse(trecho['id'].toString()) ?? 0;
-          if (trackingAgendaId == agendaId && trackingTrechoId == trechoId)
+          if (trackingAgendaId == agendaId && trackingTrechoId == trechoId) {
             return;
+          }
           _startTracking(bdtId, agendaId, trechoId);
           return;
         }
@@ -1144,15 +1145,19 @@ class _BdtPageState extends State<BdtPage> {
     // ✅ Você vai precisar implementar esse endpoint no backend + no BdtService.
     final execData = <String, dynamic>{};
 
-    if (horaSaidaHm.trim().isNotEmpty)
+    if (horaSaidaHm.trim().isNotEmpty) {
       execData['inicio_real'] = _apiDateTimeFromHm(horaSaidaHm.trim());
-    if (odoSaida.trim().isNotEmpty)
+    }
+    if (odoSaida.trim().isNotEmpty) {
       execData['odometro_saida'] = odoSaida.trim();
+    }
 
-    if (horaChegadaHm.trim().isNotEmpty)
+    if (horaChegadaHm.trim().isNotEmpty) {
       execData['fim_real'] = _apiDateTimeFromHm(horaChegadaHm.trim());
-    if (odoChegada.trim().isNotEmpty)
+    }
+    if (odoChegada.trim().isNotEmpty) {
       execData['odometro_chegada'] = odoChegada.trim();
+    }
 
     if (execData.isNotEmpty) {
       final okExec = await BdtService.atualizarTrechoExecucao(
@@ -1264,7 +1269,7 @@ class _BdtPageState extends State<BdtPage> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: cs.primaryContainer,
-                  border: Border.all(color: cs.primary.withOpacity(.25)),
+                  border: Border.all(color: cs.primary.withValues(alpha: .25)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1298,7 +1303,7 @@ class _BdtPageState extends State<BdtPage> {
                           Text(
                             'O GPS será ativado automaticamente em seguida.',
                             style: TextStyle(
-                              color: cs.onPrimaryContainer.withOpacity(.85),
+                              color: cs.onPrimaryContainer.withValues(alpha: .85),
                               fontSize: 12,
                             ),
                           ),
