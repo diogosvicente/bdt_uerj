@@ -88,4 +88,68 @@ class OcorrenciaService {
     if (data is! Map) return const OcorrenciaFiltros();
     return OcorrenciaFiltros.fromJson(Map<String, dynamic>.from(data));
   }
+
+  // ================= CRUD (Fase 1 — sem fotos) =====================
+
+  /// Sprint W+M (Sprint 17 web F2) — catálogo de tipos de ocorrência
+  /// pra popular o dropdown do form "Nova ocorrência". Fonte:
+  /// `OcorrenciaTipoModel::getAllOrdenados()` do web via wrapper.
+  ///
+  /// Espelha [OcorrenciaFiltroItem] em shape ({id, label}) — reuso.
+  static Future<List<OcorrenciaFiltroItem>> tipos() async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/ocorrencias/tipos', {
+      'usuario_id': usuarioId,
+    });
+    if (res['success'] != true) {
+      _log.warn('tipos FALHOU: ${res['message']}');
+      return const [];
+    }
+    final list = (res['data'] as List<dynamic>? ?? const []);
+    return list
+        .whereType<Map>()
+        .map((e) => OcorrenciaFiltroItem.fromJson(
+              Map<String, dynamic>.from(e),
+              'nome',
+            ))
+        .toList();
+  }
+
+  /// Cria uma ocorrência no BDT em andamento. Retorna o `id` inserido,
+  /// ou `0` em falha (a UI mostra `formError` a partir do `res['message']`).
+  ///
+  /// Backend valida ownership (só o condutor do BDT pode registrar).
+  /// Fotos entram na Fase 2 (multipart upload dedicado).
+  static Future<Map<String, dynamic>> criar({
+    required int bdtId,
+    required String titulo,
+    String? descricao,
+    int? fkOcorrenciaTipo,
+    String? dataHora,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/ocorrencias/criar', {
+      'usuario_id': usuarioId,
+      'bdt_id': bdtId,
+      'titulo': titulo.trim(),
+      if (descricao != null && descricao.trim().isNotEmpty)
+        'descricao': descricao.trim(),
+      if (fkOcorrenciaTipo != null && fkOcorrenciaTipo > 0)
+        'fk_ocorrencia_tipo': fkOcorrenciaTipo,
+      if (dataHora != null && dataHora.isNotEmpty) 'data_hora': dataHora,
+    });
+    _log.info('criar http=${res["http_status"]} ok=${res["success"]}');
+    return res;
+  }
+
+  /// Soft-delete de uma ocorrência (exclui também as fotos anexadas).
+  /// Backend valida ownership.
+  static Future<bool> excluir(int id) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/ocorrencias/excluir', {
+      'usuario_id': usuarioId,
+      'id': id,
+    });
+    return res['success'] == true;
+  }
 }

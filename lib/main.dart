@@ -12,6 +12,7 @@ import 'pages/assinatura_marco_page.dart';
 import 'pages/conclusao_page.dart';
 import 'pages/historico_ocorrencias_page.dart';
 import 'pages/ocorrencia_detalhe_page.dart';
+import 'pages/nova_ocorrencia_page.dart';
 import 'services/alertas_service.dart';
 import 'services/background_location_service.dart';
 import 'theme/app_theme.dart';
@@ -91,6 +92,7 @@ class BdtUerjApp extends StatelessWidget {
         // Sprint W+M (Sprint 17 web)
         "/ocorrencias/historico": (_) => const HistoricoOcorrenciasPage(),
         "/ocorrencia/detalhe":    (_) => const OcorrenciaDetalhePage(), // arg: int id
+        "/ocorrencia/nova":       (_) => const NovaOcorrenciaPage(),    // arg: int bdtId
       },
 
       theme: AppTheme.light(),
