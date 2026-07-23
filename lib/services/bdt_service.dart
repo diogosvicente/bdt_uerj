@@ -8,6 +8,8 @@ import '../models/feedback_condutor.dart';
 import '../models/passageiro.dart';
 import '../models/pre_bdt_pendente.dart';
 import '../models/seguranca_texto.dart';
+import 'ocorrencia_service.dart'
+    show OcorrenciaFotoRef; // shape {id, mimeType, createdAt} reusada
 import '../models/veiculo.dart';
 import '../utils/logger.dart';
 import 'location_service.dart';
@@ -625,6 +627,14 @@ class BdtService {
     String? dataReferencia,
     String? observacoesGerais,
     required List<Map<String, dynamic>> trechos,
+    // Sprint 11 W+M — carga opcional. Fotos são enviadas separadamente
+    // via `uploadFotoCarga` depois de criar o Pré-BDT (precisa do bdt_id).
+    bool temCarga = false,
+    String? carga,
+    double? cargaPesoKg,
+    double? cargaComprimentoM,
+    double? cargaLarguraM,
+    double? cargaAlturaM,
   }) async {
     final usuarioId = await _userId();
 
@@ -636,6 +646,17 @@ class BdtService {
       if (observacoesGerais != null && observacoesGerais.trim().isNotEmpty)
         'observacoes_gerais': observacoesGerais.trim(),
       'trechos': trechos,
+      'tem_carga': temCarga,
+      if (temCarga && carga != null && carga.trim().isNotEmpty)
+        'carga': carga.trim(),
+      if (temCarga && cargaPesoKg != null && cargaPesoKg > 0)
+        'carga_peso_kg': cargaPesoKg,
+      if (temCarga && cargaComprimentoM != null && cargaComprimentoM > 0)
+        'carga_comprimento_m': cargaComprimentoM,
+      if (temCarga && cargaLarguraM != null && cargaLarguraM > 0)
+        'carga_largura_m': cargaLarguraM,
+      if (temCarga && cargaAlturaM != null && cargaAlturaM > 0)
+        'carga_altura_m': cargaAlturaM,
     };
 
     final res = await ApiClient.post(
@@ -676,6 +697,12 @@ class BdtService {
     String? dataReferencia,
     String? observacoesGerais,
     required List<Map<String, dynamic>> trechos,
+    bool temCarga = false,
+    String? carga,
+    double? cargaPesoKg,
+    double? cargaComprimentoM,
+    double? cargaLarguraM,
+    double? cargaAlturaM,
   }) async {
     final usuarioId = await _userId();
     final payload = <String, dynamic>{
@@ -687,12 +714,91 @@ class BdtService {
       'observacoes_gerais':
           (observacoesGerais ?? '').trim().isEmpty ? '' : observacoesGerais!.trim(),
       'trechos': trechos,
+      'tem_carga': temCarga,
+      if (temCarga && carga != null && carga.trim().isNotEmpty)
+        'carga': carga.trim(),
+      if (temCarga && cargaPesoKg != null && cargaPesoKg > 0)
+        'carga_peso_kg': cargaPesoKg,
+      if (temCarga && cargaComprimentoM != null && cargaComprimentoM > 0)
+        'carga_comprimento_m': cargaComprimentoM,
+      if (temCarga && cargaLarguraM != null && cargaLarguraM > 0)
+        'carga_largura_m': cargaLarguraM,
+      if (temCarga && cargaAlturaM != null && cargaAlturaM > 0)
+        'carga_altura_m': cargaAlturaM,
     };
     final res = await ApiClient.post(
       'transporte/api/bdt/pre-bdt/atualizar',
       payload,
     );
     return Map<String, dynamic>.from(res);
+  }
+
+  // ==========================================================
+  // Sprint 11 W+M — Fotos de CARGA no Pré-BDT
+  // Reusa OcorrenciaFotoRef (mesma shape {id, mimeType, createdAt}).
+  // Ownership: bdt->criado_por == usuário logado.
+  // ==========================================================
+
+  static Future<List<OcorrenciaFotoRef>> listarFotosCarga(int bdtId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/pre-bdt/fotos-carga/listar',
+      {'usuario_id': usuarioId, 'bdt_id': bdtId},
+    );
+    if (res['success'] != true) {
+      _log.warn('listarFotosCarga#$bdtId FALHOU: ${res['message']}');
+      return const [];
+    }
+    final list = (res['data'] as List<dynamic>? ?? const []);
+    return list
+        .whereType<Map>()
+        .map((e) => OcorrenciaFotoRef.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  static Future<List<int>?> obterFotoCarga(int docId) async {
+    final usuarioId = await _userId();
+    return ApiClient.postForBytes(
+      'transporte/api/bdt/pre-bdt/fotos-carga/obter',
+      {'usuario_id': usuarioId, 'doc_id': docId},
+    );
+  }
+
+  /// Retorna docId (>0 sucesso, 0 falha).
+  static Future<int> uploadFotoCarga({
+    required int bdtId,
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.postMultipart(
+      'transporte/api/bdt/pre-bdt/fotos-carga/upload',
+      fields: {
+        'usuario_id': '$usuarioId',
+        'bdt_id': '$bdtId',
+      },
+      fileField: 'foto',
+      fileBytes: bytes,
+      filename: filename,
+    );
+    if (res['success'] != true) {
+      _log.warn('uploadFotoCarga#$bdtId FALHOU: ${res['message']}');
+      return 0;
+    }
+    final data = res['data'];
+    if (data is! Map) return 0;
+    final rawId = data['id'];
+    if (rawId is int) return rawId;
+    return int.tryParse(rawId?.toString() ?? '') ?? 0;
+  }
+
+  static Future<bool> excluirFotoCarga(int docId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/pre-bdt/fotos-carga/excluir',
+      {'usuario_id': usuarioId, 'doc_id': docId},
+    );
+    return res['success'] == true;
   }
 
   // ==========================================================

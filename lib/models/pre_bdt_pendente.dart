@@ -18,6 +18,13 @@ class PreBdtPendente {
   final String? veiculoModelo;
   final String protocolo;
   final List<TrechoPrevisto> trechos;
+  // Sprint 11 W+M — carga (opcional). Só aparece se `temCarga=true`.
+  final bool temCarga;
+  final String? carga;
+  final double? cargaPesoKg;
+  final double? cargaComprimentoM;
+  final double? cargaLarguraM;
+  final double? cargaAlturaM;
 
   const PreBdtPendente({
     required this.id,
@@ -32,6 +39,12 @@ class PreBdtPendente {
     this.veiculoModelo,
     required this.protocolo,
     this.trechos = const [],
+    this.temCarga = false,
+    this.carga,
+    this.cargaPesoKg,
+    this.cargaComprimentoM,
+    this.cargaLarguraM,
+    this.cargaAlturaM,
   });
 
   factory PreBdtPendente.fromJson(Map<String, dynamic> j) {
@@ -51,6 +64,13 @@ class PreBdtPendente {
       }
     }
 
+    double? parseDec(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString().trim().replaceAll(',', '.');
+      if (s.isEmpty) return null;
+      return double.tryParse(s);
+    }
+
     return PreBdtPendente(
       id: parseInt(j['id']),
       ano: parseInt(j['ano']),
@@ -64,6 +84,12 @@ class PreBdtPendente {
       veiculoModelo: nn(j['veiculo_modelo']),
       protocolo: (j['protocolo'] ?? '').toString(),
       trechos: trechos,
+      temCarga: parseInt(j['tem_carga']) == 1,
+      carga: nn(j['carga']),
+      cargaPesoKg: parseDec(j['carga_peso_kg']),
+      cargaComprimentoM: parseDec(j['carga_comprimento_m']),
+      cargaLarguraM: parseDec(j['carga_largura_m']),
+      cargaAlturaM: parseDec(j['carga_altura_m']),
     );
   }
 
