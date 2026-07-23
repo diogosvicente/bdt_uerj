@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../services/bdt_service.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/assinatura_preview.dart';
+import 'assinatura_marco_page.dart';
 
 class BdtFormPage extends StatefulWidget {
   const BdtFormPage({super.key});
@@ -34,10 +35,22 @@ class _BdtFormPageState extends State<BdtFormPage> {
     'embarque_passageiro': null,
     'hora_saida': null,
   };
-  // Sprint W+M — SVG cru da assinatura ativa por marco (preview no card).
-  // Populado a partir de est['marcos'][slug]['assinatura']['assinatura_svg']
-  // no /jornada/estado. `null` = ainda sem assinatura pra esse marco.
+  // Sprint W+M — metadados da assinatura ativa por marco. Populados a
+  // partir de est['marcos'][slug]['assinatura'] no /jornada/estado.
+  // Servem pro modal do AssinaturaViewButton mostrar quem/quando/obs.
   final Map<String, String?> _marcoAssinaturaSvg = {
+    'partida': null,
+    'apresentacao': null,
+    'embarque_passageiro': null,
+    'hora_saida': null,
+  };
+  final Map<String, String?> _marcoSignatarioTipo = {
+    'partida': null,
+    'apresentacao': null,
+    'embarque_passageiro': null,
+    'hora_saida': null,
+  };
+  final Map<String, String?> _marcoObservacao = {
     'partida': null,
     'apresentacao': null,
     'embarque_passageiro': null,
@@ -186,6 +199,14 @@ class _BdtFormPageState extends State<BdtFormPage> {
             if (svg != null && svg.toString().trim().isNotEmpty) {
               _marcoAssinaturaSvg[k] = svg.toString();
             }
+            final tipo = ass['signatario_tipo']?.toString().trim();
+            if (tipo != null && tipo.isNotEmpty) {
+              _marcoSignatarioTipo[k] = tipo;
+            }
+            final obs = ass['observacao']?.toString().trim();
+            if (obs != null && obs.isNotEmpty) {
+              _marcoObservacao[k] = obs;
+            }
           }
         }
       }
@@ -235,6 +256,26 @@ class _BdtFormPageState extends State<BdtFormPage> {
         return _marcoDatahora['apresentacao'] != null;
     }
     return false;
+  }
+
+  /// Sprint W+M — abre o form completo de assinatura pra RE-assinar
+  /// um marco já registrado. Reusa `/marco/assinatura` (mesmo fluxo
+  /// da `ValidacaoInicioPage`). Chamado pelo botão "Editar" do modal
+  /// de visualização (AssinaturaViewButton).
+  Future<void> _reassinarMarco(int bdtId, String marco) async {
+    final ok = await Navigator.pushNamed(
+      context,
+      '/marco/assinatura',
+      arguments: AssinaturaMarcoArgs(
+        bdtId: bdtId,
+        marco: marco,
+        labelMarco: _marcoLabel[marco] ?? marco,
+      ),
+    );
+    if (ok == true && mounted) {
+      // ignore: discarded_futures
+      _load(bdtId);
+    }
   }
 
   Future<void> _registrarMarco(int bdtId, String marco) async {
@@ -996,7 +1037,17 @@ class _BdtFormPageState extends State<BdtFormPage> {
           Padding(
             // Alinha com o texto (pula ícone 28 + gap 12).
             padding: const EdgeInsets.only(left: 40),
-            child: AssinaturaPreview(svg: svg, height: 72),
+            child: AssinaturaViewButton(
+              svg: svg,
+              marcoLabel: _marcoLabel[marco] ?? marco,
+              assinadoPor: autor,
+              signatarioTipo: _marcoSignatarioTipo[marco],
+              dataHora: dh,
+              observacao: _marcoObservacao[marco],
+              onEditar: _bdtPermiteMarcos
+                  ? () => _reassinarMarco(bdtId, marco)
+                  : null,
+            ),
           ),
         ],
       ],

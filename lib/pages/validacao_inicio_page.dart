@@ -234,7 +234,15 @@ class _ValidacaoInicioPageState extends State<ValidacaoInicioPage> {
             Padding(
               // Alinha com o texto (pula ícone + gap).
               padding: const EdgeInsets.only(left: 34),
-              child: AssinaturaPreview(svg: svg, height: 72),
+              child: AssinaturaViewButton(
+                svg: svg,
+                marcoLabel: label,
+                assinadoPor: autor,
+                signatarioTipo: tipo,
+                dataHora: dh,
+                observacao: assinaturaMap?['observacao']?.toString(),
+                onEditar: () => _abrirAssinatura(marco, label),
+              ),
             ),
           ],
         ],
