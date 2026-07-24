@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../services/abastecimento_foto_service.dart';
 import '../services/bdt_service.dart';
+import '../services/manutencao_foto_service.dart';
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/assinatura_preview.dart';
+import '../widgets/foto_documento_thumb.dart';
+import '../widgets/fotos_bdt_section.dart';
 import 'assinatura_marco_page.dart';
 
 class BdtFormPage extends StatefulWidget {
@@ -98,6 +104,67 @@ class _BdtFormPageState extends State<BdtFormPage> {
   // =========================
   // helpers
   // =========================
+
+  /// Sprint 18 W+M — image_picker compartilhado entre as sheets
+  /// (abastecimento e manutenção). Instância única evita reabrir plugin
+  /// nativo a cada toque de chip.
+  final ImagePicker _picker = ImagePicker();
+
+  /// Bottom-sheet Câmera vs Galeria. Retorna a fonte escolhida ou null
+  /// se o usuário cancelou. Padrão idêntico à nova_ocorrencia_page.
+  Future<ImageSource?> _perguntarFonteFoto() {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Tirar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Escolher da galeria'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Icone visual pro chip de subtipo — melhora leitura da botoeira.
+  /// Se o admin renomear/criar novos, cai no default (foto genérica).
+  IconData _iconeSubtipoAbastecimento(String nome) {
+    final n = nome.toLowerCase();
+    if (n.contains('odô') || n.contains('odo')) return Icons.speed;
+    if (n.contains('bomba')) return Icons.local_gas_station;
+    if (n.contains('tanque')) return Icons.propane_tank_outlined;
+    if (n.contains('cartão') || n.contains('cartao')) return Icons.credit_card;
+    if (n.contains('nota')) return Icons.receipt_long;
+    return Icons.photo_camera;
+  }
+
+  /// Pega foto (via camera/galeria) — retorna XFile ou null.
+  Future<XFile?> _pickFoto() async {
+    final source = await _perguntarFonteFoto();
+    if (source == null) return null;
+    try {
+      return _picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        imageQuality: 82,
+      );
+    } catch (e) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao acessar câmera/galeria: $e')),
+      );
+      return null;
+    }
+  }
 
   String _two(int v) => v.toString().padLeft(2, '0');
 
@@ -428,6 +495,33 @@ class _BdtFormPageState extends State<BdtFormPage> {
     String? formError;
     bool busy = false;
 
+    // Sprint 18 W+M — Fotos.
+    // - `tiposFotoFuture`: catalogo do backend com fallback local (nunca vazio).
+    // - `fotosPendentes`: escolhidas na sheet, ainda em memoria.
+    //   Sobem em sequencia APOS criar/atualizar o abastecimento.
+    // - `fotosExistentes`: so em edicao — vem do endpoint /listar.
+    List<Map<String, dynamic>> tiposFoto = const [];
+    final tiposFotoFuture = AbastecimentoFotoService.listarTiposFoto()
+        .then((v) => tiposFoto = v);
+    final List<FotoPendente> fotosPendentes = [];
+    final List<FotoExistente> fotosExistentes = [];
+    if (isEdit && id > 0) {
+      // ignore: discarded_futures
+      AbastecimentoFotoService.listar(id).then((refs) {
+        fotosExistentes
+          ..clear()
+          ..addAll(refs.map((r) => FotoExistente(
+                docId: r.id,
+                label: (r.descricao?.trim().isNotEmpty ?? false)
+                    ? r.descricao!
+                    : 'Foto',
+                fetcher: (docId) =>
+                    AbastecimentoFotoService.obter(docId, abastecimentoId: id),
+                cacheNamespace: 'abastecimento_$id',
+              )));
+      });
+    }
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -697,7 +791,8 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       controller: notaCtrl,
                       enabled: !busy,
                       decoration: const InputDecoration(
-                        labelText: "Nota fiscal",
+                        labelText: "Nota fiscal (número/série)",
+                        helperText: "Foto/PDF da NF vai na seção de fotos abaixo.",
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -712,6 +807,83 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       ),
                     ),
                     const SizedBox(height: 14),
+
+                    // Sprint 18 W+M — Fotos do abastecimento.
+                    // Botoeira por tipo (Odômetro/Bomba/Tanque/Cartão/Outros)
+                    // + botão destacado "Nota Fiscal" (mesmo endpoint, com
+                    // flag is_nota_fiscal — backend rota pra salvarNotaFiscal).
+                    FutureBuilder<List<Map<String, dynamic>>>(
+                      future: tiposFotoFuture,
+                      builder: (context, snap) {
+                        final catalogo = snap.data ?? tiposFoto;
+                        final loading =
+                            snap.connectionState != ConnectionState.done &&
+                                catalogo.isEmpty;
+                        if (loading) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2)),
+                                SizedBox(width: 10),
+                                Text('Carregando tipos de foto…'),
+                              ],
+                            ),
+                          );
+                        }
+                        return FotosBdtSection(
+                          titulo: 'Fotos do abastecimento',
+                          busy: busy,
+                          chips: [
+                            for (final t in catalogo)
+                              FotoTipoChip(
+                                tipoId: t['id'] as int?,
+                                label: (t['nome'] ?? '').toString(),
+                                icone: _iconeSubtipoAbastecimento(
+                                    (t['nome'] ?? '').toString()),
+                              ),
+                          ],
+                          chipDestaque: const FotoTipoChip(
+                            isNotaFiscal: true,
+                            label: 'Nota Fiscal',
+                            icone: Icons.receipt_long,
+                          ),
+                          pendentes: fotosPendentes,
+                          existentes: fotosExistentes,
+                          onAdicionar: (chip) async {
+                            final f = await _pickFoto();
+                            if (f == null) return;
+                            setLocal(() =>
+                                fotosPendentes.add(FotoPendente(file: f, tipo: chip)));
+                          },
+                          onRemoverPendente: (i) => setLocal(() {
+                            if (i >= 0 && i < fotosPendentes.length) {
+                              fotosPendentes.removeAt(i);
+                            }
+                          }),
+                          onExcluirExistente: (foto) async {
+                            if (!isEdit || id <= 0) return;
+                            final ok = await AbastecimentoFotoService.excluir(
+                              foto.docId,
+                              abastecimentoId: id,
+                            );
+                            if (!ok) return;
+                            FotoDocumentoThumb.invalidate(
+                              cacheNamespace: foto.cacheNamespace,
+                              docId: foto.docId,
+                            );
+                            setLocal(() => fotosExistentes
+                                .removeWhere((e) => e.docId == foto.docId));
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 14),
+
                     FilledButton.icon(
                       onPressed: busy
                           ? null
@@ -806,12 +978,51 @@ class _BdtFormPageState extends State<BdtFormPage> {
                                 return;
                               }
 
+                              // Sprint 18 W+M — sobe as fotos pendentes DEPOIS
+                              // de o registro existir. Em criação, o id vem do
+                              // response. Sequencial pra manter ordem visual e
+                              // simplificar tratamento de erro parcial.
+                              final absIdFinal = isEdit
+                                  ? id
+                                  : ((res['data'] as Map?)?['abastecimento_id']
+                                          as int?) ??
+                                      0;
+
+                              int fotosOk = 0;
+                              int fotosErr = 0;
+                              if (absIdFinal > 0) {
+                                for (final p in fotosPendentes) {
+                                  final bytes = await p.file.readAsBytes();
+                                  final docId = await AbastecimentoFotoService
+                                      .upload(
+                                    abastecimentoId: absIdFinal,
+                                    bytes: bytes,
+                                    filename: p.file.name.isNotEmpty
+                                        ? p.file.name
+                                        : 'foto_${DateTime.now().millisecondsSinceEpoch}.jpg',
+                                    tipoFotoId: p.tipo.tipoId,
+                                    isNotaFiscal: p.tipo.isNotaFiscal,
+                                  );
+                                  if (docId > 0) {
+                                    fotosOk++;
+                                  } else {
+                                    fotosErr++;
+                                  }
+                                }
+                              }
+
+                              if (!context.mounted) return;
                               Navigator.pop(context);
+                              final msgFotos = fotosPendentes.isEmpty
+                                  ? ''
+                                  : fotosErr == 0
+                                      ? ' ($fotosOk foto(s) enviada(s))'
+                                      : ' — $fotosOk foto(s) OK, $fotosErr falhou(aram)';
                               ScaffoldMessenger.of(context)
                                 ..clearSnackBars()
                                 ..showSnackBar(
-                                  const SnackBar(
-                                    content: Text("Abastecimento salvo."),
+                                  SnackBar(
+                                    content: Text("Abastecimento salvo.$msgFotos"),
                                   ),
                                 );
                               await _load(bdtId);
@@ -899,6 +1110,40 @@ class _BdtFormPageState extends State<BdtFormPage> {
     String? errDesc;
     String? formError;
     bool busy = false;
+
+    // Sprint 18 W+M — Fotos (fase Antes / Depois).
+    // NAO tem catalogo dinamico: as fases sao fixas no backend
+    // (FOTO_VISTORIA_ANTES/DEPOIS). Se um dia o admin pedir subtipos
+    // configuraveis, aqui muda pra fetch + FutureBuilder — igual ao
+    // abastecimento.
+    final List<FotoPendente> fotosPendentes = [];
+    final List<FotoExistente> fotosExistentes = [];
+    if (isEdit && id > 0) {
+      // ignore: discarded_futures
+      ManutencaoFotoService.listar(id).then((refs) {
+        fotosExistentes
+          ..clear()
+          ..addAll(refs.map((r) {
+            // Backend expõe fk_tipo (id de doc_tipos). Usamos ele pra
+            // decidir "Antes" vs "Depois" — se por algum motivo faltar,
+            // recorre à descricao (fallback). Nomes vindos de DocTiposModel
+            // no web: FOTO_VISTORIA_ANTES / FOTO_VISTORIA_DEPOIS.
+            final desc = (r.descricao ?? '').toLowerCase();
+            final label = desc.contains('antes')
+                ? 'Antes'
+                : desc.contains('depois')
+                    ? 'Depois'
+                    : 'Foto';
+            return FotoExistente(
+              docId: r.id,
+              label: label,
+              fetcher: (docId) =>
+                  ManutencaoFotoService.obter(docId, manutencaoId: id),
+              cacheNamespace: 'manutencao_$id',
+            );
+          }));
+      });
+    }
 
     await showModalBottomSheet(
       context: context,
@@ -1075,6 +1320,55 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       ),
                     ),
                     const SizedBox(height: 14),
+
+                    // Sprint 18 W+M — Fotos de vistoria (Antes / Depois).
+                    // 2 chips fixos — a discriminação vive no fk_tipo do
+                    // backend (FOTO_VISTORIA_ANTES/DEPOIS), não em texto.
+                    FotosBdtSection(
+                      titulo: 'Fotos de vistoria',
+                      busy: busy,
+                      chips: const [
+                        FotoTipoChip(
+                          fase: 'antes',
+                          label: 'Antes',
+                          icone: Icons.build_circle_outlined,
+                        ),
+                        FotoTipoChip(
+                          fase: 'depois',
+                          label: 'Depois',
+                          icone: Icons.check_circle_outline,
+                        ),
+                      ],
+                      pendentes: fotosPendentes,
+                      existentes: fotosExistentes,
+                      onAdicionar: (chip) async {
+                        final f = await _pickFoto();
+                        if (f == null) return;
+                        setLocal(() =>
+                            fotosPendentes.add(FotoPendente(file: f, tipo: chip)));
+                      },
+                      onRemoverPendente: (i) => setLocal(() {
+                        if (i >= 0 && i < fotosPendentes.length) {
+                          fotosPendentes.removeAt(i);
+                        }
+                      }),
+                      onExcluirExistente: (foto) async {
+                        if (!isEdit || id <= 0) return;
+                        final ok = await ManutencaoFotoService.excluir(
+                          foto.docId,
+                          manutencaoId: id,
+                        );
+                        if (!ok) return;
+                        FotoDocumentoThumb.invalidate(
+                          cacheNamespace: foto.cacheNamespace,
+                          docId: foto.docId,
+                        );
+                        setLocal(() => fotosExistentes
+                            .removeWhere((e) => e.docId == foto.docId));
+                      },
+                    ),
+                    const SizedBox(height: 14),
+
                     FilledButton.icon(
                       onPressed: busy
                           ? null
@@ -1118,7 +1412,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                                     (v is String && v.trim().isEmpty),
                               );
 
-                              final ok = isEdit
+                              final res = isEdit
                                   ? await BdtService.atualizarManutencao(
                                       bdtId: bdtId,
                                       manutencaoId: id,
@@ -1131,21 +1425,58 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
                               if (!context.mounted) return;
 
-                              if (!ok) {
+                              if (res['success'] != true) {
+                                final msg =
+                                    (res['message']?.toString().trim() ?? '');
                                 setLocal(() {
                                   busy = false;
-                                  formError =
-                                      "Não foi possível salvar. Verifique os campos e tente de novo.";
+                                  formError = msg.isNotEmpty
+                                      ? msg
+                                      : "Não foi possível salvar. Verifique os campos e tente de novo.";
                                 });
                                 return;
                               }
 
+                              // Sprint 18 W+M — sobe fotos pendentes.
+                              final mntIdFinal = isEdit
+                                  ? id
+                                  : ((res['data'] as Map?)?['manutencao_id']
+                                          as int?) ??
+                                      0;
+                              int fotosOk = 0;
+                              int fotosErr = 0;
+                              if (mntIdFinal > 0) {
+                                for (final p in fotosPendentes) {
+                                  final bytes = await p.file.readAsBytes();
+                                  final docId =
+                                      await ManutencaoFotoService.upload(
+                                    manutencaoId: mntIdFinal,
+                                    bytes: bytes,
+                                    filename: p.file.name.isNotEmpty
+                                        ? p.file.name
+                                        : 'foto_${DateTime.now().millisecondsSinceEpoch}.jpg',
+                                    fase: p.tipo.fase ?? 'antes',
+                                  );
+                                  if (docId > 0) {
+                                    fotosOk++;
+                                  } else {
+                                    fotosErr++;
+                                  }
+                                }
+                              }
+
+                              if (!context.mounted) return;
                               Navigator.pop(context);
+                              final msgFotos = fotosPendentes.isEmpty
+                                  ? ''
+                                  : fotosErr == 0
+                                      ? ' ($fotosOk foto(s) enviada(s))'
+                                      : ' — $fotosOk foto(s) OK, $fotosErr falhou(aram)';
                               ScaffoldMessenger.of(context)
                                 ..clearSnackBars()
                                 ..showSnackBar(
-                                  const SnackBar(
-                                    content: Text("Manutenção salva."),
+                                  SnackBar(
+                                    content: Text("Manutenção salva.$msgFotos"),
                                   ),
                                 );
                               await _load(bdtId);

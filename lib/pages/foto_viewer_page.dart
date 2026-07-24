@@ -4,11 +4,30 @@ import 'package:flutter/material.dart';
 
 import '../services/ocorrencia_service.dart';
 
-/// Viewer fullscreen pra fotos de ocorrência já persistidas.
+/// Argumentos do [FotoViewerPage] — carrega o `docId` + como baixar os
+/// bytes. Sprint 18 W+M generalizou o viewer pra qualquer fluxo (foto de
+/// abastecimento, manutenção, carga, ocorrência) — cada caller passa o
+/// fetcher do seu service.
+class FotoViewerArgs {
+  final int docId;
+  final Future<List<int>?> Function(int docId) fetcher;
+  final String? titulo;
+
+  const FotoViewerArgs({
+    required this.docId,
+    required this.fetcher,
+    this.titulo,
+  });
+}
+
+/// Viewer fullscreen pra fotos persistidas no servidor.
 ///
-/// Route: `/foto/viewer` com argumento `int docId`. Baixa o binário
-/// completo (o `FotoOcorrenciaThumb` do grid tinha só a thumb) e
-/// mostra com pinch-to-zoom via [InteractiveViewer].
+/// Route: `/foto/viewer`. Argumentos aceitos:
+///  - `int docId` → shortcut retrocompat: baixa via
+///    `OcorrenciaService.obterFoto` (comportamento pré-Sprint 18).
+///  - [FotoViewerArgs] → genérico, o caller informa o fetcher.
+///
+/// Pinch-to-zoom via [InteractiveViewer].
 class FotoViewerPage extends StatefulWidget {
   const FotoViewerPage({super.key});
 
@@ -19,6 +38,7 @@ class FotoViewerPage extends StatefulWidget {
 class _FotoViewerPageState extends State<FotoViewerPage> {
   Uint8List? _bytes;
   bool _erro = false;
+  String _titulo = 'Foto';
 
   @override
   void didChangeDependencies() {
@@ -28,8 +48,24 @@ class _FotoViewerPageState extends State<FotoViewerPage> {
   }
 
   Future<void> _load() async {
-    final docId = ModalRoute.of(context)!.settings.arguments as int;
-    final bytes = await OcorrenciaService.obterFoto(docId);
+    final raw = ModalRoute.of(context)!.settings.arguments;
+
+    final int docId;
+    final Future<List<int>?> Function(int) fetcher;
+    if (raw is FotoViewerArgs) {
+      docId = raw.docId;
+      fetcher = raw.fetcher;
+      if (raw.titulo != null) _titulo = raw.titulo!;
+    } else if (raw is int) {
+      // retrocompat Sprint 17 — só ocorrência passava aqui.
+      docId = raw;
+      fetcher = OcorrenciaService.obterFoto;
+    } else {
+      setState(() => _erro = true);
+      return;
+    }
+
+    final bytes = await fetcher(docId);
     if (!mounted) return;
     if (bytes == null || bytes.isEmpty) {
       setState(() => _erro = true);
@@ -45,7 +81,7 @@ class _FotoViewerPageState extends State<FotoViewerPage> {
       appBar: AppBar(
         backgroundColor: Colors.black87,
         foregroundColor: Colors.white,
-        title: const Text('Foto'),
+        title: Text(_titulo),
       ),
       body: Center(
         child: _bytes != null

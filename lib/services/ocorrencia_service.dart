@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../models/ocorrencia.dart';
 import '../models/ocorrencia_filtros.dart';
 import '../utils/logger.dart';
+import 'foto_documento_client.dart';
 
 /// Sprint W+M (Sprint 17 web / W15 F3) — Histórico institucional de
 /// ocorrências. Fachada tipada dos 3 endpoints
@@ -153,82 +154,54 @@ class OcorrenciaService {
     return res['success'] == true;
   }
 
-  // ================= FOTOS (Fase 2) ================================
+  // ================= FOTOS (Sprint 17 F2 + Sprint 18 refactor) =====
+
+  /// Sprint 18 W+M — thin wrapper sobre o [FotoDocumentoClient] genérico.
+  /// A API pública deste service continua igual (não quebra callers),
+  /// mas a lógica de HTTP/multipart/parse vive num único lugar.
+  static const _fotoClient = FotoDocumentoClient(
+    uploadPath:  'transporte/api/bdt/ocorrencias/fotos/upload',
+    listarPath:  'transporte/api/bdt/ocorrencias/fotos/listar',
+    obterPath:   'transporte/api/bdt/ocorrencias/fotos/obter',
+    excluirPath: 'transporte/api/bdt/ocorrencias/fotos/excluir',
+    refField: 'id_ocorrencia',
+  );
 
   /// Lista os IDs + metadados das fotos de uma ocorrência (sem os
   /// binários). A UI faz `obterFoto(docId)` sob demanda pra baixar cada
   /// binário — mesmo padrão MSEC.6.
   static Future<List<OcorrenciaFotoRef>> listarFotos(int ocorrenciaId) async {
-    final usuarioId = await _userId();
-    final res = await ApiClient.post(
-      'transporte/api/bdt/ocorrencias/fotos/listar',
-      {
-        'usuario_id': usuarioId,
-        'id_ocorrencia': ocorrenciaId,
-      },
-    );
-    if (res['success'] != true) {
-      _log.warn('listarFotos#$ocorrenciaId FALHOU: ${res['message']}');
-      return const [];
-    }
-    final list = (res['data'] as List<dynamic>? ?? const []);
-    return list
-        .whereType<Map>()
-        .map((e) => OcorrenciaFotoRef.fromJson(Map<String, dynamic>.from(e)))
+    final refs = await _fotoClient.listar(ocorrenciaId);
+    // Adapta pro tipo antigo (mantido pra retrocompat de callers).
+    return refs
+        .map((r) => OcorrenciaFotoRef(
+              id: r.id,
+              mimeType: r.mimeType,
+              createdAt: r.createdAt,
+            ))
         .toList();
   }
 
   /// Baixa o binário de uma foto específica (ownership validado
   /// server-side). Retorna `null` em falha — a UI mostra placeholder.
-  static Future<List<int>?> obterFoto(int docId) async {
-    final usuarioId = await _userId();
-    return ApiClient.postForBytes(
-      'transporte/api/bdt/ocorrencias/fotos/obter',
-      {'usuario_id': usuarioId, 'doc_id': docId},
-    );
-  }
+  static Future<List<int>?> obterFoto(int docId) => _fotoClient.obter(docId);
 
   /// Upload de uma foto pra ocorrência já criada. Retorna o `docId`
-  /// no sucesso ou `0` em falha (a UI usa pra mostrar reagir).
-  ///
-  /// Backend valida MIME (só `image/*`) e converte pra WebP automatico
-  /// via `DocumentoService`.
+  /// no sucesso ou `0` em falha.
   static Future<int> uploadFoto({
     required int ocorrenciaId,
     required List<int> bytes,
     required String filename,
-  }) async {
-    final usuarioId = await _userId();
-    final res = await ApiClient.postMultipart(
-      'transporte/api/bdt/ocorrencias/fotos/upload',
-      fields: {
-        'usuario_id': '$usuarioId',
-        'id_ocorrencia': '$ocorrenciaId',
-      },
-      fileField: 'foto',
-      fileBytes: bytes,
+  }) {
+    return _fotoClient.upload(
+      refId: ocorrenciaId,
+      bytes: bytes,
       filename: filename,
     );
-    if (res['success'] != true) {
-      _log.warn('uploadFoto#$ocorrenciaId FALHOU: ${res['message']}');
-      return 0;
-    }
-    final data = res['data'];
-    if (data is! Map) return 0;
-    final rawId = data['id'];
-    if (rawId is int) return rawId;
-    return int.tryParse(rawId?.toString() ?? '') ?? 0;
   }
 
   /// Remove uma foto (soft-delete server-side + limpa arquivo físico).
-  static Future<bool> excluirFoto(int docId) async {
-    final usuarioId = await _userId();
-    final res = await ApiClient.post(
-      'transporte/api/bdt/ocorrencias/fotos/excluir',
-      {'usuario_id': usuarioId, 'doc_id': docId},
-    );
-    return res['success'] == true;
-  }
+  static Future<bool> excluirFoto(int docId) => _fotoClient.excluir(docId);
 }
 
 /// Referência leve pra uma foto já persistida (a UI faz `obterFoto`

@@ -10,7 +10,7 @@ import '../services/bdt_service.dart';
 import '../services/ocorrencia_service.dart' show OcorrenciaFotoRef;
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
-import '../widgets/foto_ocorrencia_thumb.dart';
+import '../widgets/foto_documento_thumb.dart';
 import '../widgets/veiculo_autocomplete.dart';
 
 /// Sprint M3 — formulário de Pré-BDT: **cria** ou **edita**.
@@ -885,7 +885,15 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
               for (final f in _fotosExistentesCarga)
                 Stack(
                   children: [
-                    FotoOcorrenciaThumb(docId: f.id, size: 84),
+                    // Fix latente (Sprint 18): antes usava FotoOcorrenciaThumb,
+                    // que baixava via endpoint de OCORRÊNCIA — errado. Agora
+                    // baixa pelo endpoint de CARGA (BdtService.obterFotoCarga).
+                    FotoDocumentoThumb(
+                      docId: f.id,
+                      fetcher: BdtService.obterFotoCarga,
+                      cacheNamespace: 'carga',
+                      size: 84,
+                    ),
                     Positioned(
                       right: 2,
                       top: 2,

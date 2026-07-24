@@ -559,6 +559,70 @@ Não tem "estimativa total" — vai crescendo. Sempre que fizer um
 refino desses, registrar aqui em vez de deixar só no commit
 (regra [[bdt_uerj_registrar_fora_de_escopo]]).
 
+- ✅ **Sprint 18 W+M — Fotos de Abastecimento & Manutenção no mobile** (2026-07-24)
+  — **Origem:** completar a paridade web↔mobile de anexos do BDT. Ocorrência já
+  tinha upload de foto desde a Sprint 17; Abastecimento e Manutenção só tinham
+  os campos textuais. Auditoria pré-execução também revelou 2 bugs latentes.
+  - **Reuso máximo do módulo de documentos web:** todo upload no backend passa
+    por `DocumentoService::saveDocumentoComReferencia` (fonte única) — os
+    arquivos ficam em `doc_documentos` + `doc_referencias` + naming pattern
+    padrão de `WRITEPATH/uploads/documentos/`. Os services específicos por
+    fluxo (`AbastecimentoFotoService`, `ManutencaoFotoService`) já existiam pro
+    web — a API mobile virou wrapper fino em cima deles, sem re-implementar.
+  - **Backend — trait pra eliminar boilerplate:** novo
+    `App\Controllers\e_Transporte\Api\Traits\FotoDocumentoTrait` com 3
+    helpers: `respondUploadFoto` (valida UploadedFile + delega ao service +
+    JSON padronizado), `streamFotoDocumento` (binário + ETag +
+    `If-None-Match`/304), `excluirFotoDocumento` (ownership check + delete).
+    Cada endpoint específico fica com ~10 linhas (guard de ownership + qual
+    service chamar). Endpoints novos:
+    - `POST bdt/abastecimentos/fotos/{upload,listar,obter,excluir}` +
+      `bdt/abastecimentos/tipos-fotos` (catálogo dos 5 subtipos, sem Nota
+      Fiscal que tem input próprio).
+    - `POST bdt/manutencoes/fotos/{upload,listar,obter,excluir}` — upload
+      aceita `fase=antes|depois` que roteia pra `salvarAntes`/`salvarDepois`.
+    - Upload de abastecimento aceita `is_nota_fiscal=1` (roteia para
+      `salvarNotaFiscal`) ou `fk_tipo_foto` (subtipo do catálogo).
+  - **Backend — guards no BdtApiService:** `assertAbastecimentoDoCondutor` +
+    `assertManutencaoDoCondutor` — resolvem registro → BDT → condutor, evitam
+    id forjado no payload (mesmo padrão de `assertBdtPertence`).
+  - **Mobile — cliente genérico:** novo `lib/services/foto_documento_client.dart`
+    parametrizado por endpoint + refField. `OcorrenciaService` (fotos),
+    `BdtService` (fotos de carga), `AbastecimentoFotoService` e
+    `ManutencaoFotoService` viraram thin wrappers que instanciam o cliente
+    com os endpoints corretos. Zero código HTTP/multipart/parse duplicado.
+    `AbastecimentoFotoService.listarTiposFoto()` tem fallback local (5
+    subtipos canônicos) se a chamada falhar — igual ao dos tipos de
+    combustível (dropdown nunca vazio).
+  - **Mobile — widgets generalizados:** `FotoOcorrenciaThumb` (Sprint 17)
+    virou shim sobre novo `FotoDocumentoThumb(docId, fetcher, cacheNamespace)`.
+    Cache por `(cacheNamespace, docId)` evita colisão entre fluxos.
+    `FotoViewerPage` aceita agora `FotoViewerArgs` (docId + fetcher) ou `int
+    docId` (retrocompat). Conserta bug latente em `pre_bdt_form_page` onde as
+    fotos de carga baixavam via endpoint de ocorrência (funcionava só porque
+    o listar retornava metadata correta, mas obter/excluir travariam).
+  - **Mobile — UI "botoeira por tipo":** novo widget reusável
+    `lib/widgets/fotos_bdt_section.dart` com chips (Odômetro / Bomba /
+    Tanque / Cartão / Outros + botão destacado "Nota Fiscal" no
+    Abastecimento; Antes / Depois na Manutenção). Cada chip pré-seleciona o
+    tipo antes de abrir a câmera → reduz erro humano no dia a dia sem exigir
+    classificação pós-captura. Miniaturas com badge do tipo. Existentes
+    (do backend) e pendentes (memória) num único grid.
+  - **`nota_fiscal` do Abastecimento:** manteve como campo texto (número/série,
+    paridade com web) e ganhou botão destacado "Nota Fiscal" na seção de
+    fotos que rota pro endpoint `salvarNotaFiscal` (aceita imagem no mobile;
+    PDF só via web, decisão MVP).
+  - **Bugs pré-existentes corrigidos como parte do escopo:** os endpoints
+    `obter`/`excluir` de foto de Ocorrência (Sprint 17) e Carga (Sprint 11)
+    usavam `where('tabela', ...)` / `->referencia_id`, mas as colunas reais
+    de `doc_referencias` são `tabela_referencia` / `id_referencia`. Falha
+    silente — como o fluxo comum era upload+listar (que usa outra query),
+    passou despercebido. Corrigido nos 4 call sites junto com este commit
+    (mesmo bug que travou o "aprovar Pré-BDT" há pouco — commit
+    `5aacffdc5`).
+  - **Sem migration nova.** Todo o schema (`trnsp_abastecimento_tipo_foto`,
+    `doc_tipos.FOTO_*`, `doc_documentos`, `doc_referencias`) já existia.
+
 - ✅ **Padronização UX pós-teste — 3 ajustes** (2026-07-24)
   - **Dashboard sem "Histórico de ocorrências"** — o card
     "Ferramentas" do home ganhava um único atalho para o histórico

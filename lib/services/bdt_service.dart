@@ -8,6 +8,7 @@ import '../models/feedback_condutor.dart';
 import '../models/passageiro.dart';
 import '../models/pre_bdt_pendente.dart';
 import '../models/seguranca_texto.dart';
+import 'foto_documento_client.dart';
 import 'ocorrencia_service.dart'
     show OcorrenciaFotoRef; // shape {id, mimeType, createdAt} reusada
 import '../models/veiculo.dart';
@@ -528,36 +529,33 @@ class BdtService {
         .toList();
   }
 
-  static Future<bool> criarManutencao({
+  /// Sprint 18 W+M — retorna o Map cru do backend (padrão de
+  /// [criarAbastecimento]), pra caller ler `data.manutencao_id` e
+  /// subir fotos em seguida. Antes retornava `bool`.
+  static Future<Map<String, dynamic>> criarManutencao({
     required int bdtId,
     required Map<String, dynamic> data,
   }) async {
     final usuarioId = await _userId();
-
-    final res = await ApiClient.post("transporte/api/bdt/manutencoes/create", {
+    return ApiClient.post("transporte/api/bdt/manutencoes/create", {
       "bdt_id": bdtId,
       "usuario_id": usuarioId,
       ...data,
     });
-
-    return res["success"] == true;
   }
 
-  static Future<bool> atualizarManutencao({
+  static Future<Map<String, dynamic>> atualizarManutencao({
     required int bdtId,
     required int manutencaoId,
     required Map<String, dynamic> data,
   }) async {
     final usuarioId = await _userId();
-
-    final res = await ApiClient.post("transporte/api/bdt/manutencoes/update", {
+    return ApiClient.post("transporte/api/bdt/manutencoes/update", {
       "bdt_id": bdtId,
       "usuario_id": usuarioId,
       "manutencao_id": manutencaoId,
       ...data,
     });
-
-    return res["success"] == true;
   }
 
   static Future<bool> excluirManutencao({
@@ -788,71 +786,48 @@ class BdtService {
 
   // ==========================================================
   // Sprint 11 W+M — Fotos de CARGA no Pré-BDT
-  // Reusa OcorrenciaFotoRef (mesma shape {id, mimeType, createdAt}).
+  // Sprint 18 refactor: delegado ao FotoDocumentoClient (mesmo padrão
+  // de ocorrência/abastecimento/manutenção).
   // Ownership: bdt->criado_por == usuário logado.
   // ==========================================================
 
+  static const _fotoCargaClient = FotoDocumentoClient(
+    uploadPath:  'transporte/api/bdt/pre-bdt/fotos-carga/upload',
+    listarPath:  'transporte/api/bdt/pre-bdt/fotos-carga/listar',
+    obterPath:   'transporte/api/bdt/pre-bdt/fotos-carga/obter',
+    excluirPath: 'transporte/api/bdt/pre-bdt/fotos-carga/excluir',
+    refField: 'bdt_id',
+  );
+
   static Future<List<OcorrenciaFotoRef>> listarFotosCarga(int bdtId) async {
-    final usuarioId = await _userId();
-    final res = await ApiClient.post(
-      'transporte/api/bdt/pre-bdt/fotos-carga/listar',
-      {'usuario_id': usuarioId, 'bdt_id': bdtId},
-    );
-    if (res['success'] != true) {
-      _log.warn('listarFotosCarga#$bdtId FALHOU: ${res['message']}');
-      return const [];
-    }
-    final list = (res['data'] as List<dynamic>? ?? const []);
-    return list
-        .whereType<Map>()
-        .map((e) => OcorrenciaFotoRef.fromJson(Map<String, dynamic>.from(e)))
+    final refs = await _fotoCargaClient.listar(bdtId);
+    return refs
+        .map((r) => OcorrenciaFotoRef(
+              id: r.id,
+              mimeType: r.mimeType,
+              createdAt: r.createdAt,
+            ))
         .toList();
   }
 
-  static Future<List<int>?> obterFotoCarga(int docId) async {
-    final usuarioId = await _userId();
-    return ApiClient.postForBytes(
-      'transporte/api/bdt/pre-bdt/fotos-carga/obter',
-      {'usuario_id': usuarioId, 'doc_id': docId},
-    );
-  }
+  static Future<List<int>?> obterFotoCarga(int docId) =>
+      _fotoCargaClient.obter(docId);
 
   /// Retorna docId (>0 sucesso, 0 falha).
   static Future<int> uploadFotoCarga({
     required int bdtId,
     required List<int> bytes,
     required String filename,
-  }) async {
-    final usuarioId = await _userId();
-    final res = await ApiClient.postMultipart(
-      'transporte/api/bdt/pre-bdt/fotos-carga/upload',
-      fields: {
-        'usuario_id': '$usuarioId',
-        'bdt_id': '$bdtId',
-      },
-      fileField: 'foto',
-      fileBytes: bytes,
+  }) {
+    return _fotoCargaClient.upload(
+      refId: bdtId,
+      bytes: bytes,
       filename: filename,
     );
-    if (res['success'] != true) {
-      _log.warn('uploadFotoCarga#$bdtId FALHOU: ${res['message']}');
-      return 0;
-    }
-    final data = res['data'];
-    if (data is! Map) return 0;
-    final rawId = data['id'];
-    if (rawId is int) return rawId;
-    return int.tryParse(rawId?.toString() ?? '') ?? 0;
   }
 
-  static Future<bool> excluirFotoCarga(int docId) async {
-    final usuarioId = await _userId();
-    final res = await ApiClient.post(
-      'transporte/api/bdt/pre-bdt/fotos-carga/excluir',
-      {'usuario_id': usuarioId, 'doc_id': docId},
-    );
-    return res['success'] == true;
-  }
+  static Future<bool> excluirFotoCarga(int docId) =>
+      _fotoCargaClient.excluir(docId);
 
   // ==========================================================
   // Sprint M4 — Validação de atendimento
