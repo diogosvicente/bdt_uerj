@@ -552,6 +552,13 @@ class _BdtFormPageState extends State<BdtFormPage> {
                             .toList();
 
                         return DropdownButtonFormField<String>(
+                          // Key varia quando a lista chega (0 → N items). Sem
+                          // essa reconstrução, DropdownButtonFormField mantém
+                          // o estado interno criado no primeiro build (items
+                          // vazios) e ignora o snap.data que aparece depois —
+                          // por isso o menu abria vazio no emulador enquanto
+                          // o backend já tinha respondido 200.
+                          key: ValueKey('tipoCombustivel-${items.length}'),
                           initialValue: tipo,
                           isExpanded: true,
                           items: items

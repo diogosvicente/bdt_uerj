@@ -385,14 +385,31 @@ class BdtService {
         .toList();
   }
 
+  /// Fallback local do vocabulário `App\Constants\CombustivelTipo` do web.
+  /// Espelho manual (case-sensitive) que garante o dropdown NUNCA vazio
+  /// se a rede/token falhar. Se o admin adicionar um tipo novo lá, ele só
+  /// aparece quando a chamada online funciona — o offline mostra os 6
+  /// canônicos, que cobrem 100% da frota atual.
+  static const List<String> _tiposCombustivelFallback = [
+    'Gasolina comum',
+    'Gasolina aditivada',
+    'Etanol',
+    'Diesel S10',
+    'Diesel S500',
+    'GNV',
+  ];
+
   /// Sprint W+M — vocabulário fechado do web (`App\Constants\CombustivelTipo`).
   /// Antes o mobile tinha ["gasolina", "etanol", …] (minúsculo) e o
   /// backend recusava com `in_list`. Agora buscamos do web pra manter
   /// sincronia (se o admin adicionar tipo novo, aparece sozinho).
   ///
   /// Retorna lista de strings — o próprio valor é o rótulo (a coluna
-  /// no banco é `varchar` que grava o texto). Falha ⇒ lista vazia
-  /// (UI cai num dropdown vazio, avisa o condutor).
+  /// no banco é `varchar` que grava o texto).
+  ///
+  /// Fallback: se a chamada falhar (rede, token expirado sem refresh,
+  /// endpoint 500), devolve [_tiposCombustivelFallback] — nunca vazio.
+  /// Assim o condutor consegue lançar abastecimento mesmo sem cobertura.
   static Future<List<String>> listarTiposCombustivel() async {
     final usuarioId = await _userId();
     final res = await ApiClient.post(
@@ -400,11 +417,21 @@ class BdtService {
       {"usuario_id": usuarioId},
     );
     if (res['success'] != true) {
-      _log.warn('listarTiposCombustivel FALHOU: ${res['message']}');
-      return const [];
+      _log.warn(
+        'listarTiposCombustivel FALHOU (usando fallback local): '
+        'http=${res['http_status']} status=${res['status']} '
+        'msg=${res['message']}',
+      );
+      return _tiposCombustivelFallback;
     }
     final list = (res['data'] as List<dynamic>? ?? const []);
-    return list.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+    final tipos = list
+        .map((e) => e.toString())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    // Backend pode responder success:true com data vazia (edge case);
+    // ainda assim garante ao dropdown pelo menos os canônicos.
+    return tipos.isEmpty ? _tiposCombustivelFallback : tipos;
   }
 
   /// Retorna o Map cru do backend — a UI extrai `success` + `message`
