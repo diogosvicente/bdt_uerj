@@ -120,7 +120,12 @@ class _BdtPageState extends State<BdtPage> {
                 subtitle: const Text("Telefones, conduta, procedimentos"),
                 onTap: () {
                   Navigator.pop(ctx);
-                  Future.microtask(() => SegurancaBdtDialog.show(context));
+                  // Sprint MUX — passa bdtId pro dialog buscar apolice do
+                  // veiculo e oferecer botao de contato com a seguradora
+                  // (ligar/whatsapp/email) em caso de sinistro.
+                  Future.microtask(
+                    () => SegurancaBdtDialog.show(context, bdtId: bdtId),
+                  );
                 },
               ),
               // "Registrar ocorrência" removido daqui — o Formulário do

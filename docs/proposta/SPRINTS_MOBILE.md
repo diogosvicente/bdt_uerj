@@ -559,6 +559,33 @@ Não tem "estimativa total" — vai crescendo. Sempre que fizer um
 refino desses, registrar aqui em vez de deixar só no commit
 (regra [[bdt_uerj_registrar_fora_de_escopo]]).
 
+- ✅ **Padronização UX pós-teste — 3 ajustes** (2026-07-24)
+  - **Dashboard sem "Histórico de ocorrências"** — o card
+    "Ferramentas" do home ganhava um único atalho para o histórico
+    institucional, mas isso criava pressão de simetria (por que só
+    ocorrências e não abastecimentos/manutenções?). Como os três
+    históricos já são acessíveis pelo Formulário do BDT, o card
+    inteiro foi removido do dashboard (`_cardFerramentas` deletado).
+    A rota `/ocorrencias/historico` e a `HistoricoOcorrenciasPage`
+    ficam registradas — reintroduzível quando a decisão sobre
+    histórico institucional for revisitada.
+  - **Botão "Adicionar" em todas as seções do BDT** — Abastecimentos
+    e Manutenções usavam "Adicionar", Ocorrências usava "Registrar".
+    Unificado como "Adicionar" (o rótulo dominante). Remove o
+    texto "O histórico completo fica em Menu → Ferramentas → …"
+    que apontava pro card recém-removido do dashboard.
+  - **Botão de contato da Seguradora no modal "Informações de
+    segurança"** — em sinistro o condutor precisa acionar rápido
+    a seguradora. Novo endpoint aditivo `POST bdt/seguro` retorna
+    a apólice mais recente do veículo do BDT + dados da seguradora
+    (nome, apólice, vigência, telefone1-3, whatsapp1-2, email, site).
+    Reusa `VeiculoApoliceModel::getByVeiculo` + `SeguradorasModel::getById`
+    do web — zero duplicação. `SegurancaBdtDialog.show(context, bdtId:)`
+    passa a mostrar seção "Seguradora / Apólice" no TOPO do modal
+    (contatos via `ContatoAutoLink` já parseiam tel/wa/email virando
+    link clicável). Se o veículo não tem apólice, a seção não é
+    renderizada (silent absence).
+
 - ✅ **Bugfix MSEC.4 TZ mismatch** (2026-07-21, commit web `c7533ded`)
   — `TokenModel::gerarTokenComTTL` gravava `criado_em`/`expira_em`
   com `new DateTime()` (TZ do PHP = BRT no container) mas

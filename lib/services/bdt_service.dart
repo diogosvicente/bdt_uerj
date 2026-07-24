@@ -448,6 +448,32 @@ class BdtService {
     );
   }
 
+  /// Sprint MUX — Apólice + seguradora do veículo do BDT.
+  ///
+  /// Usado pelo modal "Informações de segurança" pra oferecer ao condutor
+  /// os contatos da seguradora (ligar / WhatsApp / e-mail / site) em caso
+  /// de sinistro. Retorna `null` se o BDT/veículo não tem apólice ativa,
+  /// ou se a chamada falhou (sem fallback local — sem dados a mostrar,
+  /// a UI simplesmente oculta a seção).
+  static Future<Map<String, dynamic>?> getSeguroDoBdt(int bdtId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      "transporte/api/bdt/seguro",
+      {"bdt_id": bdtId, "usuario_id": usuarioId},
+    );
+    if (res['success'] != true) {
+      _log.warn(
+        'getSeguroDoBdt#$bdtId FALHOU: '
+        'http=${res['http_status']} status=${res['status']} '
+        'msg=${res['message']}',
+      );
+      return null;
+    }
+    final data = res['data'];
+    if (data is! Map) return null;
+    return Map<String, dynamic>.from(data);
+  }
+
   static Future<Map<String, dynamic>> atualizarAbastecimento({
     required int bdtId,
     required int abastecimentoId,

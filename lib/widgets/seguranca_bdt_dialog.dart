@@ -12,19 +12,29 @@ import 'contato_auto_link.dart';
 /// vêm do endpoint `bdt/seguranca/textos` (wrapper do serviço web) —
 /// editáveis pelo admin sem redeploy.
 ///
+/// Sprint MUX — quando o caller passa [bdtId], o dialog também busca a
+/// apólice + seguradora do veículo (`bdt/seguro`) e adiciona uma seção
+/// no topo com telefone / WhatsApp / e-mail clicáveis. Assim, em caso
+/// de sinistro, o condutor tem os contatos da seguradora à mão sem sair
+/// deste modal.
+///
 /// Uso:
 /// ```dart
-/// await SegurancaBdtDialog.show(context);
+/// await SegurancaBdtDialog.show(context, bdtId: 42);
 /// ```
 class SegurancaBdtDialog extends StatefulWidget {
-  const SegurancaBdtDialog({super.key});
+  /// Se informado, o dialog carrega e mostra a seção "Seguradora / Apólice"
+  /// do veículo deste BDT. Se null, mostra só os textos institucionais.
+  final int? bdtId;
 
-  /// Abre o dialog. Fetch dos textos acontece dentro — o caller não
-  /// precisa carregar nada antes.
-  static Future<void> show(BuildContext context) {
+  const SegurancaBdtDialog({super.key, this.bdtId});
+
+  /// Abre o dialog. Fetch dos textos (e da apólice, se `bdtId` != null)
+  /// acontece dentro — o caller não precisa carregar nada antes.
+  static Future<void> show(BuildContext context, {int? bdtId}) {
     return showDialog<void>(
       context: context,
-      builder: (_) => const SegurancaBdtDialog(),
+      builder: (_) => SegurancaBdtDialog(bdtId: bdtId),
     );
   }
 
@@ -33,12 +43,16 @@ class SegurancaBdtDialog extends StatefulWidget {
 }
 
 class _SegurancaBdtDialogState extends State<SegurancaBdtDialog> {
-  late Future<List<SegurancaTexto>> _future;
+  late Future<List<SegurancaTexto>> _textos;
+  Future<Map<String, dynamic>?>? _seguro;
 
   @override
   void initState() {
     super.initState();
-    _future = BdtService.listarSegurancaTextos();
+    _textos = BdtService.listarSegurancaTextos();
+    if (widget.bdtId != null && widget.bdtId! > 0) {
+      _seguro = BdtService.getSeguroDoBdt(widget.bdtId!);
+    }
   }
 
   @override
@@ -92,8 +106,130 @@ class _SegurancaBdtDialogState extends State<SegurancaBdtDialog> {
   }
 
   Widget _body() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      shrinkWrap: true,
+      children: [
+        // Sprint MUX — Seguradora no TOPO: em sinistro, é o contato mais
+        // urgente. Só aparece se `bdtId` foi passado E o veículo tem
+        // apólice cadastrada; caso contrário, esconde silenciosamente.
+        if (_seguro != null) _cardSeguradora(),
+        _listaTextos(),
+      ],
+    );
+  }
+
+  Widget _cardSeguradora() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _seguro,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'Carregando dados da seguradora…',
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ],
+            ),
+          );
+        }
+        final data = snap.data;
+        if (data == null) return const SizedBox.shrink();
+
+        final seguradora = (data['seguradora'] as Map?) ?? const {};
+        final apolice = (data['apolice'] as Map?) ?? const {};
+        final nome = (seguradora['nome'] ?? '').toString();
+        if (nome.isEmpty) return const SizedBox.shrink();
+
+        // Monta um único blob de texto pra reusar o ContatoAutoLink,
+        // que já parseia telefone / whatsapp / e-mail / URL e vira link.
+        // Só entram os campos preenchidos — nada de "Telefone: null".
+        final linhas = <String>[];
+        void addSe(String label, dynamic v) {
+          final s = (v ?? '').toString().trim();
+          if (s.isNotEmpty) linhas.add('$label: $s');
+        }
+        addSe('WhatsApp', seguradora['whatsapp1']);
+        addSe('WhatsApp', seguradora['whatsapp2']);
+        addSe('Telefone', seguradora['telefone1']);
+        addSe('Telefone', seguradora['telefone2']);
+        addSe('Telefone', seguradora['telefone3']);
+        addSe('E-mail', seguradora['email']);
+        addSe('Site', seguradora['site']);
+        final contatos = linhas.join('\n');
+
+        // Metadados curtos da apólice (compacto — não é o foco).
+        final numero = (apolice['numero_apolice'] ?? '').toString();
+        final validade = (apolice['fim_vigencia'] ?? '').toString();
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFB8DAFF)),
+              color: const Color(0xFFEAF3FF),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.verified_user_outlined,
+                      size: 18,
+                      color: AppTheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Seguradora: $nome',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (numero.isNotEmpty || validade.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    [
+                      if (numero.isNotEmpty) 'Apólice $numero',
+                      if (validade.isNotEmpty) 'vigência até $validade',
+                    ].join(' · '),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
+                if (contatos.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  ContatoAutoLink(texto: contatos),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _listaTextos() {
     return FutureBuilder<List<SegurancaTexto>>(
-      future: _future,
+      future: _textos,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Padding(
@@ -113,12 +249,13 @@ class _SegurancaBdtDialogState extends State<SegurancaBdtDialog> {
             ),
           );
         }
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          shrinkWrap: true,
-          itemCount: itens.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (_, i) => _cardTexto(itens[i]),
+        return Column(
+          children: [
+            for (int i = 0; i < itens.length; i++) ...[
+              _cardTexto(itens[i]),
+              if (i < itens.length - 1) const SizedBox(height: 12),
+            ],
+          ],
         );
       },
     );

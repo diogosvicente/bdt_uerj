@@ -1562,15 +1562,13 @@ class _BdtFormPageState extends State<BdtFormPage> {
                     }
                   },
                   icon: const Icon(Icons.warning_amber_rounded),
-                  label: const Text("Registrar"),
+                  label: const Text("Adicionar"),
                 ),
               ],
             ),
             const SizedBox(height: 10),
             Text(
-              "Avaria, atraso, sinistro, desvio de itinerário… "
-              "O histórico completo fica em Menu → Ferramentas → "
-              "Histórico de ocorrências.",
+              "Avaria, atraso, sinistro, desvio de itinerário…",
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
