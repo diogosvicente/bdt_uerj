@@ -472,6 +472,70 @@ reais em campo.
     na loja. **Não recomendado nesta fase** — priorizar MSEC.1-4.
     Reavaliar após o piloto.
 
+- ✅ **MSEC.7 — Convenção de fuso horário end-to-end** (2026-07-24)
+  — **Origem:** o app estava exibindo hora errada (~3h à frente do
+  esperado) em marcos da jornada, listas de abastecimento e histórico
+  de trechos. **Causa raiz** identificada por auditoria fim-a-fim:
+  MariaDB armazena UTC; PHP CI4 rodava em BRT e usava `date('Y-m-d
+  H:i:s')` (BRT wall-clock) pra gravar `datahora_*`; NOW() do banco
+  respondia em UTC; e o Dart `DateTime.parse` de string sem TZ
+  interpretava como local do device. O drift de 3h aparecia em
+  qualquer comparação PHP↔SQL e em qualquer exibição no mobile.
+  - **Backend (`e-prefeitura` — branch `feature/027-mobile-support`):**
+    - Novo helper `app/Helpers/api_datetime_helper.php` com duas
+      funções: `api_parse_datetime_utc($raw)` (aceita ISO com Z,
+      ISO com offset, ou naive BRT — sempre devolve `Y-m-d H:i:s`
+      UTC) e `api_now_utc()` (wrapper de `gmdate`).
+    - `BdtApiService`, `PreBdtService`, `BdtJornadaService`
+      carregam o helper no `__construct` via `helper('api_datetime')`.
+      Todas as gravações de `data_hora`/`data_registro`/`updated_at`/
+      `datahora_marco` passaram de `date()` para `api_now_utc()` ou
+      `api_parse_datetime_utc()`.
+    - `AbastecimentoBdtService` e `ManutencaoBdtService` NÃO
+      reprocessam mais a string entregue pelo caller (`strtotime`
+      + `date` no fuso do servidor desconvertia UTC para BRT).
+      Docstring inline explica.
+    - `TokenModel` do e_Transporte: `getNow()` retorna
+      `new DateTime('now', new DateTimeZone('UTC'))`; leitura de
+      `expira_em` também usa `DateTimeZone('UTC')`. Mesmo padrão
+      já adotado pelo `TokenModel` genérico no bugfix MSEC.4
+      (2026-07-21) — agora replicado no módulo Transporte.
+    - Migration one-off
+      `2026-07-24-160000_ConvertTrnspBdtTimestampsBrtToUtc.php`
+      soma +3h nas colunas operacionais históricas do módulo BDT
+      (marcos do BDT, execução de trechos, abastecimento/manutenção/
+      ocorrência/localização, assinaturas). Idempotente via tabela
+      `trnsp_tz_migration_applied` (nunca dobra). Escopo deliberadamente
+      mínimo — NÃO toca `created_at`/`updated_at` (auditoria, não é
+      exibida ao usuário e o desvio de 3h não afeta o UX).
+  - **Mobile (`bdt_uerj` — branch `main`):**
+    - `DateFmt` (`lib/utils/date_fmt.dart`) ganhou `apiIsoUtc(DateTime)`
+      que devolve `YYYY-MM-DDTHH:MM:SSZ` — formato canônico para
+      todo payload de datetime que sai do app.
+    - `DateFmt.dtCompact`, `hora`, `dataHoraBr` passaram a interpretar
+      naive strings da API como UTC (adicionam `Z` antes do parse) e
+      converter pra local do device com `toLocal()`. Assim `17:30 UTC`
+      no banco aparece como `14:30` na tela em BRT.
+    - `LocationService.getLocPayload` e `BackgroundLocationService`
+      gravam `captured_at` como `.toUtc().toIso8601String()`.
+    - `bdt_page._apiDateTimeFromHm`, `bdt_form_page._fmtApiDateTime`,
+      `pre_bdt_form_page._apiHora` refatoradas para emitir ISO UTC
+      via `DateFmt.apiIsoUtc`.
+    - `BdtResumo.fromJson.parseDt` interpreta ISO da API como UTC.
+    - Listas de abastecimento e manutenção no BDT form passam
+      `data_hora`/`data_hora_inicio` por `DateFmt.dataHoraBr`
+      antes de exibir (antes: subtitle era `Text(dh)` bruto).
+  - **Preservação de compatibilidade web:** o helper `api_parse_datetime_utc`
+    aceita input naive BRT como fallback, então clientes web antigos
+    (formulários admin CI4 que enviam wall-clock BRT) continuam
+    funcionando sem mudança. A migration one-off só ajusta
+    dados históricos; escritas novas do web via CRUD admin
+    continuam BRT wall-clock — o AbastecimentoBdtService/ManutencaoBdtService
+    passam a string direta pro DB sem reprocessar (não mais
+    desconverte UTC↔BRT). Regra [[bdt_uerj_mobile_nao_quebra_web]].
+  - **Convenção documentada em memória** [[bdt_uerj_convencao_tz]] para
+    guiar futuros services/pages sem repetir a análise.
+
 > **Escopo técnico:** mudanças mobile no repo `bdt_uerj` (branch
 > `main`) e backend no `e-prefeitura` (branch
 > `feature/027-mobile-support`). **Não impacta a web em produção:**

@@ -94,7 +94,11 @@ class LocationService {
       "speed": pos.speed, // m/s
       "bearing": pos.heading, // graus
       "altitude": pos.altitude,
-      "captured_at": DateTime.now().toIso8601String(),
+      // Sprint MSEC.TZ — ISO com "Z" (UTC). Antes: `DateTime.now().toIso8601String()`
+      // devolvia horario LOCAL sem sufixo, e o backend interpretava como BRT wall-clock
+      // (assumindo timezone do PHP). Com toUtc() + "Z", o instante do fix GPS grava
+      // igual ao NOW() do MariaDB e não desloca 3h na tela.
+      "captured_at": DateTime.now().toUtc().toIso8601String(),
       "provider": "gps",
     };
   }

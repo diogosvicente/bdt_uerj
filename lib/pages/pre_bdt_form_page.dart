@@ -8,6 +8,7 @@ import '../models/pre_bdt_pendente.dart';
 import '../models/veiculo.dart';
 import '../services/bdt_service.dart';
 import '../services/ocorrencia_service.dart' show OcorrenciaFotoRef;
+import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/foto_ocorrencia_thumb.dart';
 import '../widgets/veiculo_autocomplete.dart';
@@ -443,12 +444,21 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
     });
   }
 
-  /// Converte "HH:MM" no formato aceito pelo backend combinando com a data.
+  /// Sprint MSEC.TZ — Converte "HH:MM" (local) + data de referência (local)
+  /// em ISO UTC ("YYYY-MM-DDTHH:MM:00Z"), aceito pelo backend via
+  /// `api_parse_datetime_utc`. Antes: emitia naive "yyyy-mm-dd HH:MM:00"
+  /// que o backend interpretava como BRT wall-clock (drift de 3h ao gravar).
   String? _apiHora(String hm) {
     if (hm.isEmpty) return null;
     final parts = hm.split(':');
     if (parts.length != 2) return null;
-    return '${_apiData(_dataRef)} ${parts[0].padLeft(2, '0')}:${parts[1].padLeft(2, '0')}:00';
+
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+
+    final local = DateTime(_dataRef.year, _dataRef.month, _dataRef.day, h, m);
+    return DateFmt.apiIsoUtc(local);
   }
 
   @override

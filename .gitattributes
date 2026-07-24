@@ -1,0 +1,47 @@
+# Line endings — canônico no repo é LF.
+#
+# Motivação: sem esse arquivo, o Git de cada dev usa o `core.autocrlf`
+# local. Windows/Git-for-Windows default é `true` (checkout CRLF, commit LF);
+# Linux/WSL default é `false` (mantém o que está no disco). Como o mesmo
+# diretório físico é acessado tanto pelo PowerShell (autocrlf=true) quanto
+# pelo WSL (autocrlf=false), o WSL enxergava TODOS os `.dart` como "modificados"
+# — os arquivos tinham CRLF no disco (Windows salvou), mas o repo esperava LF.
+#
+# Com `text=auto eol=lf`, todo texto vira LF no REPO. No CHECKOUT, cada plataforma
+# aplica seu autocrlf (Windows continua tendo CRLF no disco; WSL/Linux fica com LF).
+# Assim os dois lados ficam consistentes com o repo E funcionais no seu OS.
+* text=auto eol=lf
+
+# Scripts que SÓ rodam em Windows precisam de CRLF no disco (senão o cmd
+# reclama). Deixa explícito pra qualquer plataforma preservar isso.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Arquivos que o Git às vezes classifica errado — força binário pra
+# nunca tentar aplicar filtro de line-ending.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.jks  binary
+*.keystore binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary
+*.mp3  binary
+*.mp4  binary
+*.zip  binary
+
+# Certificado PEM é texto (LF), mas force o eol pra não depender do autocrlf
+# global e sempre casar com o esperado pelo SSL bootstrap.
+*.pem  text eol=lf
+
+# Arquivos gerados por Android/Gradle — deixa git decidir (default) mas
+# nunca binário.
+gradlew          text eol=lf
+gradlew.bat      text eol=crlf

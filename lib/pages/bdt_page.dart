@@ -7,6 +7,7 @@ import '../services/background_location_service.dart';
 import '../services/bdt_service.dart';
 import '../services/gps_live_service.dart';
 import '../services/location_service.dart';
+import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/seguranca_bdt_dialog.dart';
 import 'package:flutter/services.dart';
@@ -1008,32 +1009,10 @@ class _BdtPageState extends State<BdtPage> {
     return d ?? DateTime.now();
   }
 
-  /// Mostra algo tipo "03/01 07:00"
-  String _fmtDt(dynamic raw) {
-    final s = (raw ?? '').toString().trim();
-    if (s.isEmpty) return '';
-    final dt = DateTime.tryParse(s.replaceFirst(' ', 'T'));
-    if (dt == null) return s;
-
-    return '${_two(dt.day)}/${_two(dt.month)} ${_two(dt.hour)}:${_two(dt.minute)}';
-  }
-
-  /// Mostra só "HH:MM" (mesmo se vier com data)
-  String _fmtTimeOnly(dynamic raw) {
-    final s = (raw ?? '').toString().trim();
-    if (s.isEmpty) return '';
-
-    if (RegExp(r'^\d{2}:\d{2}$').hasMatch(s)) return s;
-
-    final dt = DateTime.tryParse(s.replaceFirst(' ', 'T'));
-    if (dt != null) return '${_two(dt.hour)}:${_two(dt.minute)}';
-
-    // fallback: tenta extrair HH:MM de "YYYY-MM-DD HH:MM:SS"
-    final m = RegExp(r'(\d{2}):(\d{2})').firstMatch(s);
-    if (m != null) return '${m.group(1)}:${m.group(2)}';
-
-    return s;
-  }
+  /// Sprint MSEC.TZ — delega pro helper TZ-aware do DateFmt (que interpreta
+  /// naive strings da API como UTC → converte pra local do device). Antes:
+  /// DateTime.tryParse cru interpretava como local, deslocando 3h.
+  String _fmtTimeOnly(dynamic raw) => DateFmt.hora(raw);
 
   /// Procura o Map do trecho em execução (para extrair origem/destino
   /// individualmente na UI). Retorna null se não achar.
@@ -1066,16 +1045,9 @@ class _BdtPageState extends State<BdtPage> {
     return null;
   }
 
-  String _fmtOrigemDestino(Map<String, dynamic> trecho) {
-    final origem = (trecho['origem'] ?? '').toString().trim();
-    final destino = (trecho['destino'] ?? '').toString().trim();
-    if (origem.isEmpty && destino.isEmpty) return 'Trecho em execução';
-    if (origem.isEmpty) return '→ $destino';
-    if (destino.isEmpty) return '$origem →';
-    return '$origem → $destino';
-  }
-
-  /// Constrói "YYYY-MM-DD HH:MM:00" usando a data do BDT
+  /// Sprint MSEC.TZ — Constrói ISO 8601 em UTC ("YYYY-MM-DDTHH:MM:00Z")
+  /// a partir da data do BDT (local) + hora `HH:MM` (local). O backend
+  /// aceita esse formato via `api_parse_datetime_utc`.
   String _apiDateTimeFromHm(String hm) {
     final base = _bdtBaseDate();
     final parts = hm.split(':');
@@ -1083,7 +1055,10 @@ class _BdtPageState extends State<BdtPage> {
 
     final h = int.tryParse(parts[0]) ?? 0;
     final m = int.tryParse(parts[1]) ?? 0;
-    return '${base.year}-${_two(base.month)}-${_two(base.day)} ${_two(h)}:${_two(m)}:00';
+
+    // Combina a data (dia local do BDT) com a hora do input (local).
+    final local = DateTime(base.year, base.month, base.day, h, m);
+    return DateFmt.apiIsoUtc(local);
   }
 
   Future<void> _pickHm(TextEditingController c) async {

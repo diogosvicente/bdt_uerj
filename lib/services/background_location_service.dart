@@ -347,7 +347,9 @@ class BackgroundLocationService {
         'speed': pos.speed,
         'bearing': pos.heading,
         'altitude': pos.altitude,
-        'captured_at': (pos.timestamp).toIso8601String(),
+        // Sprint MSEC.TZ — grava sempre em UTC (Z-suffix) pra bater com o
+        // NOW() do MariaDB e evitar drift de 3h no historico de trajeto.
+        'captured_at': pos.timestamp.toUtc().toIso8601String(),
         'provider': 'gps',
         'origem_registro': 'app_mobile_bg',
       },

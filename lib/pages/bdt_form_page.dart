@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/bdt_service.dart';
+import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/assinatura_preview.dart';
 import 'assinatura_marco_page.dart';
@@ -100,18 +101,25 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
   String _two(int v) => v.toString().padLeft(2, '0');
 
-  String _fmtApiDateTime(DateTime dt) {
-    // yyyy-mm-dd HH:MM:00
-    return "${dt.year}-${_two(dt.month)}-${_two(dt.day)} ${_two(dt.hour)}:${_two(dt.minute)}:00";
-  }
+  /// Sprint MSEC.TZ — envia sempre ISO UTC pro backend, que aceita via
+  /// `api_parse_datetime_utc`. Antes: naive "yyyy-mm-dd HH:MM:00" era
+  /// interpretado como BRT wall-clock; agora o "Z" no fim explicita UTC.
+  String _fmtApiDateTime(DateTime dt) => DateFmt.apiIsoUtc(dt);
 
   String _normDecimal(String s) => s.trim().replaceAll(',', '.');
 
   Future<String?> _pickDateTimeString({String? initial}) async {
     DateTime base = DateTime.now();
     if (initial != null && initial.trim().isNotEmpty) {
-      final parsed = DateTime.tryParse(initial.replaceFirst(' ', 'T'));
-      if (parsed != null) base = parsed;
+      // Sprint MSEC.TZ — backend agora emite `Y-m-d H:i:s` em UTC. Se veio
+      // sem "Z"/offset, tratar como UTC (novo padrao) antes de exibir em local.
+      final raw = initial.trim();
+      final hasTz = raw.endsWith('Z') || RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(raw);
+      final norm = hasTz
+          ? raw.replaceFirst(' ', 'T')
+          : '${raw.replaceFirst(' ', 'T')}Z';
+      final parsed = DateTime.tryParse(norm);
+      if (parsed != null) base = parsed.toLocal();
     }
 
     final d = await showDatePicker(
@@ -1373,16 +1381,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
     return _bdtPermiteMarcos && _marcoLiberado(marco);
   }
 
-  /// "2026-05-13 14:30:00" → "13/05/2026 14:30".
-  /// Aceita também ISO "2026-05-13T14:30:00".
-  String _fmtDatahoraBr(String? raw) {
-    if (raw == null || raw.isEmpty) return '';
-    final norm = raw.replaceFirst('T', ' ');
-    final dt = DateTime.tryParse(norm);
-    if (dt == null) return raw;
-    return "${_two(dt.day)}/${_two(dt.month)}/${dt.year} "
-        "${_two(dt.hour)}:${_two(dt.minute)}";
-  }
+  /// Sprint MSEC.TZ — delega pro DateFmt que interpreta naive strings da
+  /// API como UTC (novo padrao do backend) e converte pro local do device.
+  String _fmtDatahoraBr(String? raw) => DateFmt.dataHoraBr(raw);
 
   Widget _cardAbastecimentos() {
     return Card(
@@ -1427,6 +1428,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                   final valor = (a['valor_total'] ?? '').toString();
                   final dh = (a['data_hora'] ?? '').toString();
 
+                  final dhFmt = DateFmt.dataHoraBr(dh);
                   return ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
@@ -1435,7 +1437,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    subtitle: dh.isEmpty ? null : Text(dh),
+                    subtitle: dhFmt.isEmpty ? null : Text(dhFmt),
                     trailing: IconButton(
                       icon: const Icon(Icons.edit),
                       onPressed: () => _openAbastecimentoSheet(existing: a),
@@ -1490,6 +1492,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                   final desc = (m['descricao'] ?? '').toString();
                   final ini = (m['data_hora_inicio'] ?? '').toString();
 
+                  final iniFmt = DateFmt.dataHoraBr(ini);
                   return ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
@@ -1498,7 +1501,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    subtitle: ini.isEmpty ? null : Text(ini),
+                    subtitle: iniFmt.isEmpty ? null : Text(iniFmt),
                     trailing: IconButton(
                       icon: const Icon(Icons.edit),
                       onPressed: () => _openManutencaoSheet(existing: m),
