@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import '../services/abastecimento_foto_service.dart';
 import '../services/bdt_service.dart';
 import '../services/manutencao_foto_service.dart';
+import '../services/ocorrencia_service.dart';
 import '../utils/date_fmt.dart';
+import 'nova_ocorrencia_page.dart' show OcorrenciaFormArgs;
 import '../widgets/app_scaffold.dart';
 import '../widgets/assinatura_preview.dart';
 import '../widgets/foto_documento_thumb.dart';
@@ -71,6 +73,8 @@ class _BdtFormPageState extends State<BdtFormPage> {
   // ====== listas operacionais (sem trechos aqui) ======
   List<Map<String, dynamic>> abastecimentos = [];
   List<Map<String, dynamic>> manutencoes = [];
+  // Sprint 18.1 — ocorrencias deste BDT (não é o histórico institucional).
+  List<OcorrenciaDoBdt> ocorrencias = [];
 
   // ====== input formatters ======
   final _decimal2 = FilteringTextInputFormatter.allow(
@@ -133,6 +137,15 @@ class _BdtFormPageState extends State<BdtFormPage> {
         ),
       ),
     );
+  }
+
+  /// Backend às vezes devolve o id como int, string ou dentro de `data`.
+  /// Aceita as 3 formas — retorna 0 se nada bater.
+  int _parseIntFlex(dynamic v) {
+    if (v is int) return v;
+    if (v is String) return int.tryParse(v) ?? 0;
+    if (v is num) return v.toInt();
+    return 0;
   }
 
   /// Icone visual pro chip de subtipo — melhora leitura da botoeira.
@@ -301,11 +314,14 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final abResolved =
         ab ?? await BdtService.listarAbastecimentos(bdtId: bdtId);
     final manResolved = man ?? await BdtService.listarManutencoes(bdtId: bdtId);
+    // Sprint 18.1 — ocorrências não vêm no `detalhes`, sempre chama.
+    final ocResolved = await OcorrenciaService.listarDoBdt(bdtId);
 
     if (!mounted) return;
     setState(() {
       abastecimentos = abResolved;
       manutencoes = manResolved;
+      ocorrencias = ocResolved;
     });
   }
 
@@ -982,11 +998,13 @@ class _BdtFormPageState extends State<BdtFormPage> {
                               // de o registro existir. Em criação, o id vem do
                               // response. Sequencial pra manter ordem visual e
                               // simplificar tratamento de erro parcial.
+                              //
+                              // Backend BdtApiController::ok() faz array_merge
+                              // no TOPO — a chave vem em res['abastecimento_id'],
+                              // NÃO em res['data']['abastecimento_id'].
                               final absIdFinal = isEdit
                                   ? id
-                                  : ((res['data'] as Map?)?['abastecimento_id']
-                                          as int?) ??
-                                      0;
+                                  : _parseIntFlex(res['abastecimento_id']);
 
                               int fotosOk = 0;
                               int fotosErr = 0;
@@ -1438,11 +1456,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
                               }
 
                               // Sprint 18 W+M — sobe fotos pendentes.
+                              // Backend retorna o id no TOPO (ok() faz merge).
                               final mntIdFinal = isEdit
                                   ? id
-                                  : ((res['data'] as Map?)?['manutencao_id']
-                                          as int?) ??
-                                      0;
+                                  : _parseIntFlex(res['manutencao_id']);
                               int fotosOk = 0;
                               int fotosErr = 0;
                               if (mntIdFinal > 0) {
@@ -1881,31 +1898,114 @@ class _BdtFormPageState extends State<BdtFormPage> {
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () async {
-                    final ok = await Navigator.pushNamed(
-                      context,
-                      '/ocorrencia/nova',
-                      arguments: bdtId,
-                    );
-                    if (ok == true && mounted) {
-                      // ignore: discarded_futures
-                      _load(bdtId);
-                    }
-                  },
+                  onPressed: () => _abrirFormOcorrencia(bdtId: bdtId),
                   icon: const Icon(Icons.warning_amber_rounded),
                   label: const Text("Adicionar"),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              "Avaria, atraso, sinistro, desvio de itinerário…",
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            if (ocorrencias.isEmpty)
+              Text(
+                "Nenhuma ocorrência registrada. "
+                "Avaria, atraso, sinistro, desvio de itinerário…",
+                style: Theme.of(context).textTheme.bodySmall,
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: ocorrencias.length,
+                separatorBuilder: (_, __) => const Divider(height: 0),
+                itemBuilder: (_, i) => _tileOcorrencia(bdtId, ocorrencias[i]),
+              ),
           ],
         ),
       ),
     );
   }
 
+  Widget _tileOcorrencia(int bdtId, OcorrenciaDoBdt o) {
+    final subtitle = <String>[];
+    if ((o.tipoNome ?? '').isNotEmpty) subtitle.add(o.tipoNome!);
+    final dhFmt = DateFmt.dataHoraBr(o.dataHora);
+    if (dhFmt.isNotEmpty) subtitle.add(dhFmt);
+
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.warning_amber_rounded,
+          color: Color(0xFFB58900)),
+      title: Text(
+        (o.titulo?.trim().isNotEmpty ?? false) ? o.titulo! : 'Ocorrência',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: subtitle.isEmpty
+          ? null
+          : Text(subtitle.join(' • '),
+              maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (o.qtdFotos > 0) ...[
+            const Icon(Icons.photo_library_outlined, size: 16),
+            const SizedBox(width: 3),
+            Text('${o.qtdFotos}', style: const TextStyle(fontSize: 12)),
+            const SizedBox(width: 6),
+          ],
+          IconButton(
+            tooltip: 'Editar',
+            icon: const Icon(Icons.edit, size: 20),
+            onPressed: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
+          ),
+          IconButton(
+            tooltip: 'Excluir',
+            icon: const Icon(Icons.delete_outline, size: 20),
+            onPressed: () => _excluirOcorrencia(bdtId, o),
+          ),
+        ],
+      ),
+      onTap: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
+    );
+  }
+
+  Future<void> _abrirFormOcorrencia({
+    required int bdtId,
+    OcorrenciaDoBdt? existente,
+  }) async {
+    final args = OcorrenciaFormArgs(
+      bdtId: bdtId,
+      ocorrenciaId: existente?.id,
+      tituloInicial: existente?.titulo,
+      descricaoInicial: existente?.descricao,
+      tipoInicial: existente?.fkOcorrenciaTipo,
+      dataHoraInicial: existente?.dataHora,
+    );
+    final ok = await Navigator.pushNamed(
+      context,
+      '/ocorrencia/nova',
+      arguments: args,
+    );
+    if (ok == true && mounted) {
+      // ignore: discarded_futures
+      _load(bdtId);
+    }
+  }
+
+  Future<void> _excluirOcorrencia(int bdtId, OcorrenciaDoBdt o) async {
+    final ok = await _confirmDelete(
+      "Excluir a ocorrência\n\"${o.titulo ?? "Sem título"}\"?",
+    );
+    if (!ok) return;
+    final done = await OcorrenciaService.excluir(o.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(done ? "Ocorrência excluída." : "Falha ao excluir."),
+      ));
+    if (done) await _load(bdtId);
+  }
 }

@@ -143,6 +143,30 @@ class OcorrenciaService {
     return res;
   }
 
+  /// Sprint 18.1 — atualiza uma ocorrência existente do BDT (mesmo shape
+  /// de [criar], mas exige `id`). Backend valida ownership + auditoria
+  /// automática via OcorrenciaBdtService::atualizar.
+  static Future<Map<String, dynamic>> atualizar({
+    required int id,
+    String? titulo,
+    String? descricao,
+    int? fkOcorrenciaTipo,
+    String? dataHora,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/ocorrencias/atualizar', {
+      'usuario_id': usuarioId,
+      'id': id,
+      if (titulo != null) 'titulo': titulo.trim(),
+      if (descricao != null) 'descricao': descricao.trim(),
+      if (fkOcorrenciaTipo != null && fkOcorrenciaTipo > 0)
+        'fk_ocorrencia_tipo': fkOcorrenciaTipo,
+      if (dataHora != null && dataHora.isNotEmpty) 'data_hora': dataHora,
+    });
+    _log.info('atualizar#$id http=${res["http_status"]} ok=${res["success"]}');
+    return res;
+  }
+
   /// Soft-delete de uma ocorrência (exclui também as fotos anexadas).
   /// Backend valida ownership.
   static Future<bool> excluir(int id) async {
@@ -152,6 +176,29 @@ class OcorrenciaService {
       'id': id,
     });
     return res['success'] == true;
+  }
+
+  /// Sprint 18.1 — lista as ocorrências DESTE BDT (não confundir com
+  /// [historico] que é institucional, todos os veículos/BDTs).
+  /// Usado pelo card "Ocorrências" do Formulário do BDT no mobile.
+  ///
+  /// Retorna lista vazia em qualquer falha — a UI mostra "nenhuma
+  /// ocorrência registrada".
+  static Future<List<OcorrenciaDoBdt>> listarDoBdt(int bdtId) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/ocorrencias/listar-do-bdt',
+      {'usuario_id': usuarioId, 'bdt_id': bdtId},
+    );
+    if (res['success'] != true) {
+      _log.warn('listarDoBdt#$bdtId FALHOU: ${res['message']}');
+      return const [];
+    }
+    final list = (res['data'] as List<dynamic>? ?? const []);
+    return list
+        .whereType<Map>()
+        .map((e) => OcorrenciaDoBdt.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
   }
 
   // ================= FOTOS (Sprint 17 F2 + Sprint 18 refactor) =====
@@ -224,6 +271,48 @@ class OcorrenciaFotoRef {
       id: rawId is int ? rawId : (int.tryParse(rawId?.toString() ?? '') ?? 0),
       mimeType: j['mime_type']?.toString(),
       createdAt: j['created_at']?.toString(),
+    );
+  }
+}
+
+/// Sprint 18.1 — linha resumida de uma ocorrência do BDT (endpoint
+/// `bdt/ocorrencias/listar-do-bdt`). Escopo diferente de [Ocorrencia]
+/// (do histórico institucional que tem veículo/condutor/etc): aqui
+/// o BDT é implícito, então só precisamos dos campos que a linha da
+/// UI mostra + qtd_fotos pra o badge.
+class OcorrenciaDoBdt {
+  final int id;
+  final String? titulo;
+  final String? descricao;
+  final int? fkOcorrenciaTipo;
+  final String? tipoNome;
+  final String? dataHora;
+  final int qtdFotos;
+
+  const OcorrenciaDoBdt({
+    required this.id,
+    this.titulo,
+    this.descricao,
+    this.fkOcorrenciaTipo,
+    this.tipoNome,
+    this.dataHora,
+    this.qtdFotos = 0,
+  });
+
+  factory OcorrenciaDoBdt.fromJson(Map<String, dynamic> j) {
+    int? asInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      return int.tryParse(v.toString());
+    }
+    return OcorrenciaDoBdt(
+      id: asInt(j['id']) ?? 0,
+      titulo: j['titulo']?.toString(),
+      descricao: j['descricao']?.toString(),
+      fkOcorrenciaTipo: asInt(j['fk_ocorrencia_tipo']),
+      tipoNome: j['tipo_nome']?.toString(),
+      dataHora: j['data_hora']?.toString(),
+      qtdFotos: asInt(j['qtd_fotos']) ?? 0,
     );
   }
 }

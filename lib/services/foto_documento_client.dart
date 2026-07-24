@@ -85,13 +85,26 @@ class FotoDocumentoClient {
       );
       return 0;
     }
+    // O helper `$this->ok(...)` do BdtApiController mescla o payload no
+    // TOPO da resposta (não sob `data`). Ordem de leitura, do mais novo
+    // pro mais antigo:
+    //   - res['doc_id']            → FotoDocumentoTrait (Sprint 18).
+    //   - res['data']['id']        → endpoint antigo de ocorrência
+    //                                (Sprint 17, agora fixo — mas mantido
+    //                                por retrocompat até rodar redeploy).
+    //   - res['data']['doc_id']    → paranoia; nunca deveria acontecer.
+    final direct = res['doc_id'];
+    if (direct != null) {
+      if (direct is int) return direct;
+      return int.tryParse(direct.toString()) ?? 0;
+    }
     final data = res['data'];
-    if (data is! Map) return 0;
-    // Backend novo usa `doc_id`; endpoint antigo de ocorrência (pré-Sprint
-    // 18) usava `id`. Aceita ambos pra sobreviver a redeploys parciais.
-    final raw = data['doc_id'] ?? data['id'];
-    if (raw is int) return raw;
-    return int.tryParse(raw?.toString() ?? '') ?? 0;
+    if (data is Map) {
+      final raw = data['doc_id'] ?? data['id'];
+      if (raw is int) return raw;
+      return int.tryParse(raw?.toString() ?? '') ?? 0;
+    }
+    return 0;
   }
 
   /// Lista as fotos (metadata) da referência.

@@ -7,17 +7,42 @@ import 'package:image_picker/image_picker.dart';
 import '../models/ocorrencia_filtros.dart';
 import '../services/ocorrencia_service.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/foto_documento_thumb.dart';
 
-/// Sprint W+M (Sprint 17 web — W15 F2) — Nova ocorrência no BDT.
+/// Sprint W+M (Sprint 17 W+M — W15 F2) / Sprint 18.1 — Registrar OU editar
+/// uma ocorrência do BDT.
 ///
-/// Route: `/ocorrencia/nova` com argumento `int bdtId`.
+/// Route: `/ocorrencia/nova`. Argumentos aceitos:
+///  - `int bdtId` → modo CRIAÇÃO (Sprint 17).
+///  - [OcorrenciaFormArgs] com `bdtId` + `ocorrenciaId` → modo EDIÇÃO
+///    (Sprint 18.1). Pré-carrega os campos existentes + fotos já
+///    persistidas. Salvar chama `atualizar` em vez de `criar`.
 ///
-/// Fase 1 (esta): form básico (tipo + título + descrição) → backend
-/// grava linha em `trnsp_bdt_ocorrencias` com `fk_condutor = condutor
-/// logado`. Fase 2 (futura): upload de fotos multipart + preview.
-///
-/// UX: dropdown de tipos vem do endpoint `bdt/ocorrencias/tipos`;
-/// carregando em background enquanto o usuário digita título/descrição.
+/// Fluxo de fotos:
+///  - **Existentes** (só edição): vêm de `listarFotos(ocId)`. Miniatura
+///    é [FotoDocumentoThumb] baixando via `OcorrenciaService.obterFoto`.
+///    Botão X exclui direto no servidor.
+///  - **Pendentes** (câmera/galeria): vivem em `_fotosPending` até salvar.
+///    Uma vez que temos `ocorrenciaId` (após criar OU já em edit), os
+///    uploads sobem em batch.
+class OcorrenciaFormArgs {
+  final int bdtId;
+  final int? ocorrenciaId;
+  final String? tituloInicial;
+  final String? descricaoInicial;
+  final int? tipoInicial;
+  final String? dataHoraInicial;
+
+  const OcorrenciaFormArgs({
+    required this.bdtId,
+    this.ocorrenciaId,
+    this.tituloInicial,
+    this.descricaoInicial,
+    this.tipoInicial,
+    this.dataHoraInicial,
+  });
+}
+
 class NovaOcorrenciaPage extends StatefulWidget {
   const NovaOcorrenciaPage({super.key});
 
@@ -39,16 +64,55 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
   String? _tituloError;
   String? _tipoError;
 
-  /// Fotos escolhidas em memória (ainda não subidas). Ao clicar
-  /// "Registrar", cria a ocorrência primeiro e depois faz upload
-  /// de cada uma em sequência. Se um upload falhar, avisa mas mantém
-  /// a ocorrência (podem ser tentadas de novo na tela de detalhe).
+  /// Args parsed do route (bdtId sempre; ocorrenciaId só em edit).
+  int _bdtId = 0;
+  int? _ocorrenciaId;
+  String? _dataHoraInicial;
+  bool _argsAplicados = false;
+
+  bool get _isEdit => _ocorrenciaId != null && _ocorrenciaId! > 0;
+
   final List<XFile> _fotosPending = [];
+  List<OcorrenciaFotoRef> _fotosExistentes = [];
+  bool _carregandoFotos = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _futureTipos ??= OcorrenciaService.tipos();
+    if (!_argsAplicados) {
+      _aplicarArgs();
+      _argsAplicados = true;
+    }
+  }
+
+  void _aplicarArgs() {
+    final raw = ModalRoute.of(context)!.settings.arguments;
+    if (raw is OcorrenciaFormArgs) {
+      _bdtId = raw.bdtId;
+      _ocorrenciaId = raw.ocorrenciaId;
+      _tituloCtrl.text = raw.tituloInicial ?? '';
+      _descricaoCtrl.text = raw.descricaoInicial ?? '';
+      _tipoId = raw.tipoInicial;
+      _dataHoraInicial = raw.dataHoraInicial;
+    } else if (raw is int) {
+      _bdtId = raw;
+    }
+    if (_isEdit) {
+      // ignore: discarded_futures
+      _carregarFotosExistentes();
+    }
+  }
+
+  Future<void> _carregarFotosExistentes() async {
+    if (!_isEdit) return;
+    setState(() => _carregandoFotos = true);
+    final refs = await OcorrenciaService.listarFotos(_ocorrenciaId!);
+    if (!mounted) return;
+    setState(() {
+      _fotosExistentes = refs;
+      _carregandoFotos = false;
+    });
   }
 
   @override
@@ -59,11 +123,7 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
     super.dispose();
   }
 
-  int get _bdtId => ModalRoute.of(context)!.settings.arguments as int;
-
   Future<void> _adicionarFoto() async {
-    // Bottom sheet perguntando câmera ou galeria — imagePicker do
-    // package pede permissão nativa em runtime automaticamente.
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -89,7 +149,6 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
     try {
       final file = await _picker.pickImage(
         source: source,
-        // Reduz consumo de banda no upload — o backend já converte pra WebP.
         maxWidth: 1600,
         imageQuality: 82,
       );
@@ -103,10 +162,27 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
     }
   }
 
+  Future<void> _excluirFotoExistente(int docId) async {
+    final ok = await OcorrenciaService.excluirFoto(docId);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Falha ao excluir foto.')),
+      );
+      return;
+    }
+    FotoDocumentoThumb.invalidate(
+      cacheNamespace: 'ocorrencia',
+      docId: docId,
+    );
+    setState(() {
+      _fotosExistentes = _fotosExistentes.where((f) => f.id != docId).toList();
+    });
+  }
+
   Future<void> _salvar() async {
     if (_busy) return;
 
-    // Limpa erros pra revalidação.
     setState(() {
       _formError = null;
       _tituloError = null;
@@ -125,12 +201,29 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
     }
 
     setState(() => _busy = true);
-    final res = await OcorrenciaService.criar(
-      bdtId: _bdtId,
-      titulo: titulo,
-      descricao: _descricaoCtrl.text,
-      fkOcorrenciaTipo: _tipoId,
-    );
+
+    // Rota: criar vs atualizar.
+    final Map<String, dynamic> res;
+    int ocId;
+    if (_isEdit) {
+      ocId = _ocorrenciaId!;
+      res = await OcorrenciaService.atualizar(
+        id: ocId,
+        titulo: titulo,
+        descricao: _descricaoCtrl.text,
+        fkOcorrenciaTipo: _tipoId,
+        dataHora: _dataHoraInicial,
+      );
+    } else {
+      res = await OcorrenciaService.criar(
+        bdtId: _bdtId,
+        titulo: titulo,
+        descricao: _descricaoCtrl.text,
+        fkOcorrenciaTipo: _tipoId,
+      );
+      ocId = ((res['data'] as Map?)?['id'] as int?) ?? 0;
+    }
+
     if (!mounted) return;
 
     if (res['success'] != true) {
@@ -138,12 +231,12 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
         _busy = false;
         _formError = (res['message']?.toString().trim().isNotEmpty ?? false)
             ? res['message'].toString()
-            : 'Não foi possível registrar a ocorrência.';
+            : (_isEdit
+                ? 'Não foi possível atualizar a ocorrência.'
+                : 'Não foi possível registrar a ocorrência.');
       });
       return;
     }
-
-    final ocId = ((res['data'] as Map?)?['id'] as int?) ?? 0;
 
     // Upload das fotos pendentes (sequencial pra manter ordem visual).
     int fotosOk = 0;
@@ -171,12 +264,13 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
 
     Navigator.pop(context, true);
 
+    final verb = _isEdit ? 'atualizada' : 'registrada';
     final msg = fotosFail > 0
-        ? 'Ocorrência registrada — $fotosOk foto(s) OK, $fotosFail falhou(aram). '
-            'Tente subir de novo pela tela de detalhe.'
+        ? 'Ocorrência $verb — $fotosOk foto(s) OK, $fotosFail falhou(aram). '
+            'Tente subir de novo abrindo pra editar.'
         : (fotosOk > 0
-            ? 'Ocorrência registrada com $fotosOk foto(s).'
-            : 'Ocorrência registrada.');
+            ? 'Ocorrência $verb com $fotosOk foto(s) nova(s).'
+            : 'Ocorrência $verb.');
 
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
@@ -186,17 +280,19 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Nova ocorrência',
+      title: _isEdit ? 'Editar ocorrência' : 'Nova ocorrência',
       subtitle: 'BDT #$_bdtId',
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Registre o que aconteceu — quanto mais claro, melhor. '
-              'A ocorrência fica visível no histórico institucional depois.',
-              style: TextStyle(fontSize: 13, color: Colors.black54),
+            Text(
+              _isEdit
+                  ? 'Ajuste os campos abaixo. Fotos novas vão em cima das já anexadas.'
+                  : 'Registre o que aconteceu — quanto mais claro, melhor. '
+                      'A ocorrência fica visível no histórico institucional depois.',
+              style: const TextStyle(fontSize: 13, color: Colors.black54),
             ),
             const SizedBox(height: 12),
             if (_formError != null) ...[
@@ -277,7 +373,7 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.save),
-                    label: const Text('Registrar'),
+                    label: Text(_isEdit ? 'Salvar' : 'Registrar'),
                   ),
                 ),
               ],
@@ -315,7 +411,24 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
             ],
           ),
           const SizedBox(height: 4),
-          if (_fotosPending.isEmpty)
+          if (_isEdit && _carregandoFotos) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 10),
+                  Text('Carregando fotos existentes…',
+                      style: TextStyle(fontSize: 12, color: Colors.black54)),
+                ],
+              ),
+            ),
+          ],
+          if (_fotosExistentes.isEmpty && _fotosPending.isEmpty && !_carregandoFotos)
             const Text(
               'Anexe se ajudar a documentar (avaria, marca no veículo, cena…).',
               style: TextStyle(fontSize: 12, color: Colors.black54),
@@ -324,37 +437,87 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: List.generate(_fotosPending.length, (i) {
-                final file = _fotosPending[i];
-                return Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        File(file.path),
-                        width: 84,
-                        height: 84,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    Positioned(
-                      right: 2,
-                      top: 2,
-                      child: InkWell(
-                        onTap: _busy
-                            ? null
-                            : () => setState(() => _fotosPending.removeAt(i)),
-                        child: const CircleAvatar(
-                          radius: 12,
-                          backgroundColor: Colors.black54,
-                          child: Icon(Icons.close, size: 14, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              }),
+              children: [
+                for (final f in _fotosExistentes)
+                  _tileExistente(f),
+                for (int i = 0; i < _fotosPending.length; i++)
+                  _tilePendente(i),
+              ],
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tileExistente(OcorrenciaFotoRef f) {
+    return SizedBox(
+      width: 88,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          FotoDocumentoThumb(
+            docId: f.id,
+            fetcher: OcorrenciaService.obterFoto,
+            cacheNamespace: 'ocorrencia',
+            size: 88,
+          ),
+          Positioned(
+            top: -8,
+            right: -8,
+            child: Material(
+              color: Colors.white,
+              shape: const CircleBorder(),
+              elevation: 2,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _busy ? null : () => _excluirFotoExistente(f.id),
+                child: const Padding(
+                  padding: EdgeInsets.all(3),
+                  child: Icon(Icons.close, size: 14),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tilePendente(int i) {
+    final file = _fotosPending[i];
+    return SizedBox(
+      width: 88,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(file.path),
+              width: 88,
+              height: 88,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Positioned(
+            top: -8,
+            right: -8,
+            child: Material(
+              color: Colors.white,
+              shape: const CircleBorder(),
+              elevation: 2,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _busy
+                    ? null
+                    : () => setState(() => _fotosPending.removeAt(i)),
+                child: const Padding(
+                  padding: EdgeInsets.all(3),
+                  child: Icon(Icons.close, size: 14),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
