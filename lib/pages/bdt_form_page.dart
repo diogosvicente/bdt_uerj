@@ -11,10 +11,8 @@ import '../utils/date_fmt.dart';
 import 'foto_galeria_page.dart';
 import 'nova_ocorrencia_page.dart' show OcorrenciaFormArgs;
 import '../widgets/app_scaffold.dart';
-import '../widgets/assinatura_preview.dart';
 import '../widgets/foto_documento_thumb.dart';
 import '../widgets/fotos_bdt_section.dart';
-import 'assinatura_marco_page.dart';
 
 class BdtFormPage extends StatefulWidget {
   const BdtFormPage({super.key});
@@ -28,51 +26,12 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
   bool _loadedOnce = false;
 
-  // ====== Marcos da Jornada (substitui os antigos campos do BDT) ======
-  // Chaves esperadas pelo backend (BdtJornadaService::ORDEM):
-  //   'partida' | 'apresentacao' | 'embarque_passageiro' | 'hora_saida'
-  // (o 4º entrou na Sprint 5 W+M — datahora_hora_saida DATETIME NULL).
-  // Cada entrada guarda o timestamp já registrado (vindo do BDT) e nome de quem
-  // registrou (quando vier do endpoint /jornada/estado).
-  final Map<String, String?> _marcoDatahora = {
-    'partida': null,
-    'apresentacao': null,
-    'embarque_passageiro': null,
-    'hora_saida': null,
-  };
-  final Map<String, String?> _marcoAutor = {
-    'partida': null,
-    'apresentacao': null,
-    'embarque_passageiro': null,
-    'hora_saida': null,
-  };
-  // Sprint W+M — metadados da assinatura ativa por marco. Populados a
-  // partir de est['marcos'][slug]['assinatura'] no /jornada/estado.
-  // Servem pro modal do AssinaturaViewButton mostrar quem/quando/obs.
-  final Map<String, String?> _marcoAssinaturaSvg = {
-    'partida': null,
-    'apresentacao': null,
-    'embarque_passageiro': null,
-    'hora_saida': null,
-  };
-  final Map<String, String?> _marcoSignatarioTipo = {
-    'partida': null,
-    'apresentacao': null,
-    'embarque_passageiro': null,
-    'hora_saida': null,
-  };
-  final Map<String, String?> _marcoObservacao = {
-    'partida': null,
-    'apresentacao': null,
-    'embarque_passageiro': null,
-    'hora_saida': null,
-  };
-  String? _registrandoMarco; // chave do marco em progresso (lock visual)
-
-  // status do BDT — só permite registrar marco em 2 (Em andamento) ou 5 (Reaberto)
-  int? _bdtStatus;
-
   // ====== listas operacionais (sem trechos aqui) ======
+  //
+  // Sprint MUX (2026-07-24): o card "Marcos da Jornada" que vivia aqui
+  // foi REMOVIDO — era duplicata incompleta (só 3/4 marcos, sem
+  // assinatura M4). A versão canônica está em ValidacaoInicioPage
+  // (`/validacao/inicio`, acessível pelo sheet "Ações" do BdtPage).
   List<Map<String, dynamic>> abastecimentos = [];
   List<Map<String, dynamic>> manutencoes = [];
   // Sprint 18.1 — ocorrencias deste BDT (não é o histórico institucional).
@@ -92,22 +51,6 @@ class _BdtFormPageState extends State<BdtFormPage> {
   final _decimal1 = FilteringTextInputFormatter.allow(
     RegExp(r'^\d*([.,]\d{0,1})?$'),
   );
-
-  // labels visíveis dos marcos
-  static const Map<String, String> _marcoLabel = {
-    'partida': 'Partida',
-    'apresentacao': 'Apresentação',
-    'embarque_passageiro': 'Embarque do passageiro',
-    'hora_saida': 'Hora de saída',
-  };
-
-  // ícones por marco
-  static const Map<String, IconData> _marcoIcone = {
-    'partida': Icons.flag_outlined,
-    'apresentacao': Icons.front_hand_outlined,
-    'embarque_passageiro': Icons.directions_walk,
-    'hora_saida': Icons.play_arrow_outlined,
-  };
 
   @override
   void dispose() {
@@ -248,66 +191,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final ok = res['success'] == true;
     if (!ok) return;
 
-    final bdt = (res['bdt'] as Map<String, dynamic>? ?? {});
-
-    // status atual do BDT (para liberar registro de marcos)
-    final dynamic rawStatus = bdt['id_status_atual'] ?? bdt['status_atual'];
-    _bdtStatus = rawStatus is int
-        ? rawStatus
-        : int.tryParse((rawStatus ?? '').toString());
-
-    // marcos diretos a partir das colunas do BDT
-    _marcoDatahora['partida'] =
-        (bdt['datahora_partida'] ?? '').toString().isEmpty
-        ? null
-        : bdt['datahora_partida'].toString();
-    _marcoDatahora['apresentacao'] =
-        (bdt['datahora_apresentacao'] ?? '').toString().isEmpty
-        ? null
-        : bdt['datahora_apresentacao'].toString();
-    _marcoDatahora['embarque_passageiro'] =
-        (bdt['datahora_embarque_passageiro'] ?? '').toString().isEmpty
-        ? null
-        : bdt['datahora_embarque_passageiro'].toString();
-    _marcoDatahora['hora_saida'] =
-        (bdt['datahora_hora_saida'] ?? '').toString().isEmpty
-        ? null
-        : bdt['datahora_hora_saida'].toString();
-
-    // Busca o estado canônico dos marcos (timestamps + assinaturas).
-    // Falha aqui é silenciosa: já temos fallback nos timestamps acima.
-    final est = await BdtService.estadoJornada(bdtId);
-    if (est != null && est['marcos'] is Map) {
-      final marcos = Map<String, dynamic>.from(est['marcos'] as Map);
-      for (final k in _marcoDatahora.keys) {
-        final entry = marcos[k];
-        if (entry is Map) {
-          final dh = entry['datahora'];
-          if (dh != null && dh.toString().isNotEmpty) {
-            _marcoDatahora[k] = dh.toString();
-          }
-          final ass = entry['assinatura'];
-          if (ass is Map) {
-            _marcoAutor[k] = (ass['signatario_nome'] ??
-                    ass['criado_por_nome'] ??
-                    '')
-                .toString();
-            final svg = ass['assinatura_svg'];
-            if (svg != null && svg.toString().trim().isNotEmpty) {
-              _marcoAssinaturaSvg[k] = svg.toString();
-            }
-            final tipo = ass['signatario_tipo']?.toString().trim();
-            if (tipo != null && tipo.isNotEmpty) {
-              _marcoSignatarioTipo[k] = tipo;
-            }
-            final obs = ass['observacao']?.toString().trim();
-            if (obs != null && obs.isNotEmpty) {
-              _marcoObservacao[k] = obs;
-            }
-          }
-        }
-      }
-    }
+    // Sprint MUX (2026-07-24) — Marcos da Jornada (state + fetch de
+    // /jornada/estado + estadoJornada) foram removidos daqui. Vivem em
+    // ValidacaoInicioPage, que tem a versão canônica com assinatura M4.
+    // Ver comentário na declaração do state.
 
     // listas (se vierem no detalhes, usa; senão busca via endpoints específicos)
     final ab = (res['abastecimentos'] as List<dynamic>?)
@@ -391,146 +278,6 @@ class _BdtFormPageState extends State<BdtFormPage> {
         }),
     ];
     await Future.wait(futures);
-  }
-
-  // =========================
-  // Marcos da Jornada
-  // =========================
-
-  bool get _bdtPermiteMarcos {
-    final s = _bdtStatus;
-    // Sprint MUX (2026-07-24) — inclui status 1 (Em aberto): o primeiro
-    // marco AUTO-INICIA o BDT (backend BdtJornadaService::registrar promove
-    // pra Em andamento antes de gravar). Antes o condutor tinha que
-    // lembrar de "Iniciar trecho" primeiro só pra destravar os marcos.
-    // Backend valida final; 3 (Encerrado) e 4 (Cancelado) continuam
-    // bloqueados por lá.
-    return s == 1 || s == 2 || s == 5;
-  }
-
-  /// Sprint MUX (2026-07-24) — verdadeiro se registrar o próximo marco
-  /// vai promover o BDT de Em aberto → Em andamento. Usado pra mostrar
-  /// um hint discreto no card ("O primeiro marco inicia o BDT").
-  bool get _proximoMarcoIniciaBdt => _bdtStatus == 1;
-
-  /// Permite registrar somente em ordem (partida → apresentacao → embarque_passageiro).
-  /// A ordem também é validada no backend; aqui é só UX.
-  bool _marcoLiberado(String marco) {
-    switch (marco) {
-      case 'partida':
-        return true;
-      case 'apresentacao':
-        return _marcoDatahora['partida'] != null;
-      case 'embarque_passageiro':
-        return _marcoDatahora['apresentacao'] != null;
-    }
-    return false;
-  }
-
-  /// Sprint W+M — abre o form completo de assinatura pra RE-assinar
-  /// um marco já registrado. Reusa `/marco/assinatura` (mesmo fluxo
-  /// da `ValidacaoInicioPage`). Chamado pelo botão "Editar" do modal
-  /// de visualização (AssinaturaViewButton).
-  Future<void> _reassinarMarco(int bdtId, String marco) async {
-    final ok = await Navigator.pushNamed(
-      context,
-      '/marco/assinatura',
-      arguments: AssinaturaMarcoArgs(
-        bdtId: bdtId,
-        marco: marco,
-        labelMarco: _marcoLabel[marco] ?? marco,
-      ),
-    );
-    if (ok == true && mounted) {
-      // ignore: discarded_futures
-      _load(bdtId);
-    }
-  }
-
-  Future<void> _registrarMarco(int bdtId, String marco) async {
-    if (!_bdtPermiteMarcos) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Este BDT já foi encerrado — não aceita novos marcos.',
-          ),
-        ),
-      );
-      return;
-    }
-    if (!_marcoLiberado(marco)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Registre os marcos anteriores antes de "${_marcoLabel[marco]}".',
-          ),
-        ),
-      );
-      return;
-    }
-
-    // Pergunta observação opcional
-    final obsCtrl = TextEditingController();
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Registrar marco: ${_marcoLabel[marco]}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Será gravado o horário atual e seu nome como assinante.',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: obsCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Observação (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Registrar'),
-          ),
-        ],
-      ),
-    );
-    if (go != true) return;
-
-    setState(() => _registrandoMarco = marco);
-    try {
-      final res = await BdtService.registrarMarcoJornada(
-        bdtId: bdtId,
-        marco: marco,
-        observacao: obsCtrl.text.trim(),
-      );
-      if (!mounted) return;
-
-      final ok = res['success'] == true;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            ok
-                ? 'Marco "${_marcoLabel[marco]}" registrado.'
-                : (res['message']?.toString() ?? 'Falha ao registrar marco.'),
-          ),
-        ),
-      );
-
-      if (ok) await _load(bdtId);
-    } finally {
-      if (mounted) setState(() => _registrandoMarco = null);
-    }
   }
 
   // =========================
@@ -1736,10 +1483,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
               children: [
-                _cardMarcosJornada(bdtId),
-                const SizedBox(height: 12),
-
-                // ✅ sem trechos aqui
+                // Sprint MUX (2026-07-24) — Marcos da Jornada removidos
+                // daqui. Estão em ValidacaoInicioPage (canônica, com
+                // assinatura M4), acessível pelo sheet "Ações" do BdtPage.
                 _cardAbastecimentos(),
                 const SizedBox(height: 12),
 
@@ -1755,139 +1501,6 @@ class _BdtFormPageState extends State<BdtFormPage> {
   // =========================
   // Cards
   // =========================
-
-  Widget _cardMarcosJornada(int bdtId) {
-    final marcos = <String>[
-      'partida',
-      'apresentacao',
-      'embarque_passageiro',
-    ];
-
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Marcos da Jornada",
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              !_bdtPermiteMarcos
-                  ? "Este BDT já foi encerrado — não aceita novos marcos."
-                  : _proximoMarcoIniciaBdt
-                      ? "Registre cada marco no momento em que ocorrer. "
-                          "O primeiro marco vai iniciar o BDT automaticamente."
-                      : "Registre cada marco no momento em que ocorrer. A ordem é obrigatória.",
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            for (int i = 0; i < marcos.length; i++) ...[
-              _rowMarco(bdtId, marcos[i]),
-              if (i < marcos.length - 1) const Divider(height: 18),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _rowMarco(int bdtId, String marco) {
-    final dh = _marcoDatahora[marco];
-    final autor = _marcoAutor[marco];
-    final jaRegistrado = dh != null && dh.isNotEmpty;
-    final emProgresso = _registrandoMarco == marco;
-    final liberado = _marcoPodeRegistrar(marco);
-    final svg = _marcoAssinaturaSvg[marco];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(
-              _marcoIcone[marco],
-              size: 28,
-              color: jaRegistrado
-                  ? Colors.green
-                  : (liberado
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).disabledColor),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _marcoLabel[marco] ?? marco,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    jaRegistrado
-                        ? "${_fmtDatahoraBr(dh)}${(autor != null && autor.isNotEmpty) ? ' • $autor' : ''}"
-                        : (liberado ? "Aguardando registro" : "Bloqueado"),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-            if (jaRegistrado)
-              const Padding(
-                padding: EdgeInsets.only(left: 8),
-                child: Icon(Icons.check_circle, color: Colors.green),
-              )
-            else
-              FilledButton.tonalIcon(
-                onPressed: (emProgresso || !liberado)
-                    ? null
-                    : () => _registrarMarco(bdtId, marco),
-                icon: emProgresso
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.play_arrow, size: 18),
-                label: const Text("Registrar"),
-              ),
-          ],
-        ),
-        if (jaRegistrado && svg != null && svg.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Padding(
-            // Alinha com o texto (pula ícone 28 + gap 12).
-            padding: const EdgeInsets.only(left: 40),
-            child: AssinaturaViewButton(
-              svg: svg,
-              marcoLabel: _marcoLabel[marco] ?? marco,
-              assinadoPor: autor,
-              signatarioTipo: _marcoSignatarioTipo[marco],
-              dataHora: dh,
-              observacao: _marcoObservacao[marco],
-              onEditar: _bdtPermiteMarcos
-                  ? () => _reassinarMarco(bdtId, marco)
-                  : null,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  bool _marcoPodeRegistrar(String marco) {
-    return _bdtPermiteMarcos && _marcoLiberado(marco);
-  }
-
-  /// Sprint MSEC.TZ — delega pro DateFmt que interpreta naive strings da
-  /// API como UTC (novo padrao do backend) e converte pro local do device.
-  String _fmtDatahoraBr(String? raw) => DateFmt.dataHoraBr(raw);
 
   Widget _cardAbastecimentos() {
     return Card(

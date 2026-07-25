@@ -559,6 +559,25 @@ Não tem "estimativa total" — vai crescendo. Sempre que fizer um
 refino desses, registrar aqui em vez de deixar só no commit
 (regra [[bdt_uerj_registrar_fora_de_escopo]]).
 
+- ✅ **Remove card duplicado de Marcos do BdtFormPage** (2026-07-24)
+  — O Formulário do BDT tinha um card "Marcos da Jornada" duplicado, com:
+  (a) só 3 dos 4 marcos (faltava "Hora de saída" adicionado na Sprint 5
+  W+M), (b) dialog simplificado que só pedia observação e gravava
+  sem assinatura, (c) versão anterior aos ajustes de UX das últimas
+  sprints. A versão CANÔNICA vive em `ValidacaoInicioPage` (rota
+  `/validacao/inicio`, acessível pelo sheet "Ações" do BdtPage) —
+  4 marcos completos + fluxo M4 com assinatura via `AssinaturaMarcoPage`.
+  Removidos: `_cardMarcosJornada`, `_rowMarco`, `_registrarMarco`,
+  `_reassinarMarco`, `_bdtPermiteMarcos`, `_proximoMarcoIniciaBdt`,
+  `_marcoLiberado`, `_marcoPodeRegistrar`, `_fmtDatahoraBr`, todos
+  os maps de state (`_marcoDatahora`, `_marcoAutor`, `_marcoAssinaturaSvg`,
+  `_marcoSignatarioTipo`, `_marcoObservacao`, `_registrandoMarco`,
+  `_bdtStatus`) e os labels/ícones estáticos. O `_load` deixou de
+  chamar `BdtService.estadoJornada` (só usado por esse card). Zero
+  regressão — se um dia quiser reintroduzir, é diff limpo pra
+  reverter. `AssinaturaMarcoPage` e `AssinaturaPreview` seguem
+  registrados (usados pela `ValidacaoInicioPage`).
+
 - ✅ **Sprint 18 W+M — Fotos de Abastecimento & Manutenção no mobile** (2026-07-24)
   — **Origem:** completar a paridade web↔mobile de anexos do BDT. Ocorrência já
   tinha upload de foto desde a Sprint 17; Abastecimento e Manutenção só tinham
