@@ -530,6 +530,19 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
         final items = snap.data ?? const <OcorrenciaFiltroItem>[];
         final carregando = snap.connectionState != ConnectionState.done;
 
+        // Sprint 18.1 — Fix crash: DropdownButtonFormField exige que o
+        // `initialValue` esteja presente EXATAMENTE UMA VEZ nos items.
+        // Se o form abre em edit com `_tipoId=4` e o backend ainda não
+        // respondeu (items vazio no primeiro frame), o valor 4 não existe
+        // → framework lança "Either zero or 2 or more DropdownMenuItems
+        // were detected with the same value". Placeholder invisível
+        // preserva o valor até o catálogo real chegar; assim que chega,
+        // o setState reconcilia e o placeholder desaparece.
+        final temTipoNoCatalogo =
+            _tipoId != null && items.any((i) => i.id == _tipoId);
+        final precisaPlaceholder =
+            _tipoId != null && !temTipoNoCatalogo;
+
         return DropdownButtonFormField<int?>(
           initialValue: _tipoId,
           isExpanded: true,
@@ -553,6 +566,15 @@ class _NovaOcorrenciaPageState extends State<NovaOcorrenciaPage> {
               value: null,
               child: Text('Selecione…'),
             ),
+            if (precisaPlaceholder)
+              DropdownMenuItem<int?>(
+                value: _tipoId,
+                child: Text(
+                  carregando ? 'Carregando…' : 'Tipo #$_tipoId (fora do catálogo)',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                ),
+              ),
             ...items.map(
               (i) => DropdownMenuItem<int?>(
                 value: i.id,

@@ -13,6 +13,7 @@ import 'pages/conclusao_page.dart';
 import 'pages/historico_ocorrencias_page.dart';
 import 'pages/ocorrencia_detalhe_page.dart';
 import 'pages/nova_ocorrencia_page.dart';
+import 'pages/foto_galeria_page.dart';
 import 'pages/foto_viewer_page.dart';
 import 'services/alertas_service.dart';
 import 'services/background_location_service.dart';
@@ -95,6 +96,8 @@ class BdtUerjApp extends StatelessWidget {
         "/ocorrencia/detalhe":    (_) => const OcorrenciaDetalhePage(), // arg: int id
         "/ocorrencia/nova":       (_) => const NovaOcorrenciaPage(),    // arg: int bdtId
         "/foto/viewer":           (_) => const FotoViewerPage(),        // arg: int docId
+        // Sprint 18.2 — galeria full-screen com swipe entre fotos.
+        "/foto/galeria":          (_) => const FotoGaleriaPage(),       // arg: FotoGaleriaArgs
       },
 
       theme: AppTheme.light(),

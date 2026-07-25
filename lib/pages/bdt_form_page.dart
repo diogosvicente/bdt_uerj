@@ -4,9 +4,11 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/abastecimento_foto_service.dart';
 import '../services/bdt_service.dart';
+import '../services/foto_documento_client.dart' show FotoDocumentoRef;
 import '../services/manutencao_foto_service.dart';
 import '../services/ocorrencia_service.dart';
 import '../utils/date_fmt.dart';
+import 'foto_galeria_page.dart';
 import 'nova_ocorrencia_page.dart' show OcorrenciaFormArgs;
 import '../widgets/app_scaffold.dart';
 import '../widgets/assinatura_preview.dart';
@@ -75,6 +77,13 @@ class _BdtFormPageState extends State<BdtFormPage> {
   List<Map<String, dynamic>> manutencoes = [];
   // Sprint 18.1 — ocorrencias deste BDT (não é o histórico institucional).
   List<OcorrenciaDoBdt> ocorrencias = [];
+
+  // Sprint 18.2 — fotos por registro (populadas em paralelo no _load).
+  // Chave = id do registro; valor = lista de refs (id + mime + descricao).
+  // Usadas pras tiras de miniaturas nos cards + galeria full-screen.
+  Map<int, List<FotoDocumentoRef>> _fotosAbastecimento = {};
+  Map<int, List<FotoDocumentoRef>> _fotosManutencao   = {};
+  Map<int, List<FotoDocumentoRef>> _fotosOcorrencia   = {};
 
   // ====== input formatters ======
   final _decimal2 = FilteringTextInputFormatter.allow(
@@ -323,6 +332,65 @@ class _BdtFormPageState extends State<BdtFormPage> {
       manutencoes = manResolved;
       ocorrencias = ocResolved;
     });
+
+    // Sprint 18.2 — fotos por registro, em paralelo. Não bloqueia o
+    // primeiro render — quando chega, faz setState e as tiras aparecem.
+    // Cache é resetado a cada _load pra refletir exclusões/uploads
+    // que aconteceram enquanto o usuário mexia no form.
+    _carregarFotosDosRegistros(
+      abIds: abResolved
+          .map((a) => int.tryParse('${a['id'] ?? 0}') ?? 0)
+          .where((i) => i > 0)
+          .toList(),
+      mnIds: manResolved
+          .map((m) => int.tryParse('${m['id'] ?? 0}') ?? 0)
+          .where((i) => i > 0)
+          .toList(),
+      ocIds: ocResolved
+          .where((o) => o.qtdFotos > 0)
+          .map((o) => o.id)
+          .toList(),
+    );
+  }
+
+  Future<void> _carregarFotosDosRegistros({
+    required List<int> abIds,
+    required List<int> mnIds,
+    required List<int> ocIds,
+  }) async {
+    // Zera antes de recarregar (evita mostrar refs de registros deletados).
+    if (mounted) {
+      setState(() {
+        _fotosAbastecimento = {};
+        _fotosManutencao   = {};
+        _fotosOcorrencia   = {};
+      });
+    }
+
+    final futures = <Future<void>>[
+      for (final id in abIds)
+        AbastecimentoFotoService.listar(id).then((refs) {
+          if (!mounted) return;
+          setState(() => _fotosAbastecimento[id] = refs);
+        }),
+      for (final id in mnIds)
+        ManutencaoFotoService.listar(id).then((refs) {
+          if (!mounted) return;
+          setState(() => _fotosManutencao[id] = refs);
+        }),
+      for (final id in ocIds)
+        OcorrenciaService.listarFotos(id).then((refs) {
+          if (!mounted) return;
+          setState(() => _fotosOcorrencia[id] = refs
+              .map((r) => FotoDocumentoRef(
+                    id: r.id,
+                    mimeType: r.mimeType,
+                    createdAt: r.createdAt,
+                  ))
+              .toList());
+        }),
+    ];
+    await Future.wait(futures);
   }
 
   // =========================
@@ -1521,6 +1589,74 @@ class _BdtFormPageState extends State<BdtFormPage> {
     );
   }
 
+  /// Sprint 18.2 — tira de miniaturas clicáveis. Tap abre a galeria
+  /// full-screen com swipe entre as fotos, contador N/M e legenda.
+  ///
+  /// `fetcher` é o mesmo passado pro FotoDocumentoThumb (ex.:
+  /// `AbastecimentoFotoService.obter`).
+  /// `namespace` deve ser único por fluxo (`abastecimento_ID`,
+  /// `manutencao_ID`, `ocorrencia_ID`) pra evitar colisão no cache.
+  Widget _stripFotos({
+    required List<FotoDocumentoRef> fotos,
+    required Future<List<int>?> Function(int) fetcher,
+    required String namespace,
+    required String tituloGaleria,
+  }) {
+    if (fotos.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: SizedBox(
+        height: 64,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: fotos.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (_, i) {
+            final f = fotos[i];
+            return FotoDocumentoThumb(
+              docId: f.id,
+              fetcher: fetcher,
+              cacheNamespace: namespace,
+              size: 64,
+              onTap: () => _abrirGaleria(
+                fotos: fotos,
+                fetcher: fetcher,
+                indice: i,
+                titulo: tituloGaleria,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _abrirGaleria({
+    required List<FotoDocumentoRef> fotos,
+    required Future<List<int>?> Function(int) fetcher,
+    required int indice,
+    required String titulo,
+  }) {
+    final items = fotos
+        .map((f) => FotoGaleriaItem(
+              docId: f.id,
+              fetcher: fetcher,
+              label: (f.descricao?.trim().isNotEmpty ?? false)
+                  ? f.descricao!
+                  : '',
+            ))
+        .toList();
+    return Navigator.pushNamed(
+      context,
+      '/foto/galeria',
+      arguments: FotoGaleriaArgs(
+        fotos: items,
+        indiceInicial: indice,
+        titulo: titulo,
+      ),
+    );
+  }
+
   Future<bool> _confirmDelete(String msg) async {
     final res = await showDialog<bool>(
       context: context,
@@ -1784,19 +1920,35 @@ class _BdtFormPageState extends State<BdtFormPage> {
                   final dh = (a['data_hora'] ?? '').toString();
 
                   final dhFmt = DateFmt.dataHoraBr(dh);
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      "${tipo.isEmpty ? 'Combustível' : tipo} • ${litros.isEmpty ? '-' : litros} L • ${valor.isEmpty ? '-' : valor}",
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: dhFmt.isEmpty ? null : Text(dhFmt),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit),
-                      onPressed: () => _openAbastecimentoSheet(existing: a),
-                    ),
+                  final absId = int.tryParse('${a['id'] ?? 0}') ?? 0;
+                  final fotos = _fotosAbastecimento[absId] ?? const [];
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          "${tipo.isEmpty ? 'Combustível' : tipo} • ${litros.isEmpty ? '-' : litros} L • ${valor.isEmpty ? '-' : valor}",
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: dhFmt.isEmpty ? null : Text(dhFmt),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _openAbastecimentoSheet(existing: a),
+                        ),
+                      ),
+                      _stripFotos(
+                        fotos: fotos,
+                        fetcher: (docId) => AbastecimentoFotoService.obter(
+                          docId,
+                          abastecimentoId: absId,
+                        ),
+                        namespace: 'abastecimento_$absId',
+                        tituloGaleria: 'Abastecimento',
+                      ),
+                    ],
                   );
                 },
               ),
@@ -1848,19 +2000,35 @@ class _BdtFormPageState extends State<BdtFormPage> {
                   final ini = (m['data_hora_inicio'] ?? '').toString();
 
                   final iniFmt = DateFmt.dataHoraBr(ini);
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      desc.isEmpty ? "Manutenção" : desc,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: iniFmt.isEmpty ? null : Text(iniFmt),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit),
-                      onPressed: () => _openManutencaoSheet(existing: m),
-                    ),
+                  final mntId = int.tryParse('${m['id'] ?? 0}') ?? 0;
+                  final fotos = _fotosManutencao[mntId] ?? const [];
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          desc.isEmpty ? "Manutenção" : desc,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: iniFmt.isEmpty ? null : Text(iniFmt),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _openManutencaoSheet(existing: m),
+                        ),
+                      ),
+                      _stripFotos(
+                        fotos: fotos,
+                        fetcher: (docId) => ManutencaoFotoService.obter(
+                          docId,
+                          manutencaoId: mntId,
+                        ),
+                        namespace: 'manutencao_$mntId',
+                        tituloGaleria: 'Manutenção',
+                      ),
+                    ],
                   );
                 },
               ),
@@ -1931,43 +2099,57 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final dhFmt = DateFmt.dataHoraBr(o.dataHora);
     if (dhFmt.isNotEmpty) subtitle.add(dhFmt);
 
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.warning_amber_rounded,
-          color: Color(0xFFB58900)),
-      title: Text(
-        (o.titulo?.trim().isNotEmpty ?? false) ? o.titulo! : 'Ocorrência',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w700),
-      ),
-      subtitle: subtitle.isEmpty
-          ? null
-          : Text(subtitle.join(' • '),
-              maxLines: 2, overflow: TextOverflow.ellipsis),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (o.qtdFotos > 0) ...[
-            const Icon(Icons.photo_library_outlined, size: 16),
-            const SizedBox(width: 3),
-            Text('${o.qtdFotos}', style: const TextStyle(fontSize: 12)),
-            const SizedBox(width: 6),
-          ],
-          IconButton(
-            tooltip: 'Editar',
-            icon: const Icon(Icons.edit, size: 20),
-            onPressed: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
+    final fotos = _fotosOcorrencia[o.id] ?? const [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.warning_amber_rounded,
+              color: Color(0xFFB58900)),
+          title: Text(
+            (o.titulo?.trim().isNotEmpty ?? false) ? o.titulo! : 'Ocorrência',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-          IconButton(
-            tooltip: 'Excluir',
-            icon: const Icon(Icons.delete_outline, size: 20),
-            onPressed: () => _excluirOcorrencia(bdtId, o),
+          subtitle: subtitle.isEmpty
+              ? null
+              : Text(subtitle.join(' • '),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (o.qtdFotos > 0) ...[
+                const Icon(Icons.photo_library_outlined, size: 16),
+                const SizedBox(width: 3),
+                Text('${o.qtdFotos}', style: const TextStyle(fontSize: 12)),
+                const SizedBox(width: 6),
+              ],
+              IconButton(
+                tooltip: 'Editar',
+                icon: const Icon(Icons.edit, size: 20),
+                onPressed: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
+              ),
+              IconButton(
+                tooltip: 'Excluir',
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: () => _excluirOcorrencia(bdtId, o),
+              ),
+            ],
           ),
-        ],
-      ),
-      onTap: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
+          onTap: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
+        ),
+        _stripFotos(
+          fotos: fotos,
+          fetcher: OcorrenciaService.obterFoto,
+          namespace: 'ocorrencia',
+          tituloGaleria: (o.titulo?.trim().isNotEmpty ?? false)
+              ? o.titulo!
+              : 'Ocorrência',
+        ),
+      ],
     );
   }
 
