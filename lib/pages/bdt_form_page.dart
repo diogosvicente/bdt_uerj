@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/abastecimento_foto_service.dart';
 import '../services/bdt_service.dart';
+import '../services/divergencia_service.dart';
 import '../services/foto_documento_client.dart' show FotoDocumentoRef;
 import '../services/manutencao_foto_service.dart';
 import '../services/ocorrencia_service.dart';
@@ -36,6 +37,8 @@ class _BdtFormPageState extends State<BdtFormPage> {
   List<Map<String, dynamic>> manutencoes = [];
   // Sprint 18.1 — ocorrencias deste BDT (não é o histórico institucional).
   List<OcorrenciaDoBdt> ocorrencias = [];
+  // Sprint 6 W+M — divergências de carga registradas pelo condutor.
+  List<DivergenciaResumo> divergencias = [];
 
   // Sprint 18.2 — fotos por registro (populadas em paralelo no _load).
   // Chave = id do registro; valor = lista de refs (id + mime + descricao).
@@ -43,6 +46,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
   Map<int, List<FotoDocumentoRef>> _fotosAbastecimento = {};
   Map<int, List<FotoDocumentoRef>> _fotosManutencao   = {};
   Map<int, List<FotoDocumentoRef>> _fotosOcorrencia   = {};
+  Map<int, List<FotoDocumentoRef>> _fotosDivergencia  = {};
 
   // ====== input formatters ======
   final _decimal2 = FilteringTextInputFormatter.allow(
@@ -212,12 +216,15 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final manResolved = man ?? await BdtService.listarManutencoes(bdtId: bdtId);
     // Sprint 18.1 — ocorrências não vêm no `detalhes`, sempre chama.
     final ocResolved = await OcorrenciaService.listarDoBdt(bdtId);
+    // Sprint 6 W+M — divergências (motor W10).
+    final divResolved = await DivergenciaService.listarDoBdt(bdtId);
 
     if (!mounted) return;
     setState(() {
       abastecimentos = abResolved;
       manutencoes = manResolved;
       ocorrencias = ocResolved;
+      divergencias = divResolved;
     });
 
     // Sprint 18.2 — fotos por registro, em paralelo. Não bloqueia o
@@ -237,6 +244,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
           .where((o) => o.qtdFotos > 0)
           .map((o) => o.id)
           .toList(),
+      divIds: divResolved
+          .where((d) => d.qtdFotos > 0)
+          .map((d) => d.id)
+          .toList(),
     );
   }
 
@@ -244,6 +255,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
     required List<int> abIds,
     required List<int> mnIds,
     required List<int> ocIds,
+    required List<int> divIds,
   }) async {
     // Zera antes de recarregar (evita mostrar refs de registros deletados).
     if (mounted) {
@@ -251,6 +263,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
         _fotosAbastecimento = {};
         _fotosManutencao   = {};
         _fotosOcorrencia   = {};
+        _fotosDivergencia  = {};
       });
     }
 
@@ -275,6 +288,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
                     createdAt: r.createdAt,
                   ))
               .toList());
+        }),
+      for (final id in divIds)
+        DivergenciaService.listarFotos(id).then((refs) {
+          if (!mounted) return;
+          setState(() => _fotosDivergencia[id] = refs);
         }),
     ];
     await Future.wait(futures);
@@ -1438,6 +1456,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
                 const SizedBox(height: 12),
 
                 _cardOcorrencias(bdtId),
+                const SizedBox(height: 12),
+
+                _cardDivergencias(bdtId),
               ],
             ),
     );
@@ -1949,6 +1970,201 @@ class _BdtFormPageState extends State<BdtFormPage> {
         // _excluirOcorrencia já recarrega; assume que sim se chegou aqui.
         return true;
       },
+    );
+
+    final r = await _abrirDetalheRegistro(args);
+    if (r && mounted) await _load(bdtId);
+  }
+
+  // =========================================================================
+  // Sprint 6 W+M — Divergências (motor W10). Condutor REGISTRA; admin decide.
+  // =========================================================================
+
+  Widget _cardDivergencias(int bdtId) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    "Divergências de carga",
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _abrirRegistrarDivergencia(bdtId),
+                  icon: const Icon(Icons.report_problem_outlined),
+                  label: const Text("Registrar"),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (divergencias.isEmpty)
+              Text(
+                "Nenhuma divergência registrada. "
+                "Registre se a carga real não bater com o declarado.",
+                style: Theme.of(context).textTheme.bodySmall,
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: divergencias.length,
+                separatorBuilder: (_, __) => const Divider(height: 0),
+                itemBuilder: (_, i) => _tileDivergencia(bdtId, divergencias[i]),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tileDivergencia(int bdtId, DivergenciaResumo d) {
+    final dhFmt = DateFmt.dataHoraBr(d.criadoEm);
+    final subtitle = <String>[];
+    if (dhFmt.isNotEmpty) subtitle.add(dhFmt);
+    if ((d.criadoPorNome ?? '').isNotEmpty) subtitle.add(d.criadoPorNome!);
+
+    // Cor do ícone reflete decisão: cinza=pendente, verde=prosseguido,
+    // vermelho=cancelado pelo admin (aviso pro condutor).
+    final Color corIcone;
+    final IconData iconeDec;
+    if (d.canceladoPeloAdmin) {
+      corIcone = Colors.red.shade700;
+      iconeDec = Icons.cancel_outlined;
+    } else if (d.prosseguidoPeloAdmin) {
+      corIcone = Colors.green.shade700;
+      iconeDec = Icons.check_circle_outline;
+    } else {
+      corIcone = Colors.amber.shade800;
+      iconeDec = Icons.hourglass_bottom_outlined;
+    }
+
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(iconeDec, color: corIcone),
+      title: Text(
+        d.tipoLabel.isEmpty ? 'Divergência' : d.tipoLabel,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        [
+          if (subtitle.isNotEmpty) subtitle.join(' • '),
+          d.canceladoPeloAdmin
+              ? 'BDT cancelado pelo admin'
+              : d.prosseguidoPeloAdmin
+                  ? 'Admin decidiu prosseguir'
+                  : 'Aguardando decisão do admin',
+          if ((d.descricao ?? '').isNotEmpty) d.descricao!,
+        ].where((s) => s.isNotEmpty).join('\n'),
+        maxLines: 4,
+        overflow: TextOverflow.ellipsis,
+      ),
+      isThreeLine: true,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (d.qtdFotos > 0) ...[
+            const Icon(Icons.photo_library_outlined,
+                size: 14, color: Colors.black54),
+            const SizedBox(width: 2),
+            Text('${d.qtdFotos}',
+                style: const TextStyle(fontSize: 11, color: Colors.black54)),
+            const SizedBox(width: 4),
+          ],
+          IconButton(
+            tooltip: 'Ver detalhes',
+            icon: const Icon(Icons.visibility_outlined, size: 20),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _verDivergencia(bdtId, d),
+          ),
+        ],
+      ),
+      onTap: () => _verDivergencia(bdtId, d),
+    );
+  }
+
+  Future<void> _abrirRegistrarDivergencia(int bdtId) async {
+    final ok = await Navigator.pushNamed(
+      context,
+      '/bdt/divergencia/nova',
+      arguments: bdtId,
+    );
+    if (ok == true && mounted) {
+      // ignore: discarded_futures
+      _load(bdtId);
+    }
+  }
+
+  Future<void> _verDivergencia(int bdtId, DivergenciaResumo d) async {
+    final fotos = _fotosDivergencia[d.id] ?? const [];
+    final dhFmt = DateFmt.dataHoraBr(d.criadoEm);
+    final decisaoLabel = d.canceladoPeloAdmin
+        ? 'Cancelou o BDT'
+        : d.prosseguidoPeloAdmin
+            ? 'Decidiu prosseguir'
+            : 'Aguardando decisão';
+
+    final linhas = <RegistroBdtLinha>[
+      RegistroBdtLinha(
+        icone: Icons.category,
+        label: 'Tipo',
+        valor: d.tipoLabel,
+      ),
+      RegistroBdtLinha(
+        icone: Icons.gavel,
+        label: 'Decisão',
+        valor: decisaoLabel,
+      ),
+      if ((d.decisaoObs ?? '').isNotEmpty)
+        RegistroBdtLinha(
+          icone: Icons.speaker_notes,
+          label: 'Obs. admin',
+          valor: d.decisaoObs!,
+        ),
+      if ((d.criadoPorNome ?? '').isNotEmpty)
+        RegistroBdtLinha(
+          icone: Icons.person,
+          label: 'Registrada por',
+          valor: d.criadoPorNome!,
+        ),
+      if ((d.severidade ?? '').isNotEmpty)
+        RegistroBdtLinha(
+          icone: Icons.warning_amber,
+          label: 'Severidade',
+          valor: (d.severidade ?? '').toUpperCase(),
+        ),
+    ];
+
+    final args = RegistroBdtDetalheArgs(
+      tituloAppBar: 'Divergência',
+      subtituloAppBar: 'BDT #$bdtId',
+      icone: Icons.report_problem_outlined,
+      corCabecalho: d.canceladoPeloAdmin
+          ? const Color(0xFFF8D7DA)
+          : d.prosseguidoPeloAdmin
+              ? const Color(0xFFD4EDDA)
+              : const Color(0xFFFFF3CD),
+      tituloRegistro: d.tipoLabel,
+      dataHoraBr: dhFmt,
+      linhas: linhas,
+      observacoes: d.descricao,
+      fotos: fotos,
+      fotoFetcher: (docId) =>
+          DivergenciaService.obterFoto(docId, divergenciaId: d.id),
+      tituloGaleria: 'Divergência',
+      // Condutor não edita nem exclui divergência (admin decide).
+      onEditar: null,
+      onExcluir: null,
     );
 
     final r = await _abrirDetalheRegistro(args);

@@ -15,6 +15,7 @@ import 'pages/ocorrencia_detalhe_page.dart';
 import 'pages/nova_ocorrencia_page.dart';
 import 'pages/foto_galeria_page.dart';
 import 'pages/foto_viewer_page.dart';
+import 'pages/registrar_divergencia_page.dart';
 import 'pages/registro_bdt_detalhe_page.dart';
 import 'services/alertas_service.dart';
 import 'services/background_location_service.dart';
@@ -102,6 +103,8 @@ class BdtUerjApp extends StatelessWidget {
         // Sprint MUX (2026-07-24) — page compartilhada de "Ver detalhes"
         // pra registros do BDT (abastecimento/manutencao/ocorrencia).
         "/registro/detalhe":      (_) => const RegistroBdtDetalhePage(), // arg: RegistroBdtDetalheArgs
+        // Sprint 6 W+M — Registrar divergência de carga.
+        "/bdt/divergencia/nova":  (_) => const RegistrarDivergenciaPage(), // arg: int bdtId
       },
 
       theme: AppTheme.light(),

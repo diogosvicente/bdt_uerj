@@ -862,7 +862,55 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     {"datahora":null,"assinatura":null}}}`).
 
 ### Da Sprint 6 web (Cargas)
-- ⏳ Cancelar/redirecionar BDT por divergência de carga (UX do condutor)
+- ✅ **Cancelar/redirecionar BDT por divergência de carga** (2026-07-25) —
+  condutor no destino descobre que a carga real não bate com o declarado
+  → REGISTRA divergência pelo mobile → admin decide no web
+  (`cancelar` reabre solicitação pra reagendamento; `prosseguir` mantém).
+  100% wrapper thin sobre o motor W10 (`MotorDivergenciasService`) que
+  já rodava no web — zero migration, zero service novo.
+  - **Backend** (feature/027-mobile-support):
+    - Novos endpoints em `BdtApiController`:
+      - `POST bdt/divergencias/registrar` — chama
+        `MotorDivergenciasService::registrarCarga`. Backend classifica
+        `carga` vs `carga_nao_prevista` sozinho. Regra
+        [[bdt_uerj_sem_travas_so_alertas]]: se já tem divergência
+        pendente do mesmo tipo, devolve a existente com
+        `ja_existia=true` (não é erro — cliente mostra alerta e
+        permite anexar fotos novas).
+      - `POST bdt/divergencias/listar` — wrapper de
+        `DivergenciaRepository::getByBdt` + subquery de `qtd_fotos` em
+        `doc_referencias` (evita N+1 no mobile).
+      - `POST bdt/divergencias/fotos/{upload,listar,obter,excluir}` —
+        reusa `FotoDocumentoTrait` + `DocumentoService`; grava em
+        `doc_documentos` + `doc_referencias` com
+        `tabela_referencia='trnsp_divergencias'`.
+    - Novo guard `BdtApiService::assertDivergenciaDoCondutor` — resolve
+      divergência → BDT → condutor (mesmo padrão de abastecimento/manutenção).
+    - **Bug pré-existente corrigido junto:**
+      `BdtApiController::encerrarBdt` **não** disparava
+      `MotorDivergenciasService::detectarSeguro` (o web dispara). Deixava
+      divergências auto-detectáveis (passageiros faltando) passarem batido
+      quando o condutor encerrava pelo app. Corrigido com try/catch
+      defensivo (não bloqueia o encerramento se o detector falhar).
+  - **Mobile** (main):
+    - Novo `DivergenciaService` (categoria API) + `DivergenciaResumo` + `RegistrarDivergenciaResult`.
+    - Nova `RegistrarDivergenciaPage` (`/bdt/divergencia/nova`): campo
+      descrição obrigatório, medidas reais opcionais (peso, comprimento,
+      largura, altura), fotos-prova opcionais. Se backend responde
+      `ja_existia`, mostra banner amarelo (alerta, não trava) e sobe
+      as fotos pra divergência existente.
+    - Novo card "Divergências de carga" em `BdtFormPage`: lista com
+      ícone colorido por decisão (amarelo=pendente, verde=prosseguido
+      pelo admin, vermelho=cancelou BDT). Tap abre a page detalhe
+      compartilhada `/registro/detalhe` — sem botões Editar/Excluir
+      (só admin decide via web).
+    - Foto da divergência entra no fluxo genérico da `FotoGaleriaPage`
+      (swipe + legenda).
+  - **Regra aplicada:** [[bdt_uerj_sem_travas_so_alertas]] — condutor
+    consegue registrar SEMPRE, alertas quando há situação incomum, sem
+    bloqueios de fluxo.
+
+
 
 ### Da Sprint 9 web (Viagens avulsas)
 - ✅ Viagens avulsas no BDT (UX de adicionar) — base já existia
