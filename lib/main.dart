@@ -15,6 +15,7 @@ import 'pages/ocorrencia_detalhe_page.dart';
 import 'pages/nova_ocorrencia_page.dart';
 import 'pages/foto_galeria_page.dart';
 import 'pages/foto_viewer_page.dart';
+import 'pages/registro_bdt_detalhe_page.dart';
 import 'services/alertas_service.dart';
 import 'services/background_location_service.dart';
 import 'theme/app_theme.dart';
@@ -98,6 +99,9 @@ class BdtUerjApp extends StatelessWidget {
         "/foto/viewer":           (_) => const FotoViewerPage(),        // arg: int docId
         // Sprint 18.2 — galeria full-screen com swipe entre fotos.
         "/foto/galeria":          (_) => const FotoGaleriaPage(),       // arg: FotoGaleriaArgs
+        // Sprint MUX (2026-07-24) — page compartilhada de "Ver detalhes"
+        // pra registros do BDT (abastecimento/manutencao/ocorrencia).
+        "/registro/detalhe":      (_) => const RegistroBdtDetalhePage(), // arg: RegistroBdtDetalheArgs
       },
 
       theme: AppTheme.light(),

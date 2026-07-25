@@ -8,8 +8,8 @@ import '../services/foto_documento_client.dart' show FotoDocumentoRef;
 import '../services/manutencao_foto_service.dart';
 import '../services/ocorrencia_service.dart';
 import '../utils/date_fmt.dart';
-import 'foto_galeria_page.dart';
 import 'nova_ocorrencia_page.dart' show OcorrenciaFormArgs;
+import 'registro_bdt_detalhe_page.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/foto_documento_thumb.dart';
 import '../widgets/fotos_bdt_section.dart';
@@ -1346,72 +1346,17 @@ class _BdtFormPageState extends State<BdtFormPage> {
     );
   }
 
-  /// Sprint 18.2 — tira de miniaturas clicáveis. Tap abre a galeria
-  /// full-screen com swipe entre as fotos, contador N/M e legenda.
-  ///
-  /// `fetcher` é o mesmo passado pro FotoDocumentoThumb (ex.:
-  /// `AbastecimentoFotoService.obter`).
-  /// `namespace` deve ser único por fluxo (`abastecimento_ID`,
-  /// `manutencao_ID`, `ocorrencia_ID`) pra evitar colisão no cache.
-  Widget _stripFotos({
-    required List<FotoDocumentoRef> fotos,
-    required Future<List<int>?> Function(int) fetcher,
-    required String namespace,
-    required String tituloGaleria,
-  }) {
-    if (fotos.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: SizedBox(
-        height: 64,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: fotos.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 6),
-          itemBuilder: (_, i) {
-            final f = fotos[i];
-            return FotoDocumentoThumb(
-              docId: f.id,
-              fetcher: fetcher,
-              cacheNamespace: namespace,
-              size: 64,
-              onTap: () => _abrirGaleria(
-                fotos: fotos,
-                fetcher: fetcher,
-                indice: i,
-                titulo: tituloGaleria,
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Future<void> _abrirGaleria({
-    required List<FotoDocumentoRef> fotos,
-    required Future<List<int>?> Function(int) fetcher,
-    required int indice,
-    required String titulo,
-  }) {
-    final items = fotos
-        .map((f) => FotoGaleriaItem(
-              docId: f.id,
-              fetcher: fetcher,
-              label: (f.descricao?.trim().isNotEmpty ?? false)
-                  ? f.descricao!
-                  : '',
-            ))
-        .toList();
-    return Navigator.pushNamed(
+  /// Sprint MUX (2026-07-24) — abre a page compartilhada de detalhes.
+  /// Substituiu a tira de miniaturas in-line que poluía os cards.
+  /// Retorna true se a page detalhe fechou com edição/exclusão
+  /// bem-sucedida — o caller usa pra recarregar a lista.
+  Future<bool> _abrirDetalheRegistro(RegistroBdtDetalheArgs args) async {
+    final r = await Navigator.pushNamed(
       context,
-      '/foto/galeria',
-      arguments: FotoGaleriaArgs(
-        fotos: items,
-        indiceInicial: indice,
-        titulo: titulo,
-      ),
+      '/registro/detalhe',
+      arguments: args,
     );
+    return r == true;
   }
 
   Future<bool> _confirmDelete(String msg) async {
@@ -1547,34 +1492,22 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
                   final dhFmt = DateFmt.dataHoraBr(dh);
                   final absId = int.tryParse('${a['id'] ?? 0}') ?? 0;
-                  final fotos = _fotosAbastecimento[absId] ?? const [];
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          "${tipo.isEmpty ? 'Combustível' : tipo} • ${litros.isEmpty ? '-' : litros} L • ${valor.isEmpty ? '-' : valor}",
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: dhFmt.isEmpty ? null : Text(dhFmt),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _openAbastecimentoSheet(existing: a),
-                        ),
-                      ),
-                      _stripFotos(
-                        fotos: fotos,
-                        fetcher: (docId) => AbastecimentoFotoService.obter(
-                          docId,
-                          abastecimentoId: absId,
-                        ),
-                        namespace: 'abastecimento_$absId',
-                        tituloGaleria: 'Abastecimento',
-                      ),
-                    ],
+                  final fotosQtd = (_fotosAbastecimento[absId] ?? const []).length;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      "${tipo.isEmpty ? 'Combustível' : tipo} • ${litros.isEmpty ? '-' : litros} L • ${valor.isEmpty ? '-' : valor}",
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: dhFmt.isEmpty ? null : Text(dhFmt),
+                    trailing: _acoesDoRegistro(
+                      qtdFotos: fotosQtd,
+                      onVer: () => _verAbastecimento(a),
+                      onEditar: () => _openAbastecimentoSheet(existing: a),
+                      onExcluir: () => _excluirAbastecimento(a),
+                    ),
                   );
                 },
               ),
@@ -1627,34 +1560,22 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
                   final iniFmt = DateFmt.dataHoraBr(ini);
                   final mntId = int.tryParse('${m['id'] ?? 0}') ?? 0;
-                  final fotos = _fotosManutencao[mntId] ?? const [];
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          desc.isEmpty ? "Manutenção" : desc,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: iniFmt.isEmpty ? null : Text(iniFmt),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _openManutencaoSheet(existing: m),
-                        ),
-                      ),
-                      _stripFotos(
-                        fotos: fotos,
-                        fetcher: (docId) => ManutencaoFotoService.obter(
-                          docId,
-                          manutencaoId: mntId,
-                        ),
-                        namespace: 'manutencao_$mntId',
-                        tituloGaleria: 'Manutenção',
-                      ),
-                    ],
+                  final fotosQtd = (_fotosManutencao[mntId] ?? const []).length;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      desc.isEmpty ? "Manutenção" : desc,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: iniFmt.isEmpty ? null : Text(iniFmt),
+                    trailing: _acoesDoRegistro(
+                      qtdFotos: fotosQtd,
+                      onVer: () => _verManutencao(m),
+                      onEditar: () => _openManutencaoSheet(existing: m),
+                      onExcluir: () => _excluirManutencao(m),
+                    ),
                   );
                 },
               ),
@@ -1725,55 +1646,69 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final dhFmt = DateFmt.dataHoraBr(o.dataHora);
     if (dhFmt.isNotEmpty) subtitle.add(dhFmt);
 
-    final fotos = _fotosOcorrencia[o.id] ?? const [];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.warning_amber_rounded,
+          color: Color(0xFFB58900)),
+      title: Text(
+        (o.titulo?.trim().isNotEmpty ?? false) ? o.titulo! : 'Ocorrência',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: subtitle.isEmpty
+          ? null
+          : Text(subtitle.join(' • '),
+              maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: _acoesDoRegistro(
+        qtdFotos: o.qtdFotos,
+        onVer: () => _verOcorrencia(bdtId, o),
+        onEditar: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
+        onExcluir: () => _excluirOcorrencia(bdtId, o),
+      ),
+    );
+  }
+
+  /// Sprint MUX (2026-07-24) — trailing padronizado com 3 botões
+  /// (Ver / Editar / Excluir) + badge opcional de quantidade de fotos.
+  /// Reusado por Abastecimento, Manutenção e Ocorrência pra evitar
+  /// divergência visual entre os 3 cards do BDT.
+  Widget _acoesDoRegistro({
+    required int qtdFotos,
+    required VoidCallback onVer,
+    required VoidCallback onEditar,
+    required VoidCallback onExcluir,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.warning_amber_rounded,
-              color: Color(0xFFB58900)),
-          title: Text(
-            (o.titulo?.trim().isNotEmpty ?? false) ? o.titulo! : 'Ocorrência',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          subtitle: subtitle.isEmpty
-              ? null
-              : Text(subtitle.join(' • '),
-                  maxLines: 2, overflow: TextOverflow.ellipsis),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (o.qtdFotos > 0) ...[
-                const Icon(Icons.photo_library_outlined, size: 16),
-                const SizedBox(width: 3),
-                Text('${o.qtdFotos}', style: const TextStyle(fontSize: 12)),
-                const SizedBox(width: 6),
-              ],
-              IconButton(
-                tooltip: 'Editar',
-                icon: const Icon(Icons.edit, size: 20),
-                onPressed: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
-              ),
-              IconButton(
-                tooltip: 'Excluir',
-                icon: const Icon(Icons.delete_outline, size: 20),
-                onPressed: () => _excluirOcorrencia(bdtId, o),
-              ),
-            ],
-          ),
-          onTap: () => _abrirFormOcorrencia(bdtId: bdtId, existente: o),
+        if (qtdFotos > 0) ...[
+          const Icon(Icons.photo_library_outlined,
+              size: 14, color: Colors.black54),
+          const SizedBox(width: 2),
+          Text('$qtdFotos',
+              style:
+                  const TextStyle(fontSize: 11, color: Colors.black54)),
+          const SizedBox(width: 4),
+        ],
+        IconButton(
+          tooltip: 'Ver detalhes',
+          icon: const Icon(Icons.visibility_outlined, size: 20),
+          visualDensity: VisualDensity.compact,
+          onPressed: onVer,
         ),
-        _stripFotos(
-          fotos: fotos,
-          fetcher: OcorrenciaService.obterFoto,
-          namespace: 'ocorrencia',
-          tituloGaleria: (o.titulo?.trim().isNotEmpty ?? false)
-              ? o.titulo!
-              : 'Ocorrência',
+        IconButton(
+          tooltip: 'Editar',
+          icon: const Icon(Icons.edit, size: 20),
+          visualDensity: VisualDensity.compact,
+          onPressed: onEditar,
+        ),
+        IconButton(
+          tooltip: 'Excluir',
+          icon: const Icon(Icons.delete_outline, size: 20),
+          visualDensity: VisualDensity.compact,
+          onPressed: onExcluir,
         ),
       ],
     );
@@ -1815,5 +1750,208 @@ class _BdtFormPageState extends State<BdtFormPage> {
         content: Text(done ? "Ocorrência excluída." : "Falha ao excluir."),
       ));
     if (done) await _load(bdtId);
+  }
+
+  // =========================================================================
+  // Sprint MUX (2026-07-24) — Ver detalhes / Excluir (Abast + Manut)
+  // =========================================================================
+
+  /// Monta [RegistroBdtDetalheArgs] pra Abastecimento e abre a page
+  /// compartilhada. Callbacks de Editar/Excluir reusam os handlers
+  /// da sheet existente.
+  Future<void> _verAbastecimento(Map<String, dynamic> a) async {
+    final bdtId = ModalRoute.of(context)!.settings.arguments as int;
+    final absId = int.tryParse('${a['id'] ?? 0}') ?? 0;
+    final fotos = _fotosAbastecimento[absId] ?? const [];
+
+    final tipo = (a['tipo_combustivel'] ?? '').toString();
+    final litros = (a['litros'] ?? '').toString();
+    final valorTotal = (a['valor_total'] ?? '').toString();
+    final precoUnit = (a['preco_unit'] ?? '').toString();
+    final odo = (a['odometro_km'] ?? '').toString();
+    final nf = (a['nota_fiscal'] ?? '').toString();
+    final obs = (a['observacoes'] ?? '').toString();
+    final dhFmt = DateFmt.dataHoraBr((a['data_hora'] ?? '').toString());
+
+    final linhas = <RegistroBdtLinha>[
+      if (tipo.isNotEmpty)
+        RegistroBdtLinha(icone: Icons.local_gas_station, label: 'Combustível', valor: tipo),
+      if (litros.isNotEmpty)
+        RegistroBdtLinha(icone: Icons.opacity, label: 'Litros', valor: '$litros L'),
+      if (valorTotal.isNotEmpty)
+        RegistroBdtLinha(icone: Icons.attach_money, label: 'Valor total', valor: 'R\$ $valorTotal'),
+      if (precoUnit.isNotEmpty)
+        RegistroBdtLinha(icone: Icons.price_change, label: 'Preço/litro', valor: 'R\$ $precoUnit'),
+      if (odo.isNotEmpty)
+        RegistroBdtLinha(icone: Icons.speed, label: 'Hodômetro', valor: '$odo km'),
+      if (nf.isNotEmpty)
+        RegistroBdtLinha(icone: Icons.receipt_long, label: 'Nota fiscal', valor: nf),
+    ];
+
+    final args = RegistroBdtDetalheArgs(
+      tituloAppBar: 'Abastecimento',
+      subtituloAppBar: 'BDT #$bdtId',
+      icone: Icons.local_gas_station,
+      tituloRegistro: tipo.isEmpty ? 'Abastecimento' : tipo,
+      dataHoraBr: dhFmt,
+      linhas: linhas,
+      observacoes: obs,
+      fotos: fotos,
+      fotoFetcher: (docId) =>
+          AbastecimentoFotoService.obter(docId, abastecimentoId: absId),
+      tituloGaleria: 'Abastecimento',
+      onEditar: (_) async {
+        await _openAbastecimentoSheet(existing: a);
+        return true;
+      },
+      onExcluir: (_) => _excluirAbastecimento(a, confirmar: true),
+    );
+
+    final r = await _abrirDetalheRegistro(args);
+    if (r && mounted) await _load(bdtId);
+  }
+
+  Future<bool> _excluirAbastecimento(
+    Map<String, dynamic> a, {
+    bool confirmar = true,
+  }) async {
+    if (confirmar) {
+      final ok = await _confirmDelete("Excluir este abastecimento?");
+      if (!ok) return false;
+    }
+    final bdtId = ModalRoute.of(context)!.settings.arguments as int;
+    final absId = int.tryParse('${a['id'] ?? 0}') ?? 0;
+    final done = await BdtService.excluirAbastecimento(
+      bdtId: bdtId,
+      abastecimentoId: absId,
+    );
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(done ? "Abastecimento excluído." : "Falha ao excluir."),
+      ));
+    if (done) await _load(bdtId);
+    return done;
+  }
+
+  Future<void> _verManutencao(Map<String, dynamic> m) async {
+    final bdtId = ModalRoute.of(context)!.settings.arguments as int;
+    final mntId = int.tryParse('${m['id'] ?? 0}') ?? 0;
+    final fotos = _fotosManutencao[mntId] ?? const [];
+
+    final desc = (m['descricao'] ?? '').toString();
+    final ini = DateFmt.dataHoraBr((m['data_hora_inicio'] ?? '').toString());
+    final fim = DateFmt.dataHoraBr((m['data_hora_fim'] ?? '').toString());
+    final odo = (m['odometro_km'] ?? '').toString();
+    final houveGasto = m['houve_gasto'] == true || m['houve_gasto'] == 1;
+    final valor = (m['valor_gasto'] ?? '').toString();
+    final obs = (m['observacoes'] ?? '').toString();
+
+    final linhas = <RegistroBdtLinha>[
+      RegistroBdtLinha(
+        icone: Icons.play_circle_outline,
+        label: 'Início',
+        valor: ini.isEmpty ? '—' : ini,
+      ),
+      RegistroBdtLinha(
+        icone: Icons.stop_circle_outlined,
+        label: 'Fim',
+        valor: fim.isEmpty ? '—' : fim,
+      ),
+      if (odo.isNotEmpty)
+        RegistroBdtLinha(icone: Icons.speed, label: 'Hodômetro', valor: '$odo km'),
+      RegistroBdtLinha(
+        icone: houveGasto ? Icons.attach_money : Icons.money_off,
+        label: 'Gasto',
+        valor: houveGasto
+            ? (valor.isEmpty ? 'Sim (valor não informado)' : 'R\$ $valor')
+            : 'Sem gasto',
+      ),
+    ];
+
+    final args = RegistroBdtDetalheArgs(
+      tituloAppBar: 'Manutenção',
+      subtituloAppBar: 'BDT #$bdtId',
+      icone: Icons.build,
+      tituloRegistro: desc.isEmpty ? 'Manutenção' : desc,
+      dataHoraBr: ini,
+      linhas: linhas,
+      observacoes: obs,
+      fotos: fotos,
+      fotoFetcher: (docId) =>
+          ManutencaoFotoService.obter(docId, manutencaoId: mntId),
+      tituloGaleria: 'Manutenção',
+      onEditar: (_) async {
+        await _openManutencaoSheet(existing: m);
+        return true;
+      },
+      onExcluir: (_) => _excluirManutencao(m, confirmar: true),
+    );
+
+    final r = await _abrirDetalheRegistro(args);
+    if (r && mounted) await _load(bdtId);
+  }
+
+  Future<bool> _excluirManutencao(
+    Map<String, dynamic> m, {
+    bool confirmar = true,
+  }) async {
+    if (confirmar) {
+      final ok = await _confirmDelete("Excluir esta manutenção?");
+      if (!ok) return false;
+    }
+    final bdtId = ModalRoute.of(context)!.settings.arguments as int;
+    final mntId = int.tryParse('${m['id'] ?? 0}') ?? 0;
+    final done = await BdtService.excluirManutencao(
+      bdtId: bdtId,
+      manutencaoId: mntId,
+    );
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(done ? "Manutenção excluída." : "Falha ao excluir."),
+      ));
+    if (done) await _load(bdtId);
+    return done;
+  }
+
+  Future<void> _verOcorrencia(int bdtId, OcorrenciaDoBdt o) async {
+    final fotos = _fotosOcorrencia[o.id] ?? const [];
+    final dhFmt = DateFmt.dataHoraBr(o.dataHora);
+    final linhas = <RegistroBdtLinha>[
+      if ((o.tipoNome ?? '').isNotEmpty)
+        RegistroBdtLinha(icone: Icons.category, label: 'Tipo', valor: o.tipoNome!),
+    ];
+
+    final args = RegistroBdtDetalheArgs(
+      tituloAppBar: 'Ocorrência',
+      subtituloAppBar: 'BDT #$bdtId',
+      icone: Icons.warning_amber_rounded,
+      corCabecalho: const Color(0xFFFFF3CD),
+      tituloRegistro:
+          (o.titulo?.trim().isNotEmpty ?? false) ? o.titulo! : 'Ocorrência',
+      dataHoraBr: dhFmt,
+      linhas: linhas,
+      observacoes: o.descricao,
+      fotos: fotos,
+      fotoFetcher: OcorrenciaService.obterFoto,
+      tituloGaleria: (o.titulo?.trim().isNotEmpty ?? false)
+          ? o.titulo!
+          : 'Ocorrência',
+      onEditar: (_) async {
+        await _abrirFormOcorrencia(bdtId: bdtId, existente: o);
+        return true;
+      },
+      onExcluir: (_) async {
+        await _excluirOcorrencia(bdtId, o);
+        // _excluirOcorrencia já recarrega; assume que sim se chegou aqui.
+        return true;
+      },
+    );
+
+    final r = await _abrirDetalheRegistro(args);
+    if (r && mounted) await _load(bdtId);
   }
 }
