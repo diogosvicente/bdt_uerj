@@ -319,7 +319,7 @@ reais em campo.
     em dumps de storage plaintext. Complementa a senha (que já vivia
     no Keystore desde M1).
 
-- 🟡 **MSEC.2 — Deprecar fallback `usuario_id` no body** (2 fases)
+- ✅ **MSEC.2 — Deprecar fallback `usuario_id` no body** (2 fases)
   - ✅ **Fase 1 (2026-07-21) — log WARN**: `BdtApiController::resolveUserId`
     agora loga `warning` sempre que cai no fallback do body, incluindo
     endpoint, IP e motivo (`tinha_token` = "token presente mas
@@ -327,18 +327,26 @@ reais em campo.
     prefixada com `[MSEC.2]` pra facilitar grep. Testado via curl:
     `WARNING - [MSEC.2] fallback usuario_id=46 usado em
     /transporte/api/bdt/dia (IP=..., motivo=sem Authorization header)`.
-  - ⏳ **Fase 2 (após ~1 sprint sem WARN no log)**: retornar 401
-    quando não houver token válido, ignorando `usuario_id` do body
-    por completo. Decisão de bloquear vem da análise do log da
-    fase 1 — se algum caminho mobile ainda depende do fallback,
-    corrigir esse caminho antes de bloquear.
-  - **Como observar em dev**: `docker compose exec apache
-    tail -f /var/www/html/e-prefeitura/writable/logs/log-YYYY-MM-DD.log
-    | grep MSEC.2`. Em produção, adicionar filtro no dashboard de
-    logs (Sentry/CloudWatch/etc.) por prefixo `[MSEC.2]`.
-  - **Efeito da fase 1:** zero mudança de comportamento observável
-    pelo usuário; ganha-se rastreabilidade completa do uso do
-    fallback antes de bloquear.
+  - ✅ **Fase 2 (2026-07-25)** — fallback REMOVIDO. `resolveUserId`
+    retorna 0 quando não tem Bearer válido; caller devolve 401 via
+    `error()`. Análise dos logs da Fase 1: todos os WARN vieram dos
+    meus próprios testes via curl (o `ApiClient` do mobile sempre
+    manda `Authorization: Bearer` via `TokenStorage.readAccess()`).
+    Nenhum call site mobile depende do fallback — bloqueio seguro.
+    - **Novo status distinguível**: `error(401,...)` agora retorna
+      `TOKEN_EXPIRED` se `$this->tokenExpired` estava setado
+      (mobile faz refresh via `ApiClient.refreshTokens`),
+      ou `INVALID_TOKEN` caso contrário (mobile deve mandar pra
+      login — `AuthService.verifyToken` já chama `logout()` em
+      `httpStatus == 401`).
+    - **Tentativa de fallback**: se veio `usuario_id` no body sem
+      Bearer válido, loga `info` `[MSEC.2 F2] tentativa … RECUSADA`
+      pra facilitar diagnóstico se algum caminho novo aparecer.
+    - **Impacto em curl de dev**: `curl` PRECISA agora mandar
+      `-H "Authorization: Bearer <token>"`. Pra pegar token dev:
+      `docker exec -i mariadb mysql -u root -proot -sN eprefeitura -e 'SELECT token FROM tokens WHERE id_usuario=X AND expira_em > NOW() LIMIT 1;'`.
+    - **Zero mudança no mobile** — o `ApiClient` já anexava Bearer
+      em toda chamada; `verifyToken()` já tratava 401 corretamente.
 
 - ✅ **MSEC.3 — Rate limit no `POST /transporte/api/login`** (2026-07-21)
   - **Backend** (`AuthApiController::login`): `Services::throttler()`
