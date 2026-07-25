@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/abastecimento_foto_service.dart';
 import '../services/bdt_service.dart';
+import '../services/carga_service.dart';
 import '../services/divergencia_service.dart';
 import '../services/foto_documento_client.dart' show FotoDocumentoRef;
 import '../services/manutencao_foto_service.dart';
@@ -39,6 +40,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
   List<OcorrenciaDoBdt> ocorrencias = [];
   // Sprint 6 W+M — divergências de carga registradas pelo condutor.
   List<DivergenciaResumo> divergencias = [];
+  // Sprint 6 W+M — carga DECLARADA pela(s) solicitação(ões) vinculadas
+  // ao BDT (leitura). Pode ter mais de uma se o BDT atende múltiplas
+  // solicitações. Serve de referência quando condutor chega no destino.
+  List<CargaDoBdt> cargas = [];
 
   // Sprint 18.2 — fotos por registro (populadas em paralelo no _load).
   // Chave = id do registro; valor = lista de refs (id + mime + descricao).
@@ -218,6 +223,8 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final ocResolved = await OcorrenciaService.listarDoBdt(bdtId);
     // Sprint 6 W+M — divergências (motor W10).
     final divResolved = await DivergenciaService.listarDoBdt(bdtId);
+    // Sprint 6 W+M — carga declarada (leitura).
+    final cargasResolved = await CargaService.listar(bdtId);
 
     if (!mounted) return;
     setState(() {
@@ -225,6 +232,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
       manutencoes = manResolved;
       ocorrencias = ocResolved;
       divergencias = divResolved;
+      cargas = cargasResolved;
     });
 
     // Sprint 18.2 — fotos por registro, em paralelo. Não bloqueia o
@@ -1449,6 +1457,14 @@ class _BdtFormPageState extends State<BdtFormPage> {
                 // Sprint MUX (2026-07-24) — Marcos da Jornada removidos
                 // daqui. Estão em ValidacaoInicioPage (canônica, com
                 // assinatura M4), acessível pelo sheet "Ações" do BdtPage.
+
+                // Sprint 6 W+M (2026-07-25) — Carga declarada (leitura).
+                // Some se o BDT não tem carga em nenhuma solicitação —
+                // maioria dos BDTs comuns de intercâmpi de pessoas.
+                if (cargas.isNotEmpty) ...[
+                  _cardCargaDeclarada(bdtId),
+                  const SizedBox(height: 12),
+                ],
                 _cardAbastecimentos(),
                 const SizedBox(height: 12),
 
@@ -2169,5 +2185,179 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
     final r = await _abrirDetalheRegistro(args);
     if (r && mounted) await _load(bdtId);
+  }
+
+  // =========================================================================
+  // Sprint 6 W+M — Carga declarada (leitura). Condutor CONSULTA o que foi
+  // prometido antes de chegar no destino; se der divergência, registra no
+  // card "Divergências de carga" ao lado.
+  // =========================================================================
+
+  Widget _cardCargaDeclarada(int bdtId) {
+    return Card(
+      elevation: 0,
+      color: const Color(0xFFEAF3FF),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFB8DAFF)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.inventory_2_outlined, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Carga declarada',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Confira o que foi declarado no pedido. Se a carga real '
+              'não bater, registre em "Divergências de carga".',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            for (int i = 0; i < cargas.length; i++) ...[
+              _tileCarga(bdtId, cargas[i]),
+              if (i < cargas.length - 1) const Divider(height: 16),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tileCarga(int bdtId, CargaDoBdt c) {
+    // Monta subtítulo com peso e dimensões condensados.
+    final medidas = <String>[];
+    if (c.pesoKg != null) medidas.add('${c.pesoKg!.toStringAsFixed(1)} kg');
+    final dims = [c.comprimentoM, c.larguraM, c.alturaM]
+        .where((d) => d != null)
+        .map((d) => d!.toStringAsFixed(2))
+        .toList();
+    if (dims.length == 3) {
+      medidas.add('${dims[0]} × ${dims[1]} × ${dims[2]} m');
+    } else {
+      for (final d in dims) {
+        medidas.add('$d m');
+      }
+    }
+
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        c.protocolo,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        [
+          if ((c.descricao ?? '').trim().isNotEmpty) c.descricao!.trim(),
+          if (medidas.isNotEmpty) medidas.join(' • '),
+          if ((c.pessoalApoio ?? '').trim().isNotEmpty)
+            'Apoio: ${c.pessoalApoio!.trim()}',
+        ].join('\n'),
+        maxLines: 4,
+        overflow: TextOverflow.ellipsis,
+      ),
+      isThreeLine: true,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (c.fotos.isNotEmpty) ...[
+            const Icon(Icons.photo_library_outlined,
+                size: 14, color: Colors.black54),
+            const SizedBox(width: 2),
+            Text('${c.fotos.length}',
+                style: const TextStyle(fontSize: 11, color: Colors.black54)),
+            const SizedBox(width: 4),
+          ],
+          IconButton(
+            tooltip: 'Ver detalhes',
+            icon: const Icon(Icons.visibility_outlined, size: 20),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _verCarga(bdtId, c),
+          ),
+        ],
+      ),
+      onTap: () => _verCarga(bdtId, c),
+    );
+  }
+
+  Future<void> _verCarga(int bdtId, CargaDoBdt c) async {
+    final linhas = <RegistroBdtLinha>[
+      RegistroBdtLinha(
+        icone: Icons.confirmation_number_outlined,
+        label: 'Solicitação',
+        valor: c.protocolo,
+      ),
+      if (c.pesoKg != null)
+        RegistroBdtLinha(
+          icone: Icons.scale,
+          label: 'Peso',
+          valor: '${c.pesoKg!.toStringAsFixed(1)} kg',
+        ),
+      if (c.comprimentoM != null)
+        RegistroBdtLinha(
+          icone: Icons.straighten,
+          label: 'Comprimento',
+          valor: '${c.comprimentoM!.toStringAsFixed(2)} m',
+        ),
+      if (c.larguraM != null)
+        RegistroBdtLinha(
+          icone: Icons.straighten,
+          label: 'Largura',
+          valor: '${c.larguraM!.toStringAsFixed(2)} m',
+        ),
+      if (c.alturaM != null)
+        RegistroBdtLinha(
+          icone: Icons.height,
+          label: 'Altura',
+          valor: '${c.alturaM!.toStringAsFixed(2)} m',
+        ),
+      if ((c.pessoalApoio ?? '').trim().isNotEmpty)
+        RegistroBdtLinha(
+          icone: Icons.groups_outlined,
+          label: 'Pessoal apoio',
+          valor: c.pessoalApoio!.trim(),
+        ),
+    ];
+
+    // Adapta CargaFotoRef → FotoDocumentoRef pra reusar o layout
+    // padronizado do RegistroBdtDetalhePage (que já sabe abrir a
+    // FotoGaleriaPage swipeable com legenda).
+    final fotosRefs = c.fotos
+        .map((f) => FotoDocumentoRef(
+              id: f.id,
+              mimeType: f.mimeType,
+              createdAt: f.createdAt,
+              descricao: f.descricao,
+            ))
+        .toList();
+
+    final args = RegistroBdtDetalheArgs(
+      tituloAppBar: 'Carga declarada',
+      subtituloAppBar: c.protocolo,
+      icone: Icons.inventory_2_outlined,
+      corCabecalho: const Color(0xFFEAF3FF),
+      tituloRegistro: (c.descricao ?? '').trim().isNotEmpty
+          ? c.descricao!.trim()
+          : c.protocolo,
+      linhas: linhas,
+      fotos: fotosRefs,
+      fotoFetcher: (docId) => CargaService.obterFoto(docId, bdtId: bdtId),
+      tituloGaleria: 'Carga ${c.protocolo}',
+      // Leitura pura — condutor não edita nem exclui carga declarada.
+      onEditar: null,
+      onExcluir: null,
+    );
+
+    await _abrirDetalheRegistro(args);
   }
 }
