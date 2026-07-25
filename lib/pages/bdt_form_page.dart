@@ -399,9 +399,19 @@ class _BdtFormPageState extends State<BdtFormPage> {
 
   bool get _bdtPermiteMarcos {
     final s = _bdtStatus;
-    // Backend só aceita marcos em status 2 (Em andamento) e 5 (Reaberto).
-    return s == 2 || s == 5;
+    // Sprint MUX (2026-07-24) — inclui status 1 (Em aberto): o primeiro
+    // marco AUTO-INICIA o BDT (backend BdtJornadaService::registrar promove
+    // pra Em andamento antes de gravar). Antes o condutor tinha que
+    // lembrar de "Iniciar trecho" primeiro só pra destravar os marcos.
+    // Backend valida final; 3 (Encerrado) e 4 (Cancelado) continuam
+    // bloqueados por lá.
+    return s == 1 || s == 2 || s == 5;
   }
+
+  /// Sprint MUX (2026-07-24) — verdadeiro se registrar o próximo marco
+  /// vai promover o BDT de Em aberto → Em andamento. Usado pra mostrar
+  /// um hint discreto no card ("O primeiro marco inicia o BDT").
+  bool get _proximoMarcoIniciaBdt => _bdtStatus == 1;
 
   /// Permite registrar somente em ordem (partida → apresentacao → embarque_passageiro).
   /// A ordem também é validada no backend; aqui é só UX.
@@ -442,7 +452,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'O BDT precisa estar Em andamento ou Reaberto para registrar marcos.',
+            'Este BDT já foi encerrado — não aceita novos marcos.',
           ),
         ),
       );
@@ -776,7 +786,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                             keyboardType: TextInputType.number,
                             inputFormatters: [_decimal1],
                             decoration: const InputDecoration(
-                              labelText: "Odômetro (km)",
+                              labelText: "Hodômetro (km)",
                               border: OutlineInputBorder(),
                               helperText: "Opcional",
                             ),
@@ -1767,9 +1777,12 @@ class _BdtFormPageState extends State<BdtFormPage> {
             ),
             const SizedBox(height: 4),
             Text(
-              _bdtPermiteMarcos
-                  ? "Registre cada marco no momento em que ocorrer. A ordem é obrigatória."
-                  : "O BDT precisa estar Em andamento ou Reaberto para registrar marcos.",
+              !_bdtPermiteMarcos
+                  ? "Este BDT já foi encerrado — não aceita novos marcos."
+                  : _proximoMarcoIniciaBdt
+                      ? "Registre cada marco no momento em que ocorrer. "
+                          "O primeiro marco vai iniciar o BDT automaticamente."
+                      : "Registre cada marco no momento em que ocorrer. A ordem é obrigatória.",
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),

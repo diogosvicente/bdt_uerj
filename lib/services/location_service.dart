@@ -84,7 +84,17 @@ class LocationService {
   }
 
   static Future<Map<String, dynamic>?> getLocPayload() async {
-    final pos = await getCurrentPosition();
+    // Sprint MUX (2026-07-24) — timeout global. `getCurrentPosition` já
+    // tem timeLimit=8s, mas `ensureForegroundPermission` (check + request)
+    // pode ficar pendurada indefinidamente se o Play Services engasgar
+    // no emulador ou se o usuário demorar a responder ao dialog nativo.
+    // Sem esse teto, o `iniciarTrecho` do BDT travava com o banner
+    // "Iniciando trecho no servidor…" para sempre. 12s > 8s do
+    // getCurrentPosition, cobrindo caso legítimo de fix GPS lento.
+    final Position? pos = await getCurrentPosition().timeout(
+      const Duration(seconds: 12),
+      onTimeout: () => null,
+    );
     if (pos == null) return null;
 
     return {

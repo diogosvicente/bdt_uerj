@@ -400,7 +400,7 @@ class _BdtPageState extends State<BdtPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Você ainda não informou a KM do odômetro no início do BDT. '
+              'Você ainda não informou a KM do hodômetro no início do BDT. '
               'Pode preencher agora — ou pular e informar depois.',
               style: TextStyle(fontSize: 13),
             ),
@@ -1366,7 +1366,7 @@ class _BdtPageState extends State<BdtPage> {
                             : 'KM inicial do BDT',
                         helperText: pulouKmInicial
                             ? 'Você optou por pular. Preencha depois pela web.'
-                            : 'Odômetro no início do BDT (primeiro trecho)',
+                            : 'Hodômetro no início do BDT (primeiro trecho)',
                         border: const OutlineInputBorder(),
                         suffixText: 'km',
                         errorText: kmInicialError,
@@ -1432,7 +1432,7 @@ class _BdtPageState extends State<BdtPage> {
                             }
                           },
                           decoration: InputDecoration(
-                            labelText: 'Odômetro saída',
+                            labelText: 'Hodômetro saída',
                             border: const OutlineInputBorder(),
                             errorText: odoError,
                           ),
@@ -1467,14 +1467,14 @@ class _BdtPageState extends State<BdtPage> {
                                   // preenche depois pela web se esqueceu.
                                   if (odoCtrl.text.trim().isEmpty) {
                                     final segueSemOdo = await _confirmDialog(
-                                      title: 'Sem odômetro de saída',
+                                      title: 'Sem hodômetro de saída',
                                       message:
-                                          'Você não informou o odômetro de saída — '
+                                          'Você não informou o hodômetro de saída — '
                                           'ele é usado no cálculo de KM do trecho.\n\n'
                                           'Você pode iniciar assim mesmo e '
                                           'preencher depois pela web.',
                                       cancelText: 'Informar agora',
-                                      confirmText: 'Iniciar sem odômetro',
+                                      confirmText: 'Iniciar sem hodômetro',
                                       icon: Icons.warning_amber_rounded,
                                       iconColor: Colors.amber.shade800,
                                     );
@@ -1530,9 +1530,9 @@ class _BdtPageState extends State<BdtPage> {
                                       odoValor < kmInicialEfetivo) {
                                     final segueMesmoAssim =
                                         await _confirmDialog(
-                                      title: 'Odômetro abaixo da KM inicial',
+                                      title: 'Hodômetro abaixo da KM inicial',
                                       message:
-                                          'O odômetro de saída (${odoValor.toStringAsFixed(0)} km) '
+                                          'O hodômetro de saída (${odoValor.toStringAsFixed(0)} km) '
                                           'está abaixo da KM inicial do BDT '
                                           '(${kmInicialEfetivo.toStringAsFixed(0)} km).\n\n'
                                           'Isso normalmente indica engano de digitação. '
@@ -1560,7 +1560,7 @@ class _BdtPageState extends State<BdtPage> {
                                     message:
                                         'Tem certeza que deseja iniciar este trecho?\n\n'
                                         'Hora de saída: ${horaCtrl.text.trim()}\n'
-                                        'Odômetro: $odoResumo',
+                                        'Hodômetro: $odoResumo',
                                     cancelText: 'Não',
                                     confirmText: 'Sim, iniciar',
                                   );
@@ -1640,7 +1640,7 @@ class _BdtPageState extends State<BdtPage> {
                                         setLocal(() {
                                           showProgress = false;
                                           formError =
-                                              'Trecho iniciado, mas hora/odômetro '
+                                              'Trecho iniciado, mas hora/hodômetro '
                                               'não foram salvos. Tente novamente '
                                               'ou reporte à equipe.';
                                         });
@@ -1667,6 +1667,19 @@ class _BdtPageState extends State<BdtPage> {
                                       setLocal(() {
                                         showProgress = false; // ✅ para o banner
                                         formError = 'Falha ao iniciar trecho.';
+                                      });
+                                    }
+                                  } catch (e) {
+                                    // Sprint MUX (2026-07-24) — captura
+                                    // qualquer exception nao esperada (ex.:
+                                    // GPS travado, network hang) e sai do
+                                    // estado busy pra a UI nao ficar
+                                    // pendurada em "Aguarde…".
+                                    if (mounted && sheetOpen) {
+                                      setLocal(() {
+                                        showProgress = false;
+                                        formError =
+                                            'Falha inesperada ao iniciar trecho: $e';
                                       });
                                     }
                                   } finally {
@@ -1833,7 +1846,7 @@ class _BdtPageState extends State<BdtPage> {
                             }
                           },
                           decoration: InputDecoration(
-                            labelText: 'Odômetro chegada',
+                            labelText: 'Hodômetro chegada',
                             border: const OutlineInputBorder(),
                             errorText: odoError,
                           ),
@@ -1867,14 +1880,14 @@ class _BdtPageState extends State<BdtPage> {
                                   // bloquear".
                                   if (odoCtrl.text.trim().isEmpty) {
                                     final segueSemOdo = await _confirmDialog(
-                                      title: 'Sem odômetro de chegada',
+                                      title: 'Sem hodômetro de chegada',
                                       message:
-                                          'Você não informou o odômetro de chegada — '
+                                          'Você não informou o hodômetro de chegada — '
                                           'ele é usado no cálculo de KM do trecho.\n\n'
                                           'Você pode finalizar assim mesmo e '
                                           'preencher depois pela web.',
                                       cancelText: 'Informar agora',
-                                      confirmText: 'Finalizar sem odômetro',
+                                      confirmText: 'Finalizar sem hodômetro',
                                       icon: Icons.warning_amber_rounded,
                                       iconColor: Colors.amber.shade800,
                                     );
@@ -1896,7 +1909,7 @@ class _BdtPageState extends State<BdtPage> {
                                     message:
                                         'Tem certeza que deseja finalizar este trecho?\n\n'
                                         'Hora de chegada: ${horaCtrl.text.trim()}\n'
-                                        'Odômetro: $odoResumo',
+                                        'Hodômetro: $odoResumo',
                                     cancelText: 'Não',
                                     confirmText: 'Sim, finalizar',
                                   );
@@ -1941,7 +1954,7 @@ class _BdtPageState extends State<BdtPage> {
                                         // sucesso silenciosamente.
                                         setLocal(() {
                                           formError =
-                                              'Trecho finalizado, mas hora/odômetro '
+                                              'Trecho finalizado, mas hora/hodômetro '
                                               'de chegada não foram salvos. Tente '
                                               'novamente ou reporte à equipe.';
                                         });
@@ -2117,7 +2130,7 @@ class _BdtPageState extends State<BdtPage> {
 
               if (odoSaidaCtrl.text.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Informe o odômetro de saída.')),
+                  const SnackBar(content: Text('Informe o hodômetro de saída.')),
                 );
                 return;
               }
@@ -2176,7 +2189,7 @@ class _BdtPageState extends State<BdtPage> {
               if (odoChegadaCtrl.text.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Informe o odômetro de chegada.'),
+                    content: Text('Informe o hodômetro de chegada.'),
                   ),
                 );
                 return;
@@ -2299,7 +2312,7 @@ class _BdtPageState extends State<BdtPage> {
                           controller: odoSaidaCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Odômetro saída',
+                            labelText: 'Hodômetro saída',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -2336,7 +2349,7 @@ class _BdtPageState extends State<BdtPage> {
                           controller: odoChegadaCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Odômetro chegada',
+                            labelText: 'Hodômetro chegada',
                             border: OutlineInputBorder(),
                           ),
                         ),
