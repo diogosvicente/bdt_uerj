@@ -590,6 +590,50 @@ class _BdtPageState extends State<BdtPage> {
     }
   }
 
+  /// Sprint 15 W+M (2026-07-26) — variante do `_stopTracking` usada ao
+  /// FINALIZAR o trecho: aguarda até 5s pra a fila esvaziar antes de
+  /// parar o service. Se sobrarem pontos, mostra snackbar informativo.
+  /// Preserva a semântica sem-travas: nunca bloqueia — no pior caso o
+  /// worker do BG service continua drenando em background após stop.
+  Future<void> _stopTrackingWithDrain({
+    required int bdtId,
+    required int trechoId,
+  }) async {
+    _pontosTimer?.cancel();
+    _pontosTimer = null;
+    _connSub?.cancel();
+    _connSub = null;
+
+    final restantes = await GpsLiveService.stopWithDrain(
+      bdtId: bdtId,
+      trechoId: trechoId,
+      timeout: const Duration(seconds: 5),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      trackingAgendaId = null;
+      trackingTrechoId = null;
+      _pontosNaFila = restantes;
+    });
+
+    if (restantes > 0) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              '$restantes ponto${restantes == 1 ? "" : "s"} de GPS '
+              'ainda ${restantes == 1 ? "será enviado" : "serão enviados"} '
+              'em background quando reconectar.',
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+    }
+  }
+
   // =========================
   // UI helpers
   // =========================
@@ -1768,7 +1812,14 @@ class _BdtPageState extends State<BdtPage> {
                                         return;
                                       }
 
-                                      _stopTracking();
+                                      // Drain com timeout — se sobrar
+                                      // ponto na fila, snackbar informa
+                                      // (não trava a UX).
+                                      await _stopTrackingWithDrain(
+                                        bdtId: bdtId,
+                                        trechoId: trechoId,
+                                      );
+                                      if (!mounted || !sheetOpen) return;
 
                                       Navigator.pop(ctx); // fecha primeiro
                                       ScaffoldMessenger.of(context)
@@ -2023,7 +2074,10 @@ class _BdtPageState extends State<BdtPage> {
                     odoChegada: odoChegadaCtrl.text.trim(),
                   );
 
-                  _stopTracking();
+                  await _stopTrackingWithDrain(
+                    bdtId: bdtId,
+                    trechoId: trechoId,
+                  );
                 }
 
                 ScaffoldMessenger.of(context).showSnackBar(

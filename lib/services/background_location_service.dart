@@ -145,6 +145,43 @@ class BackgroundLocationService {
     service.invoke('stop');
   }
 
+  /// Sprint 15 W+M (2026-07-26) — ressuscita o service se ele foi morto
+  /// (OOM, fabricante agressivo, low memory) mas o `_prefRunning` ainda
+  /// diz que devia estar rodando. Chamado no `main()` logo após `init()`.
+  ///
+  /// **Por que precisa disso**: fabricantes como Xiaomi/Huawei matam
+  /// foreground services agressivamente mesmo com bateria isenta. Sem
+  /// esta ressuscitação, o condutor reabria o app e o GPS estava parado
+  /// silenciosamente — todos os pontos daquela janela ficariam faltando.
+  ///
+  /// Idempotente e safe: se o service já está rodando, é no-op. Se não
+  /// há BDT/trecho salvo, também é no-op.
+  static Future<void> resumeIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    final devia = prefs.getBool(_prefRunning) ?? false;
+    if (!devia) return;
+
+    final bdtId = prefs.getInt(_prefBdtId) ?? 0;
+    final trechoId = prefs.getInt(_prefTrechoId) ?? 0;
+    if (bdtId <= 0 || trechoId <= 0) {
+      _log.info('resumeIfNeeded: prefRunning=true mas sem bdt/trecho — ignora');
+      return;
+    }
+
+    final service = FlutterBackgroundService();
+    final rodando = await service.isRunning();
+    if (rodando) {
+      _log.info('resumeIfNeeded: service já rodando (bdt=$bdtId trecho=$trechoId)');
+      return;
+    }
+
+    final started = await service.startService();
+    _log.info(
+      'resumeIfNeeded: service ressuscitado bdt=$bdtId trecho=$trechoId '
+      'started=$started',
+    );
+  }
+
   static Future<bool> isRunning() async {
     return FlutterBackgroundService().isRunning();
   }

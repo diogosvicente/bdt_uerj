@@ -40,6 +40,12 @@ Future<void> main() async {
   // só sobe quando um trecho é iniciado (GpsLiveService.start).
   await BackgroundLocationService.init();
 
+  // Sprint 15 W+M (2026-07-26) — ressuscita o service se ele foi morto
+  // (OOM, fabricante agressivo) enquanto havia trecho ativo. No-op se
+  // não tinha trecho salvo OU se o service já está rodando.
+  // ignore: discarded_futures
+  BackgroundLocationService.resumeIfNeeded();
+
   // Sprint M5 — alertas locais 1h/30min antes de cada BDT. Só inicializa;
   // o agendamento em si acontece quando a HomePage carrega a lista do dia
   // (`HomePage._reload` chama `AlertasService.sincronizarComBdtsDoDia`).

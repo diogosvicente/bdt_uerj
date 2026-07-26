@@ -1074,6 +1074,54 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **PreBdtFormPage — erros inline (veículo + trechos)** (2026-07-26)
+  — os SnackBars "Escolha um veículo." e "Trecho N: preencha origem e
+  destino." eram invisíveis atrás do teclado. Substituídos por
+  `String? _veiculoError` (texto embaixo do `VeiculoAutocomplete`,
+  cor `colorScheme.error`) + `errOrigem`/`errDestino` na classe
+  `_TrechoInput` (renderizados via `errorText` nos `TextFormField`).
+  Validação roda TUDO antes de retornar — condutor vê todos os
+  erros de uma vez. `onChanged` limpa o erro do campo ao digitar.
+  Padrão idêntico ao `AbastecimentoSheet`/`TrechoExtraSheet`/
+  `CriarBdtPage`.
+
+- ✅ **GPS offline — timer foreground também enfileira** (2026-07-26) —
+  o `GpsLiveService` timer chamava `enviarLocalizacao` direto; se
+  falhasse (rede caindo em tunel/área rural), o ponto era PERDIDO
+  no isolate main. O único que sobrevivia era o BG service (que
+  enfileira). Agora o timer também usa o `LocationQueueDb` como
+  fallback — mesma fila SQLite compartilhada. O worker do BG
+  service (batch de 20 a cada 30s, retry até 10×) consome ambas
+  origens. Preserva o duplo motor: o timer continua sendo caminho
+  preferido (baixa latência), a fila é rede de segurança.
+
+- ✅ **GPS offline — drain final ao finalizar trecho** (2026-07-26) —
+  novo `GpsLiveService.stopWithDrain(bdtId, trechoId, timeout: 5s)`.
+  Antes de parar o service, aguarda até 5s pra a fila daquele
+  trecho zerar. Retorna quantos pontos sobraram; a UI mostra
+  snackbar "N pontos ainda serão enviados em background quando
+  reconectar." Nunca trava — se sobrar, o BG service continua
+  drenando após stop ([[bdt_uerj_sem_travas_so_alertas]]).
+  `_stopTrackingWithDrain` na `bdt_page` é usado nos dois pontos
+  de "Finalizar trecho" (`_openTrechoSheet` e formulário legacy).
+
+- ✅ **GPS offline — resumeIfNeeded no main()** (2026-07-26) —
+  fabricantes agressivos (Xiaomi/Huawei/Samsung One UI) matam o
+  foreground service mesmo com isenção de bateria. Novo
+  `BackgroundLocationService.resumeIfNeeded()` — checa
+  `_bg_gps_running` no SharedPreferences; se ele diz que devia
+  estar rodando mas o service morreu (`FlutterBackgroundService()
+  .isRunning()==false`), chama `startService()` de novo com o
+  contexto salvo (bdt_id/trecho_id nas prefs). Chamado no `main.dart`
+  logo após `BackgroundLocationService.init()`. Idempotente — se
+  já está rodando ou não tem BDT/trecho salvo, é no-op.
+
+- ✅ **Doc + memory: arquitetura GPS offline** (2026-07-26) —
+  nova memory `bdt_uerj_gps_offline` documenta o duplo motor +
+  fila compartilhada + retry + gaps conhecidos (dedup no backend
+  ausente, sem BOOT_COMPLETED receiver). Serve de referência pra
+  não simplificar removendo um dos motores acidentalmente.
+
 - ✅ **CriarBdtPage — trechos opcionais pré-criação** (2026-07-26) —
   o condutor pode adicionar 1+ trechos junto do form de criar BDT
   (evita o vai-e-volta "cria BDT → abre BDT → adiciona trecho extra"

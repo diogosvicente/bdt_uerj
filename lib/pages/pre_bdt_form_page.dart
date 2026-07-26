@@ -41,6 +41,10 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
 
   bool _enviando = false;
 
+  /// Sprint 15 W+M (2026-07-26) — erro do card Identificação.
+  /// Antes: SnackBar "Escolha um veículo." — invisível atrás do teclado.
+  String? _veiculoError;
+
   // ── Sprint 11 W+M — Carga (opcional). Fotos ficam obrigatórias
   //     na UX quando `_temCarga=true` (paridade com folha.php do web).
   bool _temCarga = false;
@@ -205,11 +209,15 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
   }
 
   Future<void> _enviar() async {
+    // Sprint 15 W+M (2026-07-26) — validação por campo com errorText
+    // inline em vez de SnackBar (que fica atrás do teclado). Roda
+    // TODA a validação antes de retornar pra o condutor ver todos os
+    // erros de uma vez (não corrigir 1, apertar, corrigir o próximo).
+    bool temErro = false;
+
     if (_veiculo == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Escolha um veículo.')),
-      );
-      return;
+      setState(() => _veiculoError = 'Escolha um veículo.');
+      temErro = true;
     }
 
     final trechosPayload = <Map<String, dynamic>>[];
@@ -217,11 +225,15 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
       final t = _trechos[i];
       final origem = t.origemCtrl.text.trim();
       final destino = t.destinoCtrl.text.trim();
-      if (origem.isEmpty || destino.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Trecho ${i + 1}: preencha origem e destino.')),
-        );
-        return;
+      final novoErrOrigem = origem.isEmpty ? 'Informe a origem.' : null;
+      final novoErrDestino = destino.isEmpty ? 'Informe o destino.' : null;
+      if (novoErrOrigem != null || novoErrDestino != null) {
+        setState(() {
+          t.errOrigem = novoErrOrigem;
+          t.errDestino = novoErrDestino;
+        });
+        temErro = true;
+        continue;
       }
       trechosPayload.add({
         'origem': origem,
@@ -232,6 +244,8 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
           'chegada': _apiHora(t.horaChegadaCtrl.text),
       });
     }
+
+    if (temErro) return;
 
     // Sprint 11 W+M — validação de carga (paridade com folha.php do web).
     // Se `_temCarga=true`: descrição obrigatória + pelo menos 1 foto
@@ -543,8 +557,21 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
             const SizedBox(height: 12),
             VeiculoAutocomplete(
               initialValue: _veiculo,
-              onChanged: (v) => setState(() => _veiculo = v),
+              onChanged: (v) => setState(() {
+                _veiculo = v;
+                if (v != null) _veiculoError = null;
+              }),
             ),
+            if (_veiculoError != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                _veiculoError!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 12,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             InkWell(
               onTap: _pickData,
@@ -627,17 +654,25 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
           const SizedBox(height: 6),
           TextFormField(
             controller: t.origemCtrl,
-            decoration: const InputDecoration(
+            onChanged: (_) {
+              if (t.errOrigem != null) setState(() => t.errOrigem = null);
+            },
+            decoration: InputDecoration(
               labelText: 'Origem',
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
+              errorText: t.errOrigem,
             ),
           ),
           const SizedBox(height: 8),
           TextFormField(
             controller: t.destinoCtrl,
-            decoration: const InputDecoration(
+            onChanged: (_) {
+              if (t.errDestino != null) setState(() => t.errDestino = null);
+            },
+            decoration: InputDecoration(
               labelText: 'Destino',
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
+              errorText: t.errDestino,
             ),
           ),
           const SizedBox(height: 8),
@@ -979,6 +1014,13 @@ class _TrechoInput {
   final destinoCtrl = TextEditingController();
   final horaSaidaCtrl = TextEditingController();
   final horaChegadaCtrl = TextEditingController();
+
+  // Sprint 15 W+M (2026-07-26) — erros inline por trecho (mesmo padrão
+  // dos outros forms: AbastecimentoSheet, TrechoExtraSheet, etc.).
+  // Antes: SnackBar "Trecho N: preencha origem e destino." — invisível
+  // atrás do teclado.
+  String? errOrigem;
+  String? errDestino;
 
   _TrechoInput();
 
