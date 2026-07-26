@@ -6,6 +6,7 @@ import '../models/veiculo.dart';
 import '../services/bdt_service.dart';
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/condutor_autocomplete.dart';
 import '../widgets/veiculo_autocomplete.dart';
 
 /// Sprint 15 W+M (2026-07-25/26) — Criar BDT sem solicitação (mobile).
@@ -271,24 +272,16 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
                   ],
                 ),
               ] else ...[
-                DropdownButtonFormField<CondutorLite>(
+                CondutorAutocomplete(
+                  condutores: _condutores!,
                   initialValue: _condutorSelecionado,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Selecione o condutor',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final c in _condutores!)
-                      DropdownMenuItem(value: c, child: Text(c.nome)),
-                  ],
                   onChanged: (c) {
                     setState(() {
                       _condutorSelecionado = c;
                       _condutorError = null;
                       _checkup = null;
                     });
-                    if (_veiculo != null) _dispararCheckup();
+                    if (_veiculo != null && c != null) _dispararCheckup();
                   },
                 ),
               ],

@@ -1074,6 +1074,28 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **CriarBdtPage — autocomplete filtrável de condutor** (2026-07-26)
+  — o `DropdownButtonFormField` estático foi trocado por um
+  `CondutorAutocomplete` novo (`lib/widgets/condutor_autocomplete.dart`).
+  Filtro `contains` case-insensitive + sem acento em cima da lista
+  IN-MEMORY (não bate no backend — a lista de ativos é pequena,
+  já foi baixada no `initState`). Padrão UX igual ao
+  `VeiculoAutocomplete`: card compacto depois de escolher, botão
+  "Trocar", ícone dropdown na direita pra abrir o menu sem digitar.
+  O item `souEu` fica destacado ("Você mesmo", ícone person cheio).
+
+- ✅ **Android build — silencia warnings Java 8 obsolete + jvmTarget
+  mismatch** (2026-07-26) — o build printava 3 warnings por plugin
+  Flutter a cada `flutter run` (`source value 8 is obsolete`, etc.)
+  porque muitos plugins ainda declaram `VERSION_1_8`. E o
+  `image_picker_android` já subiu o Kotlin pra 17 sem subir o Java,
+  quebrando com `Inconsistent JVM Target Compatibility`. Fix em
+  `android/build.gradle.kts`: bloco `subprojects.afterEvaluate` que
+  força TODOS os plugins Android a Java 11 (via `BaseExtension`) +
+  Kotlin `compilerOptions.jvmTarget = JVM_11` (Kotlin 2.x removeu
+  `kotlinOptions`). Precisa vir ANTES do `evaluationDependsOn(":app")`
+  senão o Gradle recusa `afterEvaluate` em subprojetos já avaliados.
+
 - ✅ **Trecho extra — errorText inline por campo** (2026-07-26) —
   Adiciona `errorText` no `TextField` de Origem e Destino do
   `_openTrechoExtraSheet` (bdt_page.dart), alinhando com o padrão dos
