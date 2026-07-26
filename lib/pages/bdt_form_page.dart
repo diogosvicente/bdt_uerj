@@ -140,8 +140,6 @@ class _BdtFormPageState extends State<BdtFormPage> {
     }
   }
 
-  String _two(int v) => v.toString().padLeft(2, '0');
-
   /// Sprint MSEC.TZ — envia sempre ISO UTC pro backend, que aceita via
   /// `api_parse_datetime_utc`. Antes: naive "yyyy-mm-dd HH:MM:00" era
   /// interpretado como BRT wall-clock; agora o "Z" no fim explicita UTC.

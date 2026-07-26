@@ -54,7 +54,6 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
   final List<XFile> _fotosPendingCarga = [];
   /// Fotos já persistidas (só em modo edição). Populado após carregar.
   List<OcorrenciaFotoRef> _fotosExistentesCarga = const [];
-  Future<List<OcorrenciaFotoRef>>? _fotosCargaLoader;
 
   final _picker = ImagePicker();
   String? _cargaError; // erro específico do card carga
@@ -145,9 +144,10 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
       _cargaLargCtrl.text = _fmtDec(p.cargaLarguraM);
       _cargaAltCtrl.text = _fmtDec(p.cargaAlturaM);
       if (_temCarga) {
-        _fotosCargaLoader = BdtService.listarFotosCarga(id).then((list) {
+        // Fire-and-forget — o setState atualiza o grid quando chegar.
+        // ignore: discarded_futures
+        BdtService.listarFotosCarga(id).then((list) {
           if (mounted) setState(() => _fotosExistentesCarga = list);
-          return list;
         });
       }
 

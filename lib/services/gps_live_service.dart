@@ -20,9 +20,11 @@ import 'location_service.dart';
 ///    blocker.
 class GpsLiveService {
   static Timer? _timer;
-  static int? _bdtId;
+  // `_agendaId` é lido dentro do timer (linha 55). `_bdtId`/`_trechoId`
+  // eram guardados pra debug mas nunca lidos — removidos. Se um dia
+  // precisar (ex.: adicionar `status()` que reporta o BDT/trecho ativo),
+  // basta ressuscitar aqui + no start/stop.
   static int? _agendaId;
-  static int? _trechoId;
 
   static const _log = Logger('GPS-LIVE');
 
@@ -35,9 +37,7 @@ class GpsLiveService {
     // Garante estado limpo (cancela timer anterior, para service anterior).
     await stop();
 
-    _bdtId = bdtId;
     _agendaId = (agendaId != null && agendaId > 0) ? agendaId : null;
-    _trechoId = trechoId;
 
     _log.info('start bdt=$bdtId agenda=$_agendaId trecho=$trechoId interval=${interval.inSeconds}s');
 
@@ -88,9 +88,7 @@ class GpsLiveService {
       _timer = null;
       _log.info('timer foreground parado');
     }
-    _bdtId = null;
     _agendaId = null;
-    _trechoId = null;
     try {
       await BackgroundLocationService.stop();
     } catch (_) {
