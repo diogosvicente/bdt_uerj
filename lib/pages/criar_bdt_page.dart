@@ -1,28 +1,32 @@
 import 'package:flutter/material.dart';
 
 import '../models/checkup_bdt.dart';
+import '../models/condutor_lite.dart';
 import '../models/veiculo.dart';
 import '../services/bdt_service.dart';
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/veiculo_autocomplete.dart';
 
-/// Sprint 15 W+M (2026-07-25) — Criar BDT sem solicitação (mobile).
+/// Sprint 15 W+M (2026-07-25/26) — Criar BDT sem solicitação (mobile).
 ///
-/// Route: `/bdt/criar-direto` (sem argument — condutor logado é implícito).
+/// Route: `/bdt/criar-direto`. Só chega aqui quem tem o gate
+/// (admin do módulo Transporte OU papel `Criar BDT sem Solicitação`) —
+/// a HomePage já esconde a opção do bottom sheet pra quem não tem.
 ///
 /// Fluxo:
 ///  1. Escolhe VEÍCULO (autocomplete).
-///  2. Escolhe DATA de referência (default: hoje).
-///  3. Ao selecionar o veículo, dispara `checkupVeiculo` em background e
-///     mostra banner AMARELO se houver avisos (veículo em manutenção,
-///     CNH vencida). Regra [[bdt_uerj_sem_travas_so_alertas]]: NÃO
-///     bloqueia — só informa. Condutor confirma mesmo assim.
-///  4. "Criar BDT direto" chama `criarBdtSemSolicitacao`. Backend cria
-///     o BDT já em EM_ABERTO + solicitação sintética + designação,
-///     tudo em uma transação (`BdtSemSolicitacaoService::criar`).
-///  5. Sucesso → `pushReplacement` pra `/bdt` com o `bdt_id` novo —
-///     condutor já pode iniciar trecho.
+///  2. Escolhe CONDUTOR — "Para mim" (default, se o próprio usuário é
+///     condutor) ou "Outro condutor" com autocomplete.
+///  3. Escolhe DATA de referência (default: hoje).
+///  4. Ao selecionar veículo/condutor, dispara `checkupVeiculo` em
+///     background e mostra banner AMARELO se houver avisos (veículo em
+///     manutenção, CNH vencida). Regra [[bdt_uerj_sem_travas_so_alertas]]:
+///     NÃO bloqueia — só informa. Usuário confirma mesmo assim.
+///  5. "Criar BDT" chama `criarBdtSemSolicitacao`. Backend cria o BDT
+///     já em EM_ABERTO + solicitação sintética + designação, tudo em
+///     uma transação (`BdtSemSolicitacaoService::criar` do web).
+///  6. Sucesso → `pushReplacement` pra `/bdt` com o `bdt_id` novo.
 ///
 /// Diferente da `PreBdtFormPage`, que cria em PENDENTE e depende de
 /// aprovação admin. Este fluxo é pra emergência / tarefa pontual.
@@ -33,9 +37,19 @@ class CriarBdtPage extends StatefulWidget {
   State<CriarBdtPage> createState() => _CriarBdtPageState();
 }
 
+/// Modo do dropdown de condutor. `paraMim` = usa o próprio usuário
+/// logado (backend resolve o condutor_id). `outro` = mostra seletor
+/// de condutor específico e envia condutor_id explícito.
+enum _ModoCondutor { paraMim, outro }
+
 class _CriarBdtPageState extends State<CriarBdtPage> {
   Veiculo? _veiculo;
   DateTime _dataRef = DateTime.now();
+
+  _ModoCondutor _modo = _ModoCondutor.paraMim;
+  List<CondutorLite>? _condutores; // null = carregando, [] = falha/vazio
+  CondutorLite? _souEu; // meu próprio condutor (se aplicável)
+  CondutorLite? _condutorSelecionado; // usado no modo `outro`
 
   CheckupBdt? _checkup;
   bool _checkupCarregando = false;
@@ -43,6 +57,31 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
   bool _busy = false;
   String? _formError;
   String? _veiculoError;
+  String? _condutorError;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarCondutores();
+  }
+
+  Future<void> _carregarCondutores() async {
+    final lista = await BdtService.listarCondutoresAtivos();
+    if (!mounted) return;
+    // "Sou eu" = o item marcado como souEu:true no backend. Se não tiver
+    // (usuário é admin puro, sem cadastro de condutor), força o modo
+    // "outro" e desabilita "Para mim" (o backend recusaria mesmo).
+    final souEu = lista.where((c) => c.souEu).cast<CondutorLite?>().firstOrNull;
+    setState(() {
+      _condutores = lista;
+      _souEu = souEu;
+      if (souEu == null) _modo = _ModoCondutor.outro;
+    });
+    // Se estou no modo "para mim" e o meu condutor já existe, dispara
+    // o checkup do veículo assim que o veículo for escolhido — usando
+    // o meu condutor_id.
+    if (_veiculo != null) _dispararCheckup();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +105,8 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
               const SizedBox(height: 12),
             ],
             _cardVeiculo(),
+            const SizedBox(height: 12),
+            _cardCondutor(),
             const SizedBox(height: 12),
             _cardData(),
             if (_checkup != null && _checkup!.avisos.isNotEmpty) ...[
@@ -125,7 +166,7 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
                   _veiculoError = null;
                   _checkup = null; // invalida checkup anterior
                 });
-                if (v != null) _dispararCheckup(v.id);
+                if (v != null) _dispararCheckup();
               },
             ),
             if (_veiculoError != null) ...[
@@ -153,6 +194,113 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cardCondutor() {
+    final theme = Theme.of(context);
+    final carregando = _condutores == null;
+    final semSouEu = !carregando && _souEu == null;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Condutor *',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              semSouEu
+                  ? 'Você não é condutor cadastrado — escolha o condutor.'
+                  : 'Padrão: "Para mim" (você mesmo).',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            SegmentedButton<_ModoCondutor>(
+              segments: [
+                ButtonSegment(
+                  value: _ModoCondutor.paraMim,
+                  icon: const Icon(Icons.person_outline),
+                  label: Text(
+                    _souEu?.nome.split(' ').first ?? 'Para mim',
+                  ),
+                  enabled: !semSouEu,
+                ),
+                const ButtonSegment(
+                  value: _ModoCondutor.outro,
+                  icon: Icon(Icons.people_alt_outlined),
+                  label: Text('Outro'),
+                ),
+              ],
+              selected: {_modo},
+              onSelectionChanged: (s) {
+                setState(() {
+                  _modo = s.first;
+                  _condutorError = null;
+                  _checkup = null;
+                });
+                if (_veiculo != null) _dispararCheckup();
+              },
+            ),
+            if (_modo == _ModoCondutor.outro) ...[
+              const SizedBox(height: 10),
+              if (carregando) ...[
+                const Row(
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Carregando condutores…',
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                DropdownButtonFormField<CondutorLite>(
+                  initialValue: _condutorSelecionado,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Selecione o condutor',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final c in _condutores!)
+                      DropdownMenuItem(value: c, child: Text(c.nome)),
+                  ],
+                  onChanged: (c) {
+                    setState(() {
+                      _condutorSelecionado = c;
+                      _condutorError = null;
+                      _checkup = null;
+                    });
+                    if (_veiculo != null) _dispararCheckup();
+                  },
+                ),
+              ],
+            ],
+            if (_condutorError != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                _condutorError!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 12,
+                ),
               ),
             ],
           ],
@@ -270,9 +418,19 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
     if (d != null) setState(() => _dataRef = d);
   }
 
-  Future<void> _dispararCheckup(int veiculoId) async {
+  int? _condutorIdEscolhido() {
+    if (_modo == _ModoCondutor.paraMim) return _souEu?.id;
+    return _condutorSelecionado?.id;
+  }
+
+  Future<void> _dispararCheckup() async {
+    if (_veiculo == null) return;
+    final condutorId = _condutorIdEscolhido();
     setState(() => _checkupCarregando = true);
-    final c = await BdtService.checkupVeiculo(veiculoId: veiculoId);
+    final c = await BdtService.checkupVeiculo(
+      veiculoId: _veiculo!.id,
+      condutorId: condutorId,
+    );
     if (!mounted) return;
     setState(() {
       _checkup = c;
@@ -285,15 +443,28 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
     setState(() {
       _formError = null;
       _veiculoError = null;
+      _condutorError = null;
     });
+
     if (_veiculo == null) {
       setState(() => _veiculoError = 'Selecione um veículo.');
+      return;
+    }
+
+    final condutorId = _condutorIdEscolhido();
+    if (condutorId == null || condutorId <= 0) {
+      setState(() {
+        _condutorError = _modo == _ModoCondutor.outro
+            ? 'Selecione um condutor.'
+            : 'Você não é condutor — escolha "Outro" e selecione.';
+      });
       return;
     }
 
     setState(() => _busy = true);
     final res = await BdtService.criarBdtSemSolicitacao(
       veiculoId: _veiculo!.id,
+      condutorId: condutorId,
       dataReferencia: DateFmt.apiDate(_dataRef),
     );
     if (!mounted) return;

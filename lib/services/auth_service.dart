@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
+import 'permissoes_service.dart';
 import 'token_storage.dart';
 import 'usuario_foto_storage.dart';
 
@@ -113,6 +114,14 @@ class AuthService {
     await prefs.setString('usuario_email', usuario['email']?.toString() ?? '');
     await prefs.setString('usuario_cpf', usuario['cpf']?.toString() ?? '');
 
+    // Sprint 15 W+M (2026-07-26) — pré-carrega permissões pro cache
+    // local. Fire-and-forget porque o login só espera pelas coisas
+    // essenciais; se falhar, o próximo reload da Home tenta de novo
+    // e enquanto isso a UI se comporta como "sem permissão" (opções
+    // condicionais ficam ocultas — comportamento seguro).
+    // ignore: discarded_futures
+    PermissoesService.reload();
+
     return LoginResult.success();
   }
 
@@ -148,6 +157,10 @@ class AuthService {
     // condutor logando enxerga a foto do anterior por 1 segundo até
     // o refetch trocar (leak visual).
     await UsuarioFotoStorage.clear();
+    // Sprint 15 W+M (2026-07-26) — apaga cache de permissões. Sem
+    // isso, se o próximo usuário for menos privilegiado, ele veria
+    // opções que não pode usar por até 1 refresh.
+    await PermissoesService.clear();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('usuario_id');
     await prefs.remove('usuario_nome');

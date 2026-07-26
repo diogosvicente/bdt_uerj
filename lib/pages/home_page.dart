@@ -6,6 +6,7 @@ import '../models/pre_bdt_pendente.dart';
 import '../services/alertas_service.dart';
 import '../services/auth_service.dart';
 import '../services/bdt_service.dart';
+import '../services/permissoes_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_scaffold.dart';
 
@@ -21,11 +22,22 @@ class _HomePageState extends State<HomePage> {
   late Future<List<BdtResumo>> future;
   late Future<List<PreBdtPendente>> futurePendentes;
 
+  /// Sprint 15 W+M (2026-07-26) — flag que decide se o item
+  /// "Criar BDT direto" aparece no bottom sheet. Lida do cache
+  /// local (`PermissoesService.pode`) no initState e re-consultada
+  /// no reload — sempre a partir do cache, sem race.
+  bool _podeCriarBdtSemSolic = false;
+
   @override
   void initState() {
     super.initState();
     future = BdtService.listarDoDia(data: _apiDate(selectedDate));
     futurePendentes = BdtService.listarMeusPreBdtsPendentes();
+
+    // Lê o cache local imediato (build já pega a resposta certa se o
+    // usuário abriu o app com sessão viva), e em paralelo re-consulta
+    // o backend pra atualizar em caso de mudança de papel.
+    _sincronizarPermissoes();
 
     // Sprint M5 — assim que a lista do dia terminar de carregar (sem
     // esperar refresh manual), agenda os alertas 1h/30min antes de
@@ -75,6 +87,11 @@ class _HomePageState extends State<HomePage> {
       future = novo;
       futurePendentes = novosPendentes;
     });
+
+    // Sprint 15 W+M — refetch das permissões em paralelo.
+    // fire-and-forget: se falhar, mantém as flags atuais.
+    // ignore: discarded_futures
+    _sincronizarPermissoes();
 
     // Timeout defensivo: se o ApiClient.post travar antes do próprio
     // timeout dele (10s), garantimos que o snackbar de "demorou" cai em
@@ -133,6 +150,23 @@ class _HomePageState extends State<HomePage> {
     Navigator.pushReplacementNamed(context, "/login");
   }
 
+  Future<void> _sincronizarPermissoes() async {
+    // 1) cache local — imediato, sem rede
+    final localMap = await PermissoesService.todas();
+    if (!mounted) return;
+    setState(() {
+      _podeCriarBdtSemSolic = localMap['criar_bdt_sem_solicitacao'] == true;
+    });
+
+    // 2) refetch — atualiza se mudou (troca de papel, admin removeu, etc.)
+    final freshMap = await PermissoesService.reload();
+    if (!mounted) return;
+    final freshPode = freshMap['criar_bdt_sem_solicitacao'] == true;
+    if (freshPode != _podeCriarBdtSemSolic) {
+      setState(() => _podeCriarBdtSemSolic = freshPode);
+    }
+  }
+
   Future<void> _abrirPreBdtForm() async {
     // Quando volta do form (com Pré-BDT criado ou cancelado), recarrega
     // a lista de pendentes — é a forma mais direta de mostrar o recém-
@@ -146,10 +180,23 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Sprint 15 W+M (2026-07-25) — Bottom sheet com as duas rotas de criação:
-  ///  - "Novo Pré-BDT" (padrão, passa por aprovação admin).
-  ///  - "Criar BDT direto" (emergência / tarefa pontual, sem aprovação).
+  /// Sprint 15 W+M (2026-07-25/26) — Bottom sheet com as rotas de criação.
+  ///
+  ///  - "Novo Pré-BDT" — sempre visível (fluxo padrão do condutor: passa
+  ///    por aprovação admin).
+  ///  - "Criar BDT direto" — SÓ aparece se o usuário tem o gate (admin
+  ///    do módulo Transporte OU papel `Criar BDT sem Solicitação`).
+  ///    Sem o gate, o item nem é renderizado — condutor comum vê só
+  ///    o Pré-BDT, sem confusão.
+  ///
+  /// Se só uma opção sobra na lista, pula o sheet e vai direto.
   Future<void> _abrirMenuCriar() async {
+    if (!_podeCriarBdtSemSolic) {
+      // Só existe a rota do Pré-BDT — abre direto (sem sheet inútil).
+      await _abrirPreBdtForm();
+      return;
+    }
+
     final theme = Theme.of(context);
     await showModalBottomSheet<void>(
       context: context,
@@ -211,8 +258,12 @@ class _HomePageState extends State<HomePage> {
       onLogout: _logout,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _abrirMenuCriar,
-        icon: const Icon(Icons.add),
-        label: const Text('Criar'),
+        // Se só tem uma opção (condutor comum), o FAB já mostra o
+        // rótulo dela — evita "Criar" genérico que abre um menu vazio.
+        icon: Icon(_podeCriarBdtSemSolic
+            ? Icons.add
+            : Icons.rocket_launch_outlined),
+        label: Text(_podeCriarBdtSemSolic ? 'Criar' : 'Novo Pré-BDT'),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),

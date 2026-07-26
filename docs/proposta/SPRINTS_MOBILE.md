@@ -1039,6 +1039,52 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     "Criar BDT direto" (emergência) — disparado pelo FAB genérico
     "Criar" (antes só existia FAB direto pro Pré-BDT).
 
+- ✅ **Criar BDT direto — gate RBAC + seleção de condutor** (2026-07-26)
+  — segunda passada no fluxo, alinhando o mobile com o web.
+  - **Regra de acesso**: só admin do módulo Transporte OU usuário
+    com o papel `Criar BDT sem Solicitação` (`TransporteRoles::CRIAR_BDT_SEM_SOLICITACAO`)
+    pode usar. Reproduz o padrão do web (o `RoleFilter` do CI4 é
+    session-based e não serve pro Bearer — o gate mora no
+    controller mobile, `podeCriarBdtSemSolicitacao($userId) =
+    isDiretorOuAdmin || usuarioTemPapel`).
+  - **Backend**: gate 403 em `checkupVeiculo` e `criarBdtSemSolicitacao`;
+    removida a restrição "condutor_id === próprio" (agora quem tem o
+    gate pode abrir BDT em nome de qualquer condutor ativo, paridade
+    com o painel web). 2 endpoints novos:
+    - `POST bdt/permissoes-mobile` → `{criar_bdt_sem_solicitacao: bool}`
+      (mais chaves entram sem mudança de shape).
+    - `POST bdt/condutores-ativos` → lista `{id, nome, sou_eu}`
+      ordenada por nome (mesmo gate). Query direta em `trnsp_condutores`.
+  - **Mobile**:
+    - Novo `PermissoesService` (`lib/services/permissoes_service.dart`)
+      com cache em SharedPreferences (chave `permissoes_cache`).
+      `reload()` no login e no reload da Home; `pode(chave)` só lê o
+      cache (nunca faz rede — evita piscar na tela). Limpado no logout.
+    - `HomePage` esconde o item "Criar BDT direto" do bottom sheet se
+      `!pode('criar_bdt_sem_solicitacao')` — condutor comum vê só
+      "Novo Pré-BDT" (e o FAB vira diretão sem menu, sem sheet inútil).
+    - `CriarBdtPage` ganha `SegmentedButton` "Para mim / Outro" +
+      `DropdownButtonFormField<CondutorLite>` (só carrega no modo
+      "outro"). Se o usuário logado NÃO é condutor (admin puro),
+      o botão "Para mim" fica desabilitado e o modo default é "outro".
+      Envia `condutor_id` no POST. Checkup re-dispara quando muda
+      veículo OU condutor.
+    - Model novo `CondutorLite` (`{id, nome, souEu}`) só pro dropdown.
+  - **UX**: quando só a opção "Novo Pré-BDT" está disponível, o FAB
+    vai direto pro form (sem abrir bottom sheet com um único item).
+    Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
+
+- ✅ **Trecho extra — errorText inline por campo** (2026-07-26) —
+  Adiciona `errorText` no `TextField` de Origem e Destino do
+  `_openTrechoExtraSheet` (bdt_page.dart), alinhando com o padrão dos
+  outros forms (`AbastecimentoSheet`, `NovaOcorrenciaPage`,
+  `AssinaturaMarcoPage`, `CriarBdtPage`). Antes: banner `errorContainer`
+  no topo dizia "Informe origem e destino." e o condutor tinha que
+  descobrir qual campo estava vazio. Agora: mensagem específica em
+  cada campo (`Informe a origem.` / `Informe o destino.`). O banner
+  no topo continua sendo usado para erros de nível de form
+  (ambiguidade dos dois horários, falha de rede).
+
 ### Da Sprint 17 web (Ocorrências)
 - ✅ **Substitui card "Acidentes" (placeholder) por "Ocorrências" real**
   (2026-07-23) — a `BdtFormPage` mostrava um card "Acidentes (Em breve)"

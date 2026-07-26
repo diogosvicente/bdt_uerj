@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../models/bdt_km_estado.dart';
 import '../models/bdt_resumo.dart';
 import '../models/checkup_bdt.dart';
+import '../models/condutor_lite.dart';
 import '../models/feedback_condutor.dart';
 import '../models/passageiro.dart';
 import '../models/pre_bdt_pendente.dart';
@@ -150,19 +151,24 @@ class BdtService {
     return CheckupBdt.fromJson(Map<String, dynamic>.from(data));
   }
 
-  /// Sprint 15 W+M (2026-07-25) — Criar BDT sem solicitação (direto do app).
+  /// Sprint 15 W+M (2026-07-25 / 2026-07-26 gate+condutor) —
+  /// Criar BDT sem solicitação (direto do app).
   ///
-  /// Condutor cria BDT AVULSO sem passar pelo Pré-BDT + aprovação
-  /// (casos: emergência, tarefa pontual, veículo/condutor real ≠
-  /// agendado). Reusa 100% `BdtSemSolicitacaoService::criar()` do web.
+  /// Usuário com o gate (admin ou papel `Criar BDT sem Solicitação`)
+  /// cria BDT AVULSO sem passar pelo Pré-BDT + aprovação. Reusa
+  /// `BdtSemSolicitacaoService::criar()` do web ([[bdt_uerj_reusar_codigo_web]]).
   ///
-  /// Regra [[bdt_uerj_sem_travas_so_alertas]]: avisos do checkup NÃO
-  /// bloqueiam a criação — só veículo inexistente.
+  /// - `condutorId` opcional. Se null, o backend tenta usar o próprio
+  ///   condutor logado (só funciona se o usuário for condutor). Se veio,
+  ///   pode ser qualquer condutor ativo — o backend valida o gate antes.
+  /// - Regra [[bdt_uerj_sem_travas_so_alertas]]: avisos do checkup NÃO
+  ///   bloqueiam a criação — só veículo inexistente ou condutor inválido.
   ///
   /// Retorna `{bdt_id, protocolo, avisos, success, message}` no formato
   /// cru do backend (mesmo padrão de `criarPreBdt`).
   static Future<Map<String, dynamic>> criarBdtSemSolicitacao({
     required int veiculoId,
+    int? condutorId,
     String? dataReferencia,
   }) async {
     final usuarioId = await _userId();
@@ -171,15 +177,40 @@ class BdtService {
       {
         'usuario_id': usuarioId,
         'veiculo_id': veiculoId,
+        if (condutorId != null && condutorId > 0) 'condutor_id': condutorId,
         if (dataReferencia != null && dataReferencia.isNotEmpty)
           'data_referencia': dataReferencia,
       },
     );
     _log.info(
-      'criarBdtSemSolicitacao veiculo=$veiculoId http=${res["http_status"]} '
-      'ok=${res["success"]}',
+      'criarBdtSemSolicitacao veiculo=$veiculoId condutor=${condutorId ?? "eu"} '
+      'http=${res["http_status"]} ok=${res["success"]}',
     );
     return res;
+  }
+
+  /// Sprint 15 W+M (2026-07-26) — Lista condutores ativos pro dropdown
+  /// "Outro condutor" da `CriarBdtPage`. Só admin/papel pode chamar —
+  /// backend valida (403 senão). Retorna lista vazia em falha.
+  ///
+  /// Ordem: alfabética por nome (backend). O item com `souEu==true`
+  /// é o próprio condutor logado (a UI pode destacar / botar em cima).
+  static Future<List<CondutorLite>> listarCondutoresAtivos() async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/condutores-ativos',
+      {'usuario_id': usuarioId},
+    );
+    if (res['success'] != true) {
+      _log.warn('listarCondutoresAtivos FALHOU: ${res['message']}');
+      return const [];
+    }
+    final data = res['data'];
+    if (data is! List) return const [];
+    return data
+        .whereType<Map>()
+        .map((e) => CondutorLite.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
   }
 
   /// Sprint M6 (Web+Mobile / Sprint 1 web) — textos institucionais de

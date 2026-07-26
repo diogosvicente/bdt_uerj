@@ -734,7 +734,14 @@ class _BdtPageState extends State<BdtPage> {
     // Sprint MUX (2026-07-22) — erros inline em vez de SnackBar. O sheet
     // é fullscreen com o teclado aberto, então SnackBar do ScaffoldMessenger
     // aparece atrás e o condutor não vê ("cliquei mas nada acontece").
+    //
+    // Sprint 15 W+M (2026-07-26) — padrão errorText inline por campo
+    // (mesmo do AbastecimentoSheet/NovaOcorrenciaPage). O banner no topo
+    // fica só pra erros de nível de form (ambiguidade dos dois horários,
+    // falha de rede).
     String? formError;
+    String? errOrigem;
+    String? errDestino;
     bool busy = false;
 
     Future<void> pickHora(
@@ -812,10 +819,17 @@ class _BdtPageState extends State<BdtPage> {
                       controller: origemCtrl,
                       maxLines: 2,
                       textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
+                      enabled: !busy,
+                      onChanged: (_) {
+                        if (errOrigem != null) {
+                          setLocal(() => errOrigem = null);
+                        }
+                      },
+                      decoration: InputDecoration(
                         labelText: "Origem *",
                         hintText: "Ex.: UERJ Maracanã",
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
+                        errorText: errOrigem,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -823,10 +837,17 @@ class _BdtPageState extends State<BdtPage> {
                       controller: destinoCtrl,
                       maxLines: 2,
                       textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
+                      enabled: !busy,
+                      onChanged: (_) {
+                        if (errDestino != null) {
+                          setLocal(() => errDestino = null);
+                        }
+                      },
+                      decoration: InputDecoration(
                         labelText: "Destino *",
                         hintText: "Ex.: Hospital Pedro Ernesto",
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
+                        errorText: errDestino,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -836,6 +857,7 @@ class _BdtPageState extends State<BdtPage> {
                           child: TextField(
                             controller: horaSaidaCtrl,
                             readOnly: true,
+                            enabled: !busy,
                             onTap: () => pickHora(horaSaidaCtrl, setLocal),
                             decoration: const InputDecoration(
                               labelText: "Saída (HH:MM)",
@@ -849,6 +871,7 @@ class _BdtPageState extends State<BdtPage> {
                           child: TextField(
                             controller: horaChegadaCtrl,
                             readOnly: true,
+                            enabled: !busy,
                             onTap: () => pickHora(horaChegadaCtrl, setLocal),
                             decoration: const InputDecoration(
                               labelText: "Chegada (HH:MM)",
@@ -864,6 +887,7 @@ class _BdtPageState extends State<BdtPage> {
                       controller: obsCtrl,
                       maxLines: 2,
                       textCapitalization: TextCapitalization.sentences,
+                      enabled: !busy,
                       decoration: const InputDecoration(
                         labelText: "Observação (opcional)",
                         hintText: "Ex.: desvio pela Vermelha por obra",
@@ -877,10 +901,18 @@ class _BdtPageState extends State<BdtPage> {
                           : () async {
                               final origem = origemCtrl.text.trim();
                               final destino = destinoCtrl.text.trim();
-
-                              if (origem.isEmpty || destino.isEmpty) {
-                                setLocal(() => formError =
-                                    'Informe origem e destino.');
+                              final novoErrOrigem = origem.isEmpty
+                                  ? 'Informe a origem.'
+                                  : null;
+                              final novoErrDestino = destino.isEmpty
+                                  ? 'Informe o destino.'
+                                  : null;
+                              if (novoErrOrigem != null || novoErrDestino != null) {
+                                setLocal(() {
+                                  errOrigem = novoErrOrigem;
+                                  errDestino = novoErrDestino;
+                                  formError = null;
+                                });
                                 return;
                               }
 
@@ -897,6 +929,8 @@ class _BdtPageState extends State<BdtPage> {
 
                               setLocal(() {
                                 formError = null;
+                                errOrigem = null;
+                                errDestino = null;
                                 busy = true;
                               });
                               final ok = await BdtService.criarTrechoExtra(
