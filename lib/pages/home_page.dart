@@ -146,6 +146,61 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Sprint 15 W+M (2026-07-25) — Bottom sheet com as duas rotas de criação:
+  ///  - "Novo Pré-BDT" (padrão, passa por aprovação admin).
+  ///  - "Criar BDT direto" (emergência / tarefa pontual, sem aprovação).
+  Future<void> _abrirMenuCriar() async {
+    final theme = Theme.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                'O que você quer criar?',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.rocket_launch_outlined),
+              title: const Text('Novo Pré-BDT'),
+              subtitle: const Text(
+                'Padrão — passa por aprovação do administrador.',
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _abrirPreBdtForm();
+              },
+            ),
+            const Divider(height: 0),
+            ListTile(
+              leading: const Icon(Icons.bolt_outlined),
+              title: const Text('Criar BDT direto'),
+              subtitle: const Text(
+                'Emergência ou tarefa pontual — já sai operacional.',
+              ),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await Navigator.pushNamed(context, '/bdt/criar-direto');
+                if (!mounted) return;
+                // Volta recarregando pra pegar o BDT novo (caso o usuário
+                // volte pra Home ao invés de ir direto pro BDT).
+                await _reload();
+              },
+            ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -155,9 +210,9 @@ class _HomePageState extends State<HomePage> {
       onRefresh: _reload,
       onLogout: _logout,
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _abrirPreBdtForm,
-        icon: const Icon(Icons.rocket_launch_outlined),
-        label: const Text('Novo Pré-BDT'),
+        onPressed: _abrirMenuCriar,
+        icon: const Icon(Icons.add),
+        label: const Text('Criar'),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),

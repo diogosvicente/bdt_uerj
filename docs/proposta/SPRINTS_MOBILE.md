@@ -1007,6 +1007,38 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
   - Aplica [[bdt_uerj_reusar_codigo_web]] — 0 lógica de negócio
     reimplementada, só embrulhada com auth mobile.
 
+- ✅ **Criar BDT direto pelo app** (2026-07-25) — condutor pode
+  agora criar BDT AVULSO no mobile (sem passar por Pré-BDT +
+  aprovação), pra casos de emergência ou tarefa pontual.
+  - **Backend**: 2 endpoints novos no `BdtApiController`,
+    ambos wrappers finos do `BdtSemSolicitacaoService` do web
+    ([[bdt_uerj_reusar_codigo_web]] — 0 lógica reimplementada):
+    - `POST bdt/checkup-veiculo` — variante do `checkup(bdtId)` que
+      recebe `veiculo_id` (+ `condutor_id` opcional, forçado ao próprio
+      se enviado), pra rodar o checkup ANTES de existir BDT. Reusa
+      `BdtSemSolicitacaoService::checkup($veiculoId, $condutorId)`.
+    - `POST bdt/criar-sem-solicitacao` — recebe `veiculo_id` e
+      opcional `data_referencia` (default: hoje). Força
+      `condutor_id = próprio` (guard via `condutorIdOrFailPublic`);
+      chama `BdtSemSolicitacaoService::criar()` do web — mesma
+      transação (solicitação sintética + BDT já em EM_ABERTO +
+      designação + auditoria `CRIAR_BDT_SEM_SOLICITACAO`). Retorna
+      `{bdt_id, protocolo, avisos}`. Nova rota `bdt/criar-sem-solicitacao`
+      no `Routes.php` (aditivo, [[bdt_uerj_mobile_nao_quebra_web]]).
+  - **Mobile**: `BdtService.checkupVeiculo(veiculoId, condutorId?)` +
+    `criarBdtSemSolicitacao(veiculoId, dataReferencia?)`. Nova
+    `CriarBdtPage` (`lib/pages/criar_bdt_page.dart`, rota
+    `/bdt/criar-direto`) — form com `VeiculoAutocomplete` (reuso
+    do widget existente) + `DatePicker` (default hoje) + card com
+    checkup em background. Banner AMARELO com avisos aparece se
+    houver, mas botão "Criar BDT" fica sempre habilitado —
+    [[bdt_uerj_sem_travas_so_alertas]] (sistema alerta, não bloqueia).
+    Sucesso → `pushReplacementNamed('/bdt', arg: bdtId)`, condutor
+    já pode iniciar trecho. `HomePage` ganha bottom sheet com 2
+    opções — "Novo Pré-BDT" (padrão, passa por aprovação) e
+    "Criar BDT direto" (emergência) — disparado pelo FAB genérico
+    "Criar" (antes só existia FAB direto pro Pré-BDT).
+
 ### Da Sprint 17 web (Ocorrências)
 - ✅ **Substitui card "Acidentes" (placeholder) por "Ocorrências" real**
   (2026-07-23) — a `BdtFormPage` mostrava um card "Acidentes (Em breve)"
@@ -1059,7 +1091,7 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
   `getJSON()` em `Content-Type: multipart/form-data` (senão dispara
   `HttpException::forInvalidJSON` no boundary).
 
-- 🟡 **Registrar ocorrência do BDT (Fase 1: sem fotos)** (2026-07-23) —
+- ✅ **Registrar ocorrência do BDT — Fases 1+2 completas** (2026-07-23 e 2026-07-24) —
   condutor abre ocorrência de dentro do BDT em andamento. Segue o
   ARCHITECTURE.md mobile §4.3 (Service categoria API) + §4.7 (Page
   StatefulWidget) + §0 (aditivo, não quebra web).
@@ -1087,12 +1119,11 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
       `BdtPage` (ícone amarelo `warning_amber_rounded`) — abre a
       rota `/ocorrencia/nova` com `bdtId` como argument; ao voltar
       com `true`, chama `_load(bdtId)`.
-  - 🟡 Marcado como parcial: **Fase 2 pendente** — upload de fotos
-    (multipart), preview, câmera. Requer `image_picker` (dep nova)
-    e novo endpoint mobile de upload + endpoint de servir binário
-    LGPD-safe (Bearer). O item "Anexos de fotos em ocorrências/
-    manutenção" fica marcado nessa entrada pra virar ✅ quando a
-    Fase 2 fechar.
+  - ✅ **Fase 2 (2026-07-23)** — upload de fotos multipart + preview +
+    câmera + galeria full-screen swipeable (Sprint 17 W+M F2). Ver
+    entrada "Fotos das ocorrências (Fase 2)" acima. Também ganhou
+    edit inline (Sprint 18.1) — condutor não precisa mais apagar e
+    refazer se digitou errado.
 - ✅ **Histórico institucional de ocorrências (visualização no app)**
   (2026-07-22) — entregue como wrapper fino do `OcorrenciaService`
   do web ([[bdt_uerj_reusar_codigo_web]]) — mesma lista/detalhe/filtros

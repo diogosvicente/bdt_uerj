@@ -126,6 +126,62 @@ class BdtService {
     return CheckupBdt.fromJson(Map<String, dynamic>.from(data));
   }
 
+  /// Sprint 15 W+M (2026-07-25) — Checkup PRÉ-criação (sem BDT ainda).
+  /// Mesma regra que `checkup(bdtId)`, mas por veículo/condutor —
+  /// usado pra mostrar avisos ANTES do condutor confirmar a criação
+  /// de um BDT direto pelo app. Retorna null em falha de rede
+  /// (não impede criação — regra sem-travas).
+  static Future<CheckupBdt?> checkupVeiculo({
+    required int veiculoId,
+    int? condutorId,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post('transporte/api/bdt/checkup-veiculo', {
+      'usuario_id': usuarioId,
+      'veiculo_id': veiculoId,
+      if (condutorId != null && condutorId > 0) 'condutor_id': condutorId,
+    });
+    if (res['success'] != true) {
+      _log.warn('checkupVeiculo#$veiculoId FALHOU: ${res['message']}');
+      return null;
+    }
+    final data = res['data'];
+    if (data is! Map) return null;
+    return CheckupBdt.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// Sprint 15 W+M (2026-07-25) — Criar BDT sem solicitação (direto do app).
+  ///
+  /// Condutor cria BDT AVULSO sem passar pelo Pré-BDT + aprovação
+  /// (casos: emergência, tarefa pontual, veículo/condutor real ≠
+  /// agendado). Reusa 100% `BdtSemSolicitacaoService::criar()` do web.
+  ///
+  /// Regra [[bdt_uerj_sem_travas_so_alertas]]: avisos do checkup NÃO
+  /// bloqueiam a criação — só veículo inexistente.
+  ///
+  /// Retorna `{bdt_id, protocolo, avisos, success, message}` no formato
+  /// cru do backend (mesmo padrão de `criarPreBdt`).
+  static Future<Map<String, dynamic>> criarBdtSemSolicitacao({
+    required int veiculoId,
+    String? dataReferencia,
+  }) async {
+    final usuarioId = await _userId();
+    final res = await ApiClient.post(
+      'transporte/api/bdt/criar-sem-solicitacao',
+      {
+        'usuario_id': usuarioId,
+        'veiculo_id': veiculoId,
+        if (dataReferencia != null && dataReferencia.isNotEmpty)
+          'data_referencia': dataReferencia,
+      },
+    );
+    _log.info(
+      'criarBdtSemSolicitacao veiculo=$veiculoId http=${res["http_status"]} '
+      'ok=${res["success"]}',
+    );
+    return res;
+  }
+
   /// Sprint M6 (Web+Mobile / Sprint 1 web) — textos institucionais de
   /// segurança exibidos no dialog do BDT. Fonte: `SegurancaTextoService`
   /// do web — mesma que alimenta o modal web `_modal_seguranca.php`.

@@ -7,6 +7,7 @@ import 'pages/home_page.dart';
 import 'pages/bdt_page.dart';
 import 'pages/bdt_form_page.dart';
 import 'pages/pre_bdt_form_page.dart';
+import 'pages/criar_bdt_page.dart';
 import 'pages/validacao_inicio_page.dart';
 import 'pages/assinatura_marco_page.dart';
 import 'pages/conclusao_page.dart';
@@ -105,6 +106,8 @@ class BdtUerjApp extends StatelessWidget {
         "/registro/detalhe":      (_) => const RegistroBdtDetalhePage(), // arg: RegistroBdtDetalheArgs
         // Sprint 6 W+M — Registrar divergência de carga.
         "/bdt/divergencia/nova":  (_) => const RegistrarDivergenciaPage(), // arg: int bdtId
+        // Sprint 15 W+M — Criar BDT direto (sem passar por aprovação).
+        "/bdt/criar-direto":      (_) => const CriarBdtPage(),
       },
 
       theme: AppTheme.light(),
