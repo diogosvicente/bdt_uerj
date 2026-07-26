@@ -7,6 +7,7 @@ import '../services/bdt_service.dart';
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/condutor_autocomplete.dart';
+import '../widgets/trecho_extra_sheet.dart';
 import '../widgets/veiculo_autocomplete.dart';
 
 /// Sprint 15 W+M (2026-07-25/26) — Criar BDT sem solicitação (mobile).
@@ -54,6 +55,13 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
 
   CheckupBdt? _checkup;
   bool _checkupCarregando = false;
+
+  /// Sprint 15 W+M (2026-07-26) — Trechos que o condutor cadastra ANTES
+  /// de criar o BDT. São persistidos DEPOIS que o BDT for criado (batch
+  /// sequencial de `criarTrechoExtra`). Se algum falhar, o BDT continua
+  /// existindo — snackbar avisa "N ok, M falharam" e o condutor pode
+  /// re-tentar os que faltam na tela do BDT.
+  final List<TrechoDraft> _trechos = [];
 
   bool _busy = false;
   String? _formError;
@@ -110,6 +118,8 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
             _cardCondutor(),
             const SizedBox(height: 12),
             _cardData(),
+            const SizedBox(height: 12),
+            _cardTrechos(),
             if (_checkup != null && _checkup!.avisos.isNotEmpty) ...[
               const SizedBox(height: 12),
               _bannerCheckup(_checkup!),
@@ -332,6 +342,118 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
     );
   }
 
+  Widget _cardTrechos() {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Trechos (opcional)',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                if (_trechos.isNotEmpty)
+                  Text(
+                    '${_trechos.length}',
+                    style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _trechos.isEmpty
+                  ? 'Pode adicionar já os trechos que vai fazer — eles '
+                    'são cadastrados junto do BDT.'
+                  : 'Os trechos abaixo serão cadastrados junto do BDT.',
+              style: theme.textTheme.bodySmall,
+            ),
+            if (_trechos.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              for (int i = 0; i < _trechos.length; i++) _tileTrecho(i),
+            ],
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _adicionarTrecho,
+              icon: const Icon(Icons.add_road),
+              label: const Text('Adicionar trecho'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tileTrecho(int i) {
+    final t = _trechos[i];
+    final hs = t.horaSaida ?? '';
+    final hc = t.horaChegada ?? '';
+    final linhaHora = (hs.isNotEmpty || hc.isNotEmpty)
+        ? '${hs.isEmpty ? "--:--" : hs}  →  ${hc.isEmpty ? "--:--" : hc}'
+        : null;
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 6),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: ListTile(
+        dense: true,
+        leading: const Icon(Icons.alt_route),
+        title: Text(
+          '${t.origem}  →  ${t.destino}',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: (linhaHora != null || (t.obs?.isNotEmpty ?? false))
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (linhaHora != null)
+                    Text(linhaHora, style: const TextStyle(fontSize: 12)),
+                  if (t.obs?.isNotEmpty ?? false)
+                    Text(
+                      t.obs!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                ],
+              )
+            : null,
+        trailing: IconButton(
+          tooltip: 'Remover',
+          icon: const Icon(Icons.close),
+          onPressed: _busy ? null : () => _removerTrecho(i),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _adicionarTrecho() async {
+    final draft = await TrechoExtraSheet.show(
+      context,
+      titulo: 'Adicionar trecho',
+      botaoLabel: 'Adicionar trecho',
+    );
+    if (draft == null || !mounted) return;
+    setState(() => _trechos.add(draft));
+  }
+
+  void _removerTrecho(int i) {
+    setState(() => _trechos.removeAt(i));
+  }
+
   Widget _bannerCheckup(CheckupBdt c) {
     return Container(
       width: double.infinity,
@@ -482,13 +604,53 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
       return;
     }
 
+    // Sprint 15 W+M (2026-07-26) — se o condutor cadastrou trechos
+    // pré-criação, dispara agora em batch (sequencial). Falha de um
+    // trecho não invalida o BDT — o condutor vê "N ok, M falharam" e
+    // pode re-tentar os que faltam na tela do BDT. Não trava.
+    int trechosOk = 0;
+    int trechosFalha = 0;
+    if (_trechos.isNotEmpty) {
+      for (final t in _trechos) {
+        final ok = await BdtService.criarTrechoExtra(
+          bdtId: bdtId,
+          origem: t.origem,
+          destino: t.destino,
+          horaSaida: t.horaSaida,
+          horaChegada: t.horaChegada,
+          obs: t.obs,
+        );
+        if (ok) {
+          trechosOk++;
+        } else {
+          trechosFalha++;
+        }
+      }
+    }
+    if (!mounted) return;
+
+    final buf = StringBuffer();
+    buf.write(protocolo.isEmpty ? 'BDT criado' : 'BDT $protocolo criado');
+    if (_trechos.isNotEmpty) {
+      if (trechosFalha == 0) {
+        buf.write(' com $trechosOk trecho${trechosOk == 1 ? "" : "s"}.');
+      } else {
+        buf.write(
+          ' — $trechosOk trecho${trechosOk == 1 ? "" : "s"} ok, '
+          '$trechosFalha falhou.',
+        );
+      }
+    } else {
+      buf.write('.');
+    }
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text(
-            protocolo.isEmpty ? 'BDT criado.' : 'BDT $protocolo criado.',
-          ),
+          content: Text(buf.toString()),
+          backgroundColor: trechosFalha > 0
+              ? Theme.of(context).colorScheme.error
+              : null,
         ),
       );
 

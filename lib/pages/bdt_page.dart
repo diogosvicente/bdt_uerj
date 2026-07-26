@@ -10,6 +10,7 @@ import '../services/location_service.dart';
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/seguranca_bdt_dialog.dart';
+import '../widgets/trecho_extra_sheet.dart';
 import 'package:flutter/services.dart';
 
 class BdtPage extends StatefulWidget {
@@ -725,264 +726,36 @@ class _BdtPageState extends State<BdtPage> {
   }*/
 
   Future<void> _openTrechoExtraSheet(int bdtId) async {
-    final origemCtrl = TextEditingController();
-    final destinoCtrl = TextEditingController();
-    final obsCtrl = TextEditingController();
-    final horaSaidaCtrl = TextEditingController();
-    final horaChegadaCtrl = TextEditingController();
+    // Sprint 15 W+M (2026-07-26) — form extraído pra `TrechoExtraSheet`
+    // pra ser reusado também pela `CriarBdtPage` (que acumula trechos
+    // pré-criação). Aqui o BDT já existe, então persistimos imediato
+    // e recarregamos o BDT.
+    final draft = await TrechoExtraSheet.show(context);
+    if (draft == null || !mounted) return;
 
-    // Sprint MUX (2026-07-22) — erros inline em vez de SnackBar. O sheet
-    // é fullscreen com o teclado aberto, então SnackBar do ScaffoldMessenger
-    // aparece atrás e o condutor não vê ("cliquei mas nada acontece").
-    //
-    // Sprint 15 W+M (2026-07-26) — padrão errorText inline por campo
-    // (mesmo do AbastecimentoSheet/NovaOcorrenciaPage). O banner no topo
-    // fica só pra erros de nível de form (ambiguidade dos dois horários,
-    // falha de rede).
-    String? formError;
-    String? errOrigem;
-    String? errDestino;
-    bool busy = false;
+    final ok = await BdtService.criarTrechoExtra(
+      bdtId: bdtId,
+      origem: draft.origem,
+      destino: draft.destino,
+      horaSaida: draft.horaSaida,
+      horaChegada: draft.horaChegada,
+      obs: draft.obs,
+    );
+    if (!mounted) return;
 
-    Future<void> pickHora(
-      TextEditingController c,
-      StateSetter setLocal,
-    ) async {
-      final t = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.now(),
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-          child: child!,
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Trecho extra criado.'
+                : 'Falha ao criar trecho extra. Verifique a conexão.',
+          ),
+          backgroundColor: ok ? null : Theme.of(context).colorScheme.error,
         ),
       );
-      if (t == null) return;
-      String two(int v) => v.toString().padLeft(2, '0');
-      setLocal(() {
-        c.text = '${two(t.hour)}:${two(t.minute)}';
-      });
-    }
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            final pad = MediaQuery.of(ctx).viewInsets.bottom;
-            return Padding(
-              padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + pad),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            "Adicionar trecho extra",
-                            style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      "Um trecho que não veio de nenhuma solicitação — "
-                      "ex.: um deslocamento extra que surgiu na viagem.",
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                    const SizedBox(height: 12),
-                    if (formError != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          color: Theme.of(ctx).colorScheme.errorContainer,
-                        ),
-                        child: Text(
-                          formError!,
-                          style: TextStyle(
-                            color: Theme.of(ctx).colorScheme.onErrorContainer,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    TextField(
-                      controller: origemCtrl,
-                      maxLines: 2,
-                      textCapitalization: TextCapitalization.sentences,
-                      enabled: !busy,
-                      onChanged: (_) {
-                        if (errOrigem != null) {
-                          setLocal(() => errOrigem = null);
-                        }
-                      },
-                      decoration: InputDecoration(
-                        labelText: "Origem *",
-                        hintText: "Ex.: UERJ Maracanã",
-                        border: const OutlineInputBorder(),
-                        errorText: errOrigem,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: destinoCtrl,
-                      maxLines: 2,
-                      textCapitalization: TextCapitalization.sentences,
-                      enabled: !busy,
-                      onChanged: (_) {
-                        if (errDestino != null) {
-                          setLocal(() => errDestino = null);
-                        }
-                      },
-                      decoration: InputDecoration(
-                        labelText: "Destino *",
-                        hintText: "Ex.: Hospital Pedro Ernesto",
-                        border: const OutlineInputBorder(),
-                        errorText: errDestino,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: horaSaidaCtrl,
-                            readOnly: true,
-                            enabled: !busy,
-                            onTap: () => pickHora(horaSaidaCtrl, setLocal),
-                            decoration: const InputDecoration(
-                              labelText: "Saída (HH:MM)",
-                              border: OutlineInputBorder(),
-                              suffixIcon: Icon(Icons.schedule),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: horaChegadaCtrl,
-                            readOnly: true,
-                            enabled: !busy,
-                            onTap: () => pickHora(horaChegadaCtrl, setLocal),
-                            decoration: const InputDecoration(
-                              labelText: "Chegada (HH:MM)",
-                              border: OutlineInputBorder(),
-                              suffixIcon: Icon(Icons.schedule),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: obsCtrl,
-                      maxLines: 2,
-                      textCapitalization: TextCapitalization.sentences,
-                      enabled: !busy,
-                      decoration: const InputDecoration(
-                        labelText: "Observação (opcional)",
-                        hintText: "Ex.: desvio pela Vermelha por obra",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    FilledButton.icon(
-                      onPressed: busy
-                          ? null
-                          : () async {
-                              final origem = origemCtrl.text.trim();
-                              final destino = destinoCtrl.text.trim();
-                              final novoErrOrigem = origem.isEmpty
-                                  ? 'Informe a origem.'
-                                  : null;
-                              final novoErrDestino = destino.isEmpty
-                                  ? 'Informe o destino.'
-                                  : null;
-                              if (novoErrOrigem != null || novoErrDestino != null) {
-                                setLocal(() {
-                                  errOrigem = novoErrOrigem;
-                                  errDestino = novoErrDestino;
-                                  formError = null;
-                                });
-                                return;
-                              }
-
-                              final hs = horaSaidaCtrl.text.trim();
-                              final hc = horaChegadaCtrl.text.trim();
-                              // Se preencheu um dos horários, exige o outro
-                              // (senão fica meia-boca no relatório).
-                              if ((hs.isNotEmpty) != (hc.isNotEmpty)) {
-                                setLocal(() => formError =
-                                    'Preencha os DOIS horários (saída e chegada) '
-                                    'ou deixe ambos vazios.');
-                                return;
-                              }
-
-                              setLocal(() {
-                                formError = null;
-                                errOrigem = null;
-                                errDestino = null;
-                                busy = true;
-                              });
-                              final ok = await BdtService.criarTrechoExtra(
-                                bdtId: bdtId,
-                                origem: origem,
-                                destino: destino,
-                                horaSaida: hs.isEmpty ? null : hs,
-                                horaChegada: hc.isEmpty ? null : hc,
-                                obs: obsCtrl.text,
-                              );
-
-                              if (!context.mounted) return;
-
-                              if (!ok) {
-                                setLocal(() {
-                                  busy = false;
-                                  formError = 'Falha ao criar trecho extra. '
-                                      'Verifique a conexão e tente novamente.';
-                                });
-                                return;
-                              }
-
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context)
-                                ..clearSnackBars()
-                                ..showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Trecho extra criado.'),
-                                  ),
-                                );
-                              await _load(bdtId);
-                            },
-                      icon: busy
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.add_road),
-                      label: const Text("Cadastrar trecho extra"),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+    if (ok) await _load(bdtId);
   }
 
   String _statusLabel(String s) {

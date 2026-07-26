@@ -1074,6 +1074,30 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **CriarBdtPage — trechos opcionais pré-criação** (2026-07-26) —
+  o condutor pode adicionar 1+ trechos junto do form de criar BDT
+  (evita o vai-e-volta "cria BDT → abre BDT → adiciona trecho extra"
+  que era a UX anterior). Novo card "Trechos (opcional)" com botão
+  "Adicionar trecho" que abre o mesmo sheet do trecho extra (agora
+  extraído pra widget compartilhado `TrechoExtraSheet` em
+  `lib/widgets/trecho_extra_sheet.dart`). Lista os drafts com ícone
+  `alt_route`, mostra hora saída→chegada e observação em preview,
+  botão "×" pra remover. Ao criar o BDT: primeiro cria o BDT via
+  `criarBdtSemSolicitacao`; se success, roda `criarTrechoExtra` pra
+  cada draft em sequência; snackbar final consolidado
+  ("BDT TRN-BDT-... criado com N trechos." ou "N ok, M falharam."
+  vermelho). Falha de trecho NÃO invalida o BDT — condutor pode
+  re-tentar os que faltaram na tela do BDT. Não trava
+  ([[bdt_uerj_sem_travas_so_alertas]]).
+
+- ✅ **TrechoExtraSheet — widget reusável extraído do bdt_page** (2026-07-26)
+  — o formulário do `_openTrechoExtraSheet` (inline em `bdt_page.dart`,
+  ~260 linhas) virou `TrechoExtraSheet.show(context, {titulo, botaoLabel})
+  → Future<TrechoDraft?>`. O `bdt_page` (que salva no BDT já criado)
+  passou a chamar `TrechoExtraSheet.show` + `criarTrechoExtra` no
+  callback. A `CriarBdtPage` (que acumula pré-criação) chama o mesmo
+  sheet e faz `_trechos.add(draft)`. Zero duplicação de UI.
+
 - ✅ **CriarBdtPage — autocomplete filtrável de condutor** (2026-07-26)
   — o `DropdownButtonFormField` estático foi trocado por um
   `CondutorAutocomplete` novo (`lib/widgets/condutor_autocomplete.dart`).
