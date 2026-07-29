@@ -425,6 +425,18 @@ class _LoginPageState extends State<LoginPage> {
                                 : 'Entrar',
                           ),
                         ),
+                        // Sprint MSEC.8 — dispara o e-mail de redefinição.
+                        // A troca da senha acontece no navegador, pelo
+                        // link recebido (mesmo fluxo do web).
+                        TextButton(
+                          onPressed: loading
+                              ? null
+                              : () => Navigator.pushNamed(
+                                    context,
+                                    '/esqueci-senha',
+                                  ),
+                          child: const Text('Esqueci minha senha'),
+                        ),
                       ],
                     ),
                   ),

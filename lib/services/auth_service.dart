@@ -29,6 +29,13 @@ class LoginResult {
   });
 
   factory LoginResult.success() => const LoginResult._(ok: true);
+
+  /// MSEC.8 — sucesso que carrega mensagem do backend pra UI exibir
+  /// (usado pelo "esqueci minha senha", cuja resposta é deliberadamente
+  /// genérica e precisa chegar íntegra na tela).
+  factory LoginResult.successWithMessage(String? msg) =>
+      LoginResult._(ok: true, message: msg);
+
   factory LoginResult.failure(String? msg) =>
       LoginResult._(ok: false, message: msg);
   factory LoginResult.captchaFailure(String? msg, {required bool reload}) =>
@@ -48,6 +55,56 @@ class LoginResult {
 }
 
 class AuthService {
+  /// Sprint MSEC.8 (2026-07-28) — dispara o e-mail de redefinição de senha.
+  ///
+  /// O app **só pede o envio**: a troca da senha acontece no navegador,
+  /// pelo link que chega no e-mail (mesmo fluxo/token do web). Não
+  /// duplicamos a tela de redefinição no Flutter porque isso espalharia
+  /// regra sensível — validação e consumo do token, política de senha —
+  /// em dois lugares ([[bdt_uerj_reusar_codigo_web]]).
+  ///
+  /// Reusa [LoginResult] porque os modos de falha são os mesmos do login:
+  /// captcha recusado e rate limit.
+  ///
+  /// ⚠️ O backend responde a MESMA mensagem exista ou não o CPF — é
+  /// proposital, pra não permitir descobrir quais CPFs estão cadastrados.
+  /// A UI, portanto, não deve prometer "e-mail enviado", e sim repetir a
+  /// mensagem condicional que vem do backend.
+  static Future<LoginResult> esqueciSenha(
+    String cpf, {
+    String? captchaToken,
+    String? captcha,
+  }) async {
+    final res = await ApiClient.post('transporte/api/esqueci-senha', {
+      'cpf': cpf,
+      if (captchaToken != null && captchaToken.isNotEmpty)
+        'captcha_token': captchaToken,
+      if (captcha != null && captcha.isNotEmpty) 'captcha': captcha,
+    });
+
+    if (res['success'] != true) {
+      final status = (res['status'] ?? '').toString();
+      final msg = res['message']?.toString();
+
+      if (status == 'CAPTCHA_ERROR') {
+        return LoginResult.captchaFailure(
+          msg,
+          reload: res['captcha_reload'] == true,
+        );
+      }
+      if (status == 'TOO_MANY_REQUESTS') {
+        final raw = res['retry_after_seconds'];
+        final retry = raw is int ? raw : int.tryParse(raw?.toString() ?? '') ?? 60;
+        return LoginResult.throttledFailure(msg, retryAfter: retry);
+      }
+      return LoginResult.failure(msg);
+    }
+
+    // Sucesso: devolvemos a mensagem do backend pra UI exibir tal e qual
+    // (ela já é a versão que não vaza existência do CPF).
+    return LoginResult.successWithMessage(res['message']?.toString());
+  }
+
   /// Executa o login. Se o backend estiver com captcha habilitado,
   /// [captchaToken] e [captcha] são obrigatórios.
   static Future<LoginResult> login(

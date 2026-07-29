@@ -472,13 +472,60 @@ reais em campo.
     `UsuarioFotoStorage.clear()` — próximo condutor logando não vê
     foto do anterior.
 
-- ⏸️ **MSEC.5 — Certificate pinning** (opcional, adiado)
-  - **Ganho:** protege contra MITM via CA maliciosa instalada no
-    device (usuário confuso com Wi-Fi corporativo, atacante com
-    acesso físico, etc.).
-  - **Custo:** rotação de cert quebra o app até novo build+deploy
-    na loja. **Não recomendado nesta fase** — priorizar MSEC.1-4.
-    Reavaliar após o piloto.
+- ✅ **MSEC.5 — Certificate pinning** (2026-07-28) — estava adiado por
+  medo de a rotação de certificado brickar o app; **destravado** ao
+  pinar a CADEIA em vez do certificado folha. Detalhes completos na
+  seção "Da Sprint 15 web". Resumo:
+  - `SecurityContext(withTrustedRoots: false)` com apenas a cadeia da
+    RNP (intermediária + raiz GlobalSign R46) — remove as ~150 CAs do
+    sistema, que era o vetor real de MITM. Validação no handshake, antes
+    de qualquer byte sair do aparelho.
+  - Pinar a cadeia (não a folha) faz a renovação anual do certificado
+    passar sem release novo — que era exatamente o custo que motivou o
+    adiamento. Intermediária vale até **19/11/2030**.
+  - Escape hatch `--dart-define=SSL_PINNING=off` cobre o cenário
+    remanescente (RNP migrar de CA sem aviso).
+  - Verificado com openssl: produção OK, CA de fora recusada.
+
+- ✅ **MSEC.8 — "Esqueci minha senha" no app** (2026-07-28) — o condutor
+  não tinha como recuperar acesso pelo celular; dependia de alguém
+  redefinir pelo admin web. Agora existe a tela `/esqueci-senha`
+  (link no rodapé do login).
+  - **Escopo deliberado**: o app **só dispara o e-mail**. A troca da
+    senha continua no navegador, pelo link recebido — mesmo
+    `LoginController::validateAccess` / `resetPassword` do web. Não
+    replicamos a tela de redefinição no Flutter porque isso espalharia
+    regra sensível (validação/expiração/consumo do token, política de
+    senha) em dois lugares ([[bdt_uerj_reusar_codigo_web]]). O link abre
+    no navegador do próprio celular, então o condutor resolve tudo sem
+    trocar de aparelho.
+  - **Backend**: `POST transporte/api/esqueci-senha` no
+    `AuthApiController` — espelho do `forgotPasswordValidate` do web,
+    trocando só a camada de entrada (hCaptcha → `SimpleCaptchaService`,
+    HTML/CSRF → JSON). Gera token `reset_password` e chama o MESMO
+    helper `enviar_email_reset_senha`, então o e-mail sai idêntico ao do
+    fluxo web. Rota isenta de CSRF (cliente nativo não tem sessão) —
+    a proteção é captcha + rate limit.
+  - **Anti-enumeração**: o fluxo web responde "Usuário não encontrado."
+    quando o CPF não existe, o que permite **enumerar CPFs** de
+    servidores. O endpoint novo já nasce sem esse vazamento — existindo
+    ou não o usuário, a resposta é byte a byte a mesma; os motivos reais
+    (inexistente, cadastro incompleto, e-mail que não saiu) vão só pro
+    log. Verificado: CPF real e CPF fake retornam resposta idêntica,
+    mas só o real gera token no banco.
+  - **Rate limit** 5/hora por CPF (mais apertado que os 10/min do login,
+    porque aqui cada acerto dispara um e-mail — sem isso o endpoint vira
+    ferramenta de flood na caixa de terceiros). Por CPF e não por IP,
+    mesma justificativa do login (NAT compartilhado da UERJ).
+  - **Mobile**: `AuthService.esqueciSenha()` reusando `LoginResult`
+    (mesmos modos de falha: captcha e throttle) + `EsqueciSenhaPage`
+    reusando o `CaptchaField` do login. Validação inline no padrão da
+    casa. A tela **nunca afirma "e-mail enviado"** — repete a frase
+    condicional do backend, senão anularia a proteção anti-enumeração.
+  - ⚠️ **Pendência**: o `login()` ainda distingue "Usuário não
+    encontrado." de "CPF ou senha inválidos.", então a enumeração
+    continua possível por lá. Corrigir exige alinhar a mensagem com o
+    time do web — fica como próximo item de MSEC.
 
 - ✅ **MSEC.7 — Convenção de fuso horário end-to-end** (2026-07-24)
   — **Origem:** o app estava exibindo hora errada (~3h à frente do

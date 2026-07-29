@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'api/ssl_bootstrap.dart';
 import 'pages/login_page.dart';
+import 'pages/esqueci_senha_page.dart';
 import 'pages/home_page.dart';
 import 'pages/bdt_page.dart';
 import 'pages/bdt_form_page.dart';
@@ -90,6 +91,9 @@ class BdtUerjApp extends StatelessWidget {
       initialRoute: "/login",
       routes: {
         "/login": (_) => const LoginPage(),
+        // Sprint MSEC.8 — dispara o e-mail de redefinição; a troca da
+        // senha acontece no navegador, pelo link recebido.
+        "/esqueci-senha": (_) => const EsqueciSenhaPage(),
         "/home": (_) => const HomePage(),
         "/bdt": (_) => const BdtPage(),
         "/bdt_form": (_) => const BdtFormPage(),
