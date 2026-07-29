@@ -1121,6 +1121,31 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Itinerário do BDT direto no PDF e no modal "Origem"** (2026-07-29) —
+  depois de corrigir a Agenda, os outros dois pontos de leitura seguiam
+  vazios: o PDF de acompanhamento saía sem itinerário e o modal "Origem do
+  BDT" (painel) dizia "Sem trechos cadastrados", mesmo com o trecho
+  visível na folha e na Agenda. Mesma raiz — cada tela lê os trechos da
+  solicitação, e nas cascas sintéticas o itinerário não mora lá.
+  - `SolicitacaoModel::getWithDiasETrechos` (usado pelo PDF) ganha
+    fallback quando NENHUM dia tem trecho, anexando ao primeiro dia
+    (a casca tem exatamente um) para o template não precisar diferenciar.
+    Também passou a trazer `s.tipo_solicitante` no select, que faltava.
+  - `BdtRepository::getOrigemBdt` ganha o fallback de `bdt_sem_solicitacao`
+    ao lado do que já existia para `pre_bdt`.
+  - **Pré-BDT (o que foi pedido pra conferir)**: o fallback do PDF cobre
+    `pre_bdt` também, lendo `trnsp_bdt_trechos_previstos`. Isso conserta um
+    caso que já existia antes deste trabalho e passava batido — quando a
+    aprovação reaproveita uma agenda existente, os trechos NÃO são
+    materializados em `trnsp_solicitacao_trechos` e o PDF saía sem
+    itinerário. O `getOrigemBdt` já tratava isso; o PDF não.
+    Pré-BDT **pendente** não tem solicitação (`fk_solicitacao` NULL), logo
+    não tem PDF de acompanhamento — só depois de aprovado.
+  - Verificado nos 3 pontos (Agenda / PDF / modal) para BDT direto, mais o
+    modal do Pré-BDT pendente, e as 7 solicitações normais seguem com
+    itinerário no PDF (o fallback só entra quando a própria solicitação
+    está sem trecho).
+
 - ✅ **BDT direto — declarar carga** (2026-07-29) — o BDT criado direto pelo
   app passa a aceitar carga, que antes só existia no Pré-BDT.
   - **Mesmo destino, mesma regra**: grava nas MESMAS 6 colunas de
