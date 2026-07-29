@@ -2216,8 +2216,13 @@ class _BdtFormPageState extends State<BdtFormPage> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Confira o que foi declarado no pedido. Se a carga real '
-              'não bater, registre em "Divergências de carga".',
+              // A carga pode vir do pedido OU ter sido declarada direto no
+              // BDT (BDT criado pelo app / Pré-BDT) — o texto cobre os dois.
+              cargas.any((c) => c.declaradaNoBdt)
+                  ? 'Confira o que foi declarado. Se a carga real não bater, '
+                    'registre em "Divergências de carga".'
+                  : 'Confira o que foi declarado no pedido. Se a carga real '
+                    'não bater, registre em "Divergências de carga".',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 10),
@@ -2292,7 +2297,9 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final linhas = <RegistroBdtLinha>[
       RegistroBdtLinha(
         icone: Icons.confirmation_number_outlined,
-        label: 'Solicitação',
+        // Carga declarada direto no BDT não vem de solicitação nenhuma —
+        // rotular como "Solicitação" ali seria mentira.
+        label: c.declaradaNoBdt ? 'BDT' : 'Solicitação',
         valor: c.protocolo,
       ),
       if (c.pesoKg != null)
@@ -2349,7 +2356,10 @@ class _BdtFormPageState extends State<BdtFormPage> {
           : c.protocolo,
       linhas: linhas,
       fotos: fotosRefs,
-      fotoFetcher: (docId) => CargaService.obterFoto(docId, bdtId: bdtId),
+      // `origem` decide a tabela de referência no backend (solicitação
+      // materializada × carga declarada no próprio BDT).
+      fotoFetcher: (docId) =>
+          CargaService.obterFoto(docId, bdtId: bdtId, origem: c.origem),
       tituloGaleria: 'Carga ${c.protocolo}',
       // Leitura pura — condutor não edita nem exclui carga declarada.
       onEditar: null,

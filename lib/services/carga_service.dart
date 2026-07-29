@@ -44,13 +44,27 @@ class CargaService {
         .toList();
   }
 
-  /// Baixa binário de uma foto da carga MATERIALIZADA (tabela=
-  /// trnsp_solicitacoes). Bearer + ETag no backend.
-  static Future<List<int>?> obterFoto(int docId, {required int bdtId}) async {
+  /// Baixa binário de uma foto de carga do BDT. Bearer + ETag no backend.
+  ///
+  /// [origem] diz de onde a foto vem — `'solicitacao'` (carga prometida no
+  /// pedido, ou Pré-BDT já aprovado) ou `'bdt'` (carga declarada direto no
+  /// BDT: Pré-BDT pendente e BDT criado direto pelo app). O backend usa esse
+  /// valor pra escolher a tabela de referência; a autorização é sempre por
+  /// condutor do BDT.
+  static Future<List<int>?> obterFoto(
+    int docId, {
+    required int bdtId,
+    String origem = 'solicitacao',
+  }) async {
     final usuarioId = await _userId();
     return ApiClient.postForBytes(
       'transporte/api/bdt/carga/foto/obter',
-      {'usuario_id': usuarioId, 'doc_id': docId, 'bdt_id': bdtId},
+      {
+        'usuario_id': usuarioId,
+        'doc_id': docId,
+        'bdt_id': bdtId,
+        'origem': origem,
+      },
     );
   }
 }
@@ -74,6 +88,11 @@ class CargaDoBdt {
   final String? pessoalApoio;
   final List<CargaFotoRef> fotos;
 
+  /// Onde a carga (e as fotos) estão guardadas — `'solicitacao'` ou `'bdt'`.
+  /// Repassado ao backend em [CargaService.obterFoto] pra ele saber a tabela
+  /// de referência. Ver doc do método.
+  final String origem;
+
   const CargaDoBdt({
     required this.solicitacaoId,
     required this.ano,
@@ -85,11 +104,21 @@ class CargaDoBdt {
     this.alturaM,
     this.pessoalApoio,
     this.fotos = const [],
+    this.origem = 'solicitacao',
   });
 
-  /// Protocolo formatado no padrão TRN-YYYY-NNNN (compatível com o web).
-  String get protocolo =>
-      'TRN-${ano.toString().padLeft(4, "0")}-${numeroAno.toString().padLeft(4, "0")}';
+  /// True quando a carga foi declarada no próprio BDT (BDT criado direto pelo
+  /// app, ou Pré-BDT ainda não aprovado) em vez de numa solicitação.
+  bool get declaradaNoBdt => origem == 'bdt';
+
+  /// Protocolo formatado. `TRN-BDT-` quando a carga é do próprio BDT (a
+  /// numeração vem de `trnsp_bdt`, sequência distinta da de solicitações);
+  /// `TRN-` quando vem de uma solicitação.
+  String get protocolo {
+    final a = ano.toString().padLeft(4, '0');
+    final n = numeroAno.toString().padLeft(4, '0');
+    return declaradaNoBdt ? 'TRN-BDT-$a-$n' : 'TRN-$a-$n';
+  }
 
   /// True se ao menos um campo de carga foi preenchido (peso, dimensão,
   /// texto ou apoio) — se todos vazios, a solicitação nem entra no
@@ -132,6 +161,9 @@ class CargaDoBdt {
       alturaM: asDouble(j['altura_m']),
       pessoalApoio: j['pessoal_apoio']?.toString(),
       fotos: fotos,
+      origem: (j['origem']?.toString().trim().isNotEmpty ?? false)
+          ? j['origem'].toString()
+          : 'solicitacao',
     );
   }
 }

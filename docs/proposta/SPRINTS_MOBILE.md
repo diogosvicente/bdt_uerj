@@ -1121,6 +1121,44 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Editar Pré-BDT trazia a carga em branco** (2026-07-29) — **bug de
+  leitura**: o form de edição abria com o switch "Vai levar carga?"
+  DESLIGADO e os campos vazios, mesmo com carga declarada. A gravação
+  sempre funcionou; a releitura estava cega.
+  - Causa: `PreBdtRepository::findMeuPendente` — a query que alimenta o
+    `pre-bdt/obter` — não incluía as 6 colunas de carga no SELECT. Sem
+    `tem_carga` no JSON, `PreBdtPendente.fromJson` caía no default
+    `false` e o card nem expandia.
+  - O mobile já estava correto (`_temCarga = p.temCarga` + controllers +
+    loader das fotos) — só faltava o dado chegar.
+  - Verificado: `tem_carga=1`, descrição, peso `25.500` e as três
+    dimensões voltando do backend.
+
+- ✅ **Ver a foto da carga no BDT** (2026-07-29) — o card "Carga
+  declarada" não mostrava nada quando a carga tinha sido declarada no
+  próprio BDT (BDT criado direto pelo app, ou Pré-BDT ainda pendente):
+  nesses casos ela mora em `trnsp_bdt`, com fotos referenciadas por
+  `tabela='trnsp_bdt'`, e o endpoint `bdt/carga` só olhava
+  `trnsp_solicitacoes`.
+  - `listarCargaDoBdt` ganha a carga do próprio BDT quando
+    `tem_carga=1`, com as fotos de `tabela='trnsp_bdt'`. Cada item passa
+    a carregar `origem` (`'solicitacao'` | `'bdt'`).
+  - `bdt/carga/foto/obter` aceita `origem` e escolhe a tabela de
+    referência — **uma rota só**, em vez de o app ter que alternar entre
+    dois endpoints. Isso também corrige um problema latente: o
+    `obterFotoCarga` da Sprint 11 guarda por `criado_por`, o que passaria
+    a barrar o condutor quando o **admin** cria o BDT para ele. Aqui a
+    autorização é sempre por condutor do BDT (`assertBdtPertence`),
+    igual aos outros anexos.
+  - Mobile: `CargaDoBdt.origem` + `declaradaNoBdt`; protocolo sai como
+    `TRN-BDT-` quando a carga é do BDT (sequência distinta da de
+    solicitações) e o detalhe rotula a linha como "BDT" em vez de
+    "Solicitação". Reusa o `RegistroBdtDetalhePage` →
+    `FotoGaleriaPage` (swipe + zoom + contador), mesmo caminho de
+    abastecimentos/manutenções/ocorrências.
+  - Verificado: foto referenciada em `trnsp_bdt` aparece na listagem e o
+    protocolo sai como `TRN-BDT-2026-0004`.
+
 - ✅ **Itinerário do BDT direto no PDF e no modal "Origem"** (2026-07-29) —
   depois de corrigir a Agenda, os outros dois pontos de leitura seguiam
   vazios: o PDF de acompanhamento saía sem itinerário e o modal "Origem do
