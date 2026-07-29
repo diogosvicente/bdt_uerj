@@ -1121,6 +1121,55 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **BDT direto — declarar carga** (2026-07-29) — o BDT criado direto pelo
+  app passa a aceitar carga, que antes só existia no Pré-BDT.
+  - **Mesmo destino, mesma regra**: grava nas MESMAS 6 colunas de
+    `trnsp_bdt` (`tem_carga`, `carga`, `carga_peso_kg`,
+    `carga_comprimento_m`, `carga_largura_m`, `carga_altura_m`) e reusa a
+    normalização do `PreBdtService` — inclusive o parse que aceita vírgula
+    decimal. Divergir aí faria o mesmo input virar dado diferente
+    dependendo da tela.
+  - **Backend**: `BdtSemSolicitacaoService::criar` ganha 5º parâmetro
+    `array $carga = []` (opcional no fim, então o caller do web não muda);
+    `criarBdtSemSolicitacao` repassa os campos.
+  - **Fotos sem endpoint novo**: o guard `assertPreBdtOwnership` só checa
+    `criado_por` — não exige Pré-BDT pendente. Logo
+    `bdt/pre-bdt/fotos-carga/*` (que já referencia `tabela='trnsp_bdt'`)
+    aceita o BDT direto como está. Upload em batch **após** criar, porque
+    precisa do `bdt_id` — igual ao Pré-BDT.
+  - **UI compartilhada**: card extraído para `CargaFormCard`
+    (`lib/widgets/carga_form_card.dart`, ARCHITECTURE §4.8) e usado nas
+    DUAS telas. Duplicar ~200 linhas abriria espaço pra elas divergirem,
+    justamente o que se quer evitar quando o destino do dado é o mesmo.
+    Extração de UI pura: o estado continua na Page, que valida e envia.
+  - **Validação no padrão da casa**: switch ligado exige descrição + ao
+    menos 1 foto (paridade com o `folha.php` do web), com banner
+    `errorContainer` no card e `*` nos labels obrigatórios. Peso e
+    dimensões seguem opcionais.
+  - Verificado: sem carga não grava nada; com carga o `"12,5"` do teclado
+    pt-BR chega como `12.500`; guard de foto aceita o BDT direto.
+
+- ✅ **Fix: itinerário do BDT sem solicitação na Agenda — agora pelo lado
+  da LEITURA** (2026-07-29) — a primeira tentativa (mover o trecho para a
+  solicitação da casca) **quebrou o BDT no web** e foi revertida: o
+  `BdtRepository` casa por `tipo_solicitante = 'avulso'` em duas
+  consultas, então "trecho avulso mora em solicitação 'avulso'" é
+  invariante, não detalhe. Avaliei mal o alcance na primeira vez.
+  - **Solução correta**: `SolicitacaoModel::getSolicitacoesCompletas`
+    enriquece a casca `bdt_sem_solicitacao` com os trechos da solicitação
+    'avulso' do BDT (novo `getTrechosAvulsosDoBdtPorSolicitacao`). O dado
+    fica onde sempre esteve; só quem lê passou a saber olhar nos dois
+    lugares.
+  - Constante `BDT_SEM_SOLICITACAO` centralizada em
+    `TransporteSolicitanteTipos` (o literal estava espalhado). Ela NÃO
+    entra em `sinteticos()`: é sintética na origem, mas visível na Agenda
+    por desenho.
+  - Migration `DesfazMovimentacaoTrechosBdtSemSolicitacao` devolveu ao
+    lugar os trechos que a migration anterior havia movido.
+  - Verificado: trecho segue na 'avulso' (invariante intacto), Agenda
+    renderiza o itinerário, `embarque`/`destino` preenchidos, token do PDF
+    presente, e as 7 solicitações normais não foram afetadas.
+
 - ✅ **Fix: itinerário do BDT sem solicitação sumia da Agenda + PDF null**
   (2026-07-29) — **reportado no teste**: trecho criado pelo app aparecia
   certinho na folha do BDT, mas a Agenda continuava dizendo "Itinerário

@@ -170,6 +170,15 @@ class BdtService {
     required int veiculoId,
     int? condutorId,
     String? dataReferencia,
+    // Sprint 15 W+M (2026-07-29) — carga opcional, mesmos campos do Pré-BDT.
+    // As fotos vão separadamente por `uploadFotoCarga` DEPOIS de criar (o
+    // upload precisa do bdt_id) — igual ao fluxo do Pré-BDT.
+    bool temCarga = false,
+    String? carga,
+    double? cargaPesoKg,
+    double? cargaComprimentoM,
+    double? cargaLarguraM,
+    double? cargaAlturaM,
   }) async {
     final usuarioId = await _userId();
     final res = await ApiClient.post(
@@ -180,6 +189,17 @@ class BdtService {
         if (condutorId != null && condutorId > 0) 'condutor_id': condutorId,
         if (dataReferencia != null && dataReferencia.isNotEmpty)
           'data_referencia': dataReferencia,
+        'tem_carga': temCarga,
+        if (temCarga && carga != null && carga.trim().isNotEmpty)
+          'carga': carga.trim(),
+        if (temCarga && cargaPesoKg != null && cargaPesoKg > 0)
+          'carga_peso_kg': cargaPesoKg,
+        if (temCarga && cargaComprimentoM != null && cargaComprimentoM > 0)
+          'carga_comprimento_m': cargaComprimentoM,
+        if (temCarga && cargaLarguraM != null && cargaLarguraM > 0)
+          'carga_largura_m': cargaLarguraM,
+        if (temCarga && cargaAlturaM != null && cargaAlturaM > 0)
+          'carga_altura_m': cargaAlturaM,
       },
     );
     _log.info(

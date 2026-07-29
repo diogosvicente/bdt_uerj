@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/checkup_bdt.dart';
 import '../models/condutor_lite.dart';
@@ -6,6 +9,7 @@ import '../models/veiculo.dart';
 import '../services/bdt_service.dart';
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/carga_form_card.dart';
 import '../widgets/condutor_autocomplete.dart';
 import '../widgets/trecho_extra_sheet.dart';
 import '../widgets/veiculo_autocomplete.dart';
@@ -63,6 +67,22 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
   /// re-tentar os que faltam na tela do BDT.
   final List<TrechoDraft> _trechos = [];
 
+  /// Sprint 15 W+M (2026-07-29) — carga opcional, mesmo contrato do Pré-BDT
+  /// (mesmas colunas em `trnsp_bdt`, mesma normalização no backend). A UI vem
+  /// do `CargaFormCard`, compartilhado com a `PreBdtFormPage`.
+  bool _temCarga = false;
+  final _cargaDescCtrl = TextEditingController();
+  final _cargaPesoCtrl = TextEditingController();
+  final _cargaComprCtrl = TextEditingController();
+  final _cargaLargCtrl = TextEditingController();
+  final _cargaAltCtrl = TextEditingController();
+  String? _cargaError;
+
+  /// Fotos escolhidas antes de existir o BDT. Sobem em batch depois da
+  /// criação (o upload precisa do `bdt_id`) — igual ao Pré-BDT.
+  final List<XFile> _fotosPendingCarga = [];
+  final _picker = ImagePicker();
+
   bool _busy = false;
   String? _formError;
   String? _veiculoError;
@@ -72,6 +92,16 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
   void initState() {
     super.initState();
     _carregarCondutores();
+  }
+
+  @override
+  void dispose() {
+    _cargaDescCtrl.dispose();
+    _cargaPesoCtrl.dispose();
+    _cargaComprCtrl.dispose();
+    _cargaLargCtrl.dispose();
+    _cargaAltCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _carregarCondutores() async {
@@ -120,6 +150,31 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
             _cardData(),
             const SizedBox(height: 12),
             _cardTrechos(),
+            const SizedBox(height: 12),
+            CargaFormCard(
+              temCarga: _temCarga,
+              onTemCargaChanged: (v) => setState(() {
+                _temCarga = v;
+                _cargaError = null;
+              }),
+              enabled: !_busy,
+              erro: _cargaError,
+              descCtrl: _cargaDescCtrl,
+              pesoCtrl: _cargaPesoCtrl,
+              comprCtrl: _cargaComprCtrl,
+              largCtrl: _cargaLargCtrl,
+              altCtrl: _cargaAltCtrl,
+              onDescricaoChanged: () {
+                if (_cargaError != null) setState(() => _cargaError = null);
+              },
+              fotosPendentes: _fotosPendingCarga,
+              onAdicionarFoto: _adicionarFotoCarga,
+              onRemoverPendente: (i) =>
+                  setState(() => _fotosPendingCarga.removeAt(i)),
+              // Não há foto persistida aqui: o BDT ainda não existe quando
+              // este form é preenchido (diferente do Pré-BDT em edição).
+              onRemoverExistente: (_) {},
+            ),
             if (_checkup != null && _checkup!.avisos.isNotEmpty) ...[
               const SizedBox(height: 12),
               _bannerCheckup(_checkup!),
@@ -454,6 +509,56 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
     setState(() => _trechos.removeAt(i));
   }
 
+  /// Mesmo bottom sheet câmera/galeria do Pré-BDT.
+  Future<void> _adicionarFotoCarga() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Tirar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Escolher da galeria'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    try {
+      final f = await _picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        imageQuality: 82,
+      );
+      if (f == null || !mounted) return;
+      setState(() {
+        _fotosPendingCarga.add(f);
+        _cargaError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao acessar câmera/galeria: $e')),
+      );
+    }
+  }
+
+  /// Decimal tolerante a vírgula — o backend também aceita, mas convertemos
+  /// aqui pra enviar número no JSON em vez de string.
+  double? _parseDec(String s) {
+    final t = s.trim().replaceAll(',', '.');
+    if (t.isEmpty) return null;
+    return double.tryParse(t);
+  }
+
   Widget _bannerCheckup(CheckupBdt c) {
     return Container(
       width: double.infinity,
@@ -559,6 +664,7 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
       _formError = null;
       _veiculoError = null;
       _condutorError = null;
+      _cargaError = null;
     });
 
     if (_veiculo == null) {
@@ -576,11 +682,32 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
       return;
     }
 
+    // Carga: mesma regra do Pré-BDT (paridade com o folha.php do web) —
+    // ligada exige descrição E pelo menos 1 foto.
+    if (_temCarga) {
+      if (_cargaDescCtrl.text.trim().isEmpty) {
+        setState(() => _cargaError = 'Descreva a carga (obrigatório).');
+        return;
+      }
+      if (_fotosPendingCarga.isEmpty) {
+        setState(() => _cargaError =
+            'Anexe pelo menos 1 foto da carga — a foto documenta o que foi '
+            'embarcado.');
+        return;
+      }
+    }
+
     setState(() => _busy = true);
     final res = await BdtService.criarBdtSemSolicitacao(
       veiculoId: _veiculo!.id,
       condutorId: condutorId,
       dataReferencia: DateFmt.apiDate(_dataRef),
+      temCarga: _temCarga,
+      carga: _cargaDescCtrl.text,
+      cargaPesoKg: _parseDec(_cargaPesoCtrl.text),
+      cargaComprimentoM: _parseDec(_cargaComprCtrl.text),
+      cargaLarguraM: _parseDec(_cargaLargCtrl.text),
+      cargaAlturaM: _parseDec(_cargaAltCtrl.text),
     );
     if (!mounted) return;
 
@@ -627,28 +754,61 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
         }
       }
     }
+    // Fotos da carga — só existe bdt_id agora, então o upload é aqui.
+    // Mesma política do Pré-BDT e do batch de trechos: falha de foto NÃO
+    // invalida o BDT, só entra no aviso final.
+    int fotosOk = 0;
+    int fotosFalha = 0;
+    if (_temCarga && _fotosPendingCarga.isNotEmpty) {
+      for (final xf in _fotosPendingCarga) {
+        try {
+          final bytes = await File(xf.path).readAsBytes();
+          final docId = await BdtService.uploadFotoCarga(
+            bdtId: bdtId,
+            bytes: bytes,
+            filename: xf.name,
+          );
+          if (docId > 0) {
+            fotosOk++;
+          } else {
+            fotosFalha++;
+          }
+        } catch (_) {
+          fotosFalha++;
+        }
+        if (!mounted) return;
+      }
+    }
+
     if (!mounted) return;
 
     final buf = StringBuffer();
     buf.write(protocolo.isEmpty ? 'BDT criado' : 'BDT $protocolo criado');
     if (_trechos.isNotEmpty) {
       if (trechosFalha == 0) {
-        buf.write(' com $trechosOk trecho${trechosOk == 1 ? "" : "s"}.');
+        buf.write(' com $trechosOk trecho${trechosOk == 1 ? "" : "s"}');
       } else {
         buf.write(
           ' — $trechosOk trecho${trechosOk == 1 ? "" : "s"} ok, '
-          '$trechosFalha falhou.',
+          '$trechosFalha falhou',
         );
       }
-    } else {
-      buf.write('.');
     }
+    if (fotosOk > 0 || fotosFalha > 0) {
+      buf.write(_trechos.isNotEmpty ? ' e ' : ' com ');
+      if (fotosFalha == 0) {
+        buf.write('$fotosOk foto${fotosOk == 1 ? "" : "s"} de carga');
+      } else {
+        buf.write('$fotosOk foto(s) ok, $fotosFalha falhou');
+      }
+    }
+    buf.write('.');
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
           content: Text(buf.toString()),
-          backgroundColor: trechosFalha > 0
+          backgroundColor: (trechosFalha > 0 || fotosFalha > 0)
               ? Theme.of(context).colorScheme.error
               : null,
         ),

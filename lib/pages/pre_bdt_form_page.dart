@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/pre_bdt_pendente.dart';
@@ -10,7 +9,7 @@ import '../services/bdt_service.dart';
 import '../services/ocorrencia_service.dart' show OcorrenciaFotoRef;
 import '../utils/date_fmt.dart';
 import '../widgets/app_scaffold.dart';
-import '../widgets/foto_documento_thumb.dart';
+import '../widgets/carga_form_card.dart';
 import '../widgets/veiculo_autocomplete.dart';
 
 /// Sprint M3 — formulário de Pré-BDT: **cria** ou **edita**.
@@ -520,7 +519,38 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
           const SizedBox(height: 12),
           _cardTrechos(),
           const SizedBox(height: 12),
-          _cardCarga(),
+          // Sprint 11 W+M — card de carga. Extraído para `CargaFormCard` em
+          // 2026-07-29, quando o BDT direto passou a aceitar carga também:
+          // as duas telas gravam nas mesmas colunas de `trnsp_bdt`, então
+          // duplicar a UI abriria espaço pra elas divergirem.
+          CargaFormCard(
+            temCarga: _temCarga,
+            onTemCargaChanged: (v) => setState(() {
+              _temCarga = v;
+              _cargaError = null;
+            }),
+            enabled: !_enviando,
+            erro: _cargaError,
+            descCtrl: _cargaDescCtrl,
+            pesoCtrl: _cargaPesoCtrl,
+            comprCtrl: _cargaComprCtrl,
+            largCtrl: _cargaLargCtrl,
+            altCtrl: _cargaAltCtrl,
+            onDescricaoChanged: () {
+              if (_cargaError != null) setState(() => _cargaError = null);
+            },
+            fotosPendentes: _fotosPendingCarga,
+            fotosExistentes: _fotosExistentesCarga,
+            onAdicionarFoto: _adicionarFotoCarga,
+            onRemoverPendente: (i) =>
+                setState(() => _fotosPendingCarga.removeAt(i)),
+            // `_removerFotoExistente` é async; o callback é sync, então
+            // disparamos e deixamos o próprio método fazer o setState.
+            onRemoverExistente: (docId) {
+              // ignore: discarded_futures
+              _removerFotoExistente(docId);
+            },
+          ),
           const SizedBox(height: 12),
           _cardObs(),
           const SizedBox(height: 20),
@@ -724,263 +754,6 @@ class _PreBdtFormPageState extends State<PreBdtFormPage> {
     c.text = '${two(t.hour)}:${two(t.minute)}';
   }
 
-  /// Sprint 11 W+M — card "Carga". Switch controla exibição dos campos.
-  /// Quando ligado, exige descrição (label *) + pelo menos 1 foto (UX
-  /// obrigatória, mesma regra do folha.php do web). O peso/dimensões
-  /// são opcionais.
-  Widget _cardCarga() {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _temCarga,
-              onChanged: _enviando
-                  ? null
-                  : (v) => setState(() {
-                        _temCarga = v;
-                        _cargaError = null;
-                      }),
-              title: const Text(
-                'Vai levar carga?',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              subtitle: const Text(
-                'Materiais, equipamentos, animais, cargas de campo…',
-                style: TextStyle(fontSize: 12),
-              ),
-            ),
-            if (_cargaError != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  _cargaError!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-            if (_temCarga) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _cargaDescCtrl,
-                enabled: !_enviando,
-                maxLines: 3,
-                maxLength: 500,
-                textCapitalization: TextCapitalization.sentences,
-                onChanged: (_) {
-                  if (_cargaError != null) setState(() => _cargaError = null);
-                },
-                decoration: const InputDecoration(
-                  labelText: 'Descrição da carga *',
-                  helperText: 'Ex.: "5 caixas de material didático + notebook"',
-                  border: OutlineInputBorder(),
-                  alignLabelWithHint: true,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _cargaPesoCtrl,
-                      enabled: !_enviando,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d*[.,]?\d{0,3}')),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'Peso (kg)',
-                        border: OutlineInputBorder(),
-                        helperText: 'Opcional',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _cargaComprCtrl,
-                      enabled: !_enviando,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d*[.,]?\d{0,2}')),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'Comp. (m)',
-                        border: OutlineInputBorder(),
-                        helperText: ' ',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _cargaLargCtrl,
-                      enabled: !_enviando,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d*[.,]?\d{0,2}')),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'Larg. (m)',
-                        border: OutlineInputBorder(),
-                        helperText: 'Opcional',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _cargaAltCtrl,
-                      enabled: !_enviando,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d*[.,]?\d{0,2}')),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'Alt. (m)',
-                        border: OutlineInputBorder(),
-                        helperText: ' ',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              _blocoFotosCarga(),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _blocoFotosCarga() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFAFAFA),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE0E0E0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Fotos da carga *',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: _enviando ? null : _adicionarFotoCarga,
-                icon: const Icon(Icons.add_a_photo, size: 18),
-                label: const Text('Adicionar'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'Anexe pelo menos 1 foto — comprova a carga real embarcada.',
-            style: TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              // Fotos já persistidas (só em edição).
-              for (final f in _fotosExistentesCarga)
-                Stack(
-                  children: [
-                    // Fix latente (Sprint 18): antes usava FotoOcorrenciaThumb,
-                    // que baixava via endpoint de OCORRÊNCIA — errado. Agora
-                    // baixa pelo endpoint de CARGA (BdtService.obterFotoCarga).
-                    FotoDocumentoThumb(
-                      docId: f.id,
-                      fetcher: BdtService.obterFotoCarga,
-                      cacheNamespace: 'carga',
-                      size: 84,
-                    ),
-                    Positioned(
-                      right: 2,
-                      top: 2,
-                      child: InkWell(
-                        onTap: _enviando
-                            ? null
-                            : () => _removerFotoExistente(f.id),
-                        child: const CircleAvatar(
-                          radius: 12,
-                          backgroundColor: Colors.black54,
-                          child: Icon(Icons.close, size: 14, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              // Fotos pendentes (ainda não subiram).
-              for (var i = 0; i < _fotosPendingCarga.length; i++)
-                Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        File(_fotosPendingCarga[i].path),
-                        width: 84,
-                        height: 84,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    Positioned(
-                      right: 2,
-                      top: 2,
-                      child: InkWell(
-                        onTap: _enviando
-                            ? null
-                            : () => setState(
-                                () => _fotosPendingCarga.removeAt(i)),
-                        child: const CircleAvatar(
-                          radius: 12,
-                          backgroundColor: Colors.black54,
-                          child: Icon(Icons.close, size: 14, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _cardObs() {
     return Card(
