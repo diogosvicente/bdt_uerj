@@ -5,7 +5,6 @@ import 'dart:ui';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
@@ -86,6 +85,17 @@ class BackgroundLocationService {
       androidConfiguration: AndroidConfiguration(
         onStart: _onServiceStart,
         autoStart: false,
+        // Sprint 15 W+M (2026-07-28) — o plugin já registra um
+        // `BootReceiver` no manifest (BOOT_COMPLETED / QUICKBOOT_POWERON /
+        // MY_PACKAGE_REPLACED). Ligando esta flag, o service sobe sozinho
+        // após reboot do celular — cobre o caso "condutor reinicia o
+        // aparelho no meio de um trecho" sem precisar abrir o app.
+        //
+        // Como `autoStartOnBoot` sobe o service INCONDICIONALMENTE, o
+        // `_onServiceStart` faz o gate: se não há trecho ativo nas prefs
+        // (`_prefRunning != true` ou bdt/trecho zerados), chama
+        // `stopSelf()` imediato — sem notificação órfã pro condutor.
+        autoStartOnBoot: true,
         isForegroundMode: true,
         notificationChannelId: _notifChannelId,
         initialNotificationTitle: 'BDT UERJ',
@@ -233,6 +243,36 @@ class BackgroundLocationService {
     }
 
     await refreshContextFromPrefs();
+
+    // Sprint 15 W+M (2026-07-28) — gate do autoStartOnBoot.
+    //
+    // O `BootReceiver` do plugin sobe este service INCONDICIONALMENTE
+    // após todo reboot (é o preço de ter boot automático). Aqui a gente
+    // decide se realmente havia trecho ativo:
+    //   - havia (prefRunning=true + bdt/trecho válidos) → segue coletando,
+    //     que é justamente o caso "condutor reiniciou o celular no meio
+    //     da viagem";
+    //   - não havia → `stopSelf()` imediato, senão o condutor ficaria com
+    //     uma notificação persistente "Aguardando início do trecho" logo
+    //     após ligar o celular, sem ter iniciado nada.
+    //
+    // Também drena a fila UMA vez antes de sair: se sobraram pontos de
+    // um trecho anterior que nunca foram enviados (app morto sem rede),
+    // o boot vira uma oportunidade de escoar o backlog.
+    final prefsGate = await SharedPreferences.getInstance();
+    final deviaRodar = prefsGate.getBool(_prefRunning) ?? false;
+    if (!deviaRodar || bdtId <= 0 || trechoId <= 0) {
+      _log.info(
+        'gate: sem trecho ativo (running=$deviaRodar bdt=$bdtId '
+        'trecho=$trechoId) — drena fila e encerra',
+      );
+      try {
+        await _drainQueue(queue, () async {});
+      } catch (_) {}
+      await queue.close();
+      await service.stopSelf();
+      return;
+    }
 
     Future<void> updateNotifWithQueue() async {
       if (service is! AndroidServiceInstance) return;
@@ -434,7 +474,10 @@ class BackgroundLocationService {
       });
 
       try {
-        final res = await http
+        // MSEC.5 — client pinado (só confia na cadeia da RNP em produção).
+        // O `SslBootstrap.install()` já rodou no início de
+        // `_onServiceStart`, então o bundle está carregado neste isolate.
+        final res = await SslBootstrap.client
             .post(
               uri,
               headers: {

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/token_storage.dart';
+import 'ssl_bootstrap.dart';
 
 class ApiClient {
   // ==========================================================================
@@ -156,7 +157,9 @@ class ApiClient {
     debugPrint("➡️ POST $uri");
     debugPrint("📦 Body: $data");
 
-    final res = await http
+    // MSEC.5 — `SslBootstrap.client` aplica certificate pinning em
+    // produção (só confia na cadeia da RNP). Ver `ssl_bootstrap.dart`.
+    final res = await SslBootstrap.client
         .post(
           uri,
           headers: {
@@ -226,8 +229,12 @@ class ApiClient {
         filename: filename,
       ));
 
-      final streamed =
-          await req.send().timeout(const Duration(seconds: 30));
+      // MSEC.5 — `req.send()` usa o client default do package:http (sem
+      // pin). Enviamos pelo client pinado pra o upload de foto seguir a
+      // mesma regra dos demais endpoints.
+      final streamed = await SslBootstrap.client
+          .send(req)
+          .timeout(const Duration(seconds: 30));
       final res = await http.Response.fromStream(streamed);
 
       final body = res.body.trim();
@@ -276,7 +283,7 @@ class ApiClient {
     try {
       final token = await TokenStorage.readAccess();
       final uri = _buildUri(endpoint);
-      final res = await http
+      final res = await SslBootstrap.client
           .post(
             uri,
             headers: {
@@ -350,7 +357,7 @@ class ApiClient {
     return completer.future;
   }
 
-  /// Tenta decodificar um JSON e retornar somente se for Map<String, dynamic>.
+  /// Tenta decodificar um JSON e retornar somente se for `Map<String, dynamic>`.
   static Map<String, dynamic>? _tryDecodeJsonMap(String body) {
     if (body.isEmpty) return null;
 

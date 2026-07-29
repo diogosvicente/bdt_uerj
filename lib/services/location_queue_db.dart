@@ -37,10 +37,22 @@ class LocationQueueDb {
   static const String _kCLastError = 'last_error';
 
   /// Máximo de tentativas antes de descartar um ponto.
-  /// 10 dá ~5 minutos com retry a cada 30s — se depois disso não foi,
-  /// provavelmente o backend rejeitou por regra de negócio (BDT
-  /// encerrado, trecho já finalizado etc.), então descartar é OK.
-  static const int maxAttempts = 10;
+  ///
+  /// **Sprint 15 W+M (2026-07-28)** — subiu de 10 pra 120. O worker roda
+  /// a cada 30s, então:
+  ///   - 10 tentativas  ≈  5 min de retry  (valor antigo)
+  ///   - 120 tentativas ≈ 60 min de retry  (valor atual)
+  ///
+  /// Motivo: o piloto pode rodar em área rural / trecho longo de estrada
+  /// sem cobertura. Com 5 min de janela, uma viagem entre campi por uma
+  /// região sem sinal descartava o traçado inteiro daquele trecho. 60 min
+  /// cobre o caso realista sem risco de fila infinita.
+  ///
+  /// O descarte continua existindo como backstop: se o backend rejeita
+  /// por regra de negócio (BDT encerrado, trecho já finalizado), o ponto
+  /// nunca vai entrar — 120 tentativas apenas adia o inevitável em 1h,
+  /// sem vazar memória (a fila é SQLite em disco, não RAM).
+  static const int maxAttempts = 120;
 
   Database? _db;
 

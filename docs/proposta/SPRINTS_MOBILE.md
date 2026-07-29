@@ -1074,6 +1074,77 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **GPS offline — dedup no backend** (2026-07-28) — o duplo motor
+  (timer + foreground service) compartilha a mesma fila, o que abria dois
+  caminhos pro mesmo ponto chegar 2×: (a) **retry após timeout enganoso**
+  — o `POST bdt/localizacao` insere mas a resposta não volta nos 10s do
+  worker, o ponto é marcado como falho e reenviado, gravando um gêmeo
+  exato; (b) **sobreposição timer × service** no mesmo instante. Cada
+  duplicata virava um vértice a mais no traçado — rota inflada no mapa e
+  distância a maior. Backend: migration idempotente
+  `AddUniqueToTrnspBdtLocalizacoes` (deduplica o histórico com `<=>` pro
+  `fk_trecho` nullable + cria `uniq_bdt_trecho_datahora`) e
+  `BdtLocalizacoesModel::registrarPonto` passa a usar `INSERT IGNORE`
+  via query builder, devolvendo o id existente quando ignora — assim o
+  cliente marca o ponto como enviado e tira da fila em vez de ficar
+  batendo até esgotar tentativas. Caso (a) fica 100% coberto; (b)
+  parcialmente (mesmo segundo colide, segundos vizinhos passam — e isso
+  é correto, são leituras legítimas). Verificado localmente.
+
+- ✅ **GPS offline — retry de ~5min para ~60min** (2026-07-28) —
+  `LocationQueueDb.maxAttempts` de 10 → 120. O worker roda a cada 30s,
+  então a janela de retry saiu de ~5min para ~60min. Com o valor antigo,
+  uma viagem entre campi atravessando região sem cobertura descartava o
+  traçado inteiro daquele trecho. O descarte continua existindo como
+  backstop (se o backend recusa por regra de negócio, 120 tentativas só
+  adiam o inevitável — e a fila é SQLite em disco, não RAM).
+
+- ✅ **GPS offline — service sobe sozinho após reboot** (2026-07-28) —
+  se o condutor reiniciava o celular no meio de um trecho, a coleta só
+  voltava quando ele abrisse o app. O plugin `flutter_background_service`
+  já registra um `BootReceiver` no manifest (BOOT_COMPLETED /
+  QUICKBOOT_POWERON / MY_PACKAGE_REPLACED) — bastou ligar
+  `autoStartOnBoot: true`. Como isso sobe o service INCONDICIONALMENTE
+  após todo boot, o `_onServiceStart` ganhou um gate: se não havia trecho
+  ativo (`_bg_gps_running != true` ou bdt/trecho zerados), drena a fila
+  uma vez (aproveita o boot pra escoar backlog de um trecho anterior) e
+  chama `stopSelf()` — sem notificação órfã "Aguardando início do trecho"
+  logo após ligar o celular. Complementa o `resumeIfNeeded()` do
+  `main()`, que cobre morte por OOM com o app fechado.
+
+- ✅ **MSEC.5 — Certificate pinning** (2026-07-28) — antes o app usava
+  `SecurityContext.defaultContext`, que **soma** a CA da RNP às ~150 CAs
+  do sistema: na prática aceitava certificado de qualquer uma delas, e um
+  proxy corporativo ou CA comprometida conseguiria interceptar o tráfego
+  (inclusive o Bearer) numa rede pública. Agora existe um
+  `SecurityContext(withTrustedRoots: false)` que confia **exclusivamente**
+  na cadeia da RNP, validado no handshake TLS — ou seja, **antes de
+  qualquer byte da requisição sair do aparelho**, diferente de conferir o
+  certificado na resposta (quando o dado já vazou).
+  - **Pinamos a cadeia (intermediária + raiz), não o certificado folha** —
+    pinar a folha quebraria o app a cada renovação (~1 ano); pinar a
+    cadeia sobrevive à renovação e ainda exclui as outras CAs, que é de
+    onde vem o risco real.
+  - Novo `SslBootstrap.client` (singleton `IOClient`, reaproveita a
+    conexão pra não refazer handshake a cada ponto de GPS). Adotado em
+    `ApiClient._doPost`, `postForBytes`, `postMultipart` e no worker do
+    `BackgroundLocationService`.
+  - `badCertificateCallback` retorna `false` explicitamente — um `true`
+    ali anularia o pin inteiro.
+  - Guarda contra corrida: se `client` for acessado antes do `install()`,
+    devolve um client comum mas **não cacheia**, senão o app ficaria sem
+    pin pelo resto da sessão.
+  - Só vale em produção (HTTPS). Ambientes de dev falam HTTP puro, que
+    nem passa por `SecurityContext` — proxies de debug seguem funcionando.
+  - **Escape hatch**: `--dart-define=SSL_PINNING=off` (build-time, não
+    desligável em runtime por atacante) pra destravar sem esperar release
+    se a RNP migrar de CA sem aviso.
+  - **Verificado com openssl**: produção valida contra a cadeia pinada
+    (`Verify return code: 0`), CA de fora é recusada (`code 20`).
+    Intermediária da RNP vale até **19/11/2030**, raiz GlobalSign R46 até
+    2046 — sem risco de expiração próxima. Procedimento de atualização do
+    pin documentado no cabeçalho de `ssl_bootstrap.dart`.
+
 - ✅ **PreBdtFormPage — erros inline (veículo + trechos)** (2026-07-26)
   — os SnackBars "Escolha um veículo." e "Trecho N: preencha origem e
   destino." eram invisíveis atrás do teclado. Substituídos por
