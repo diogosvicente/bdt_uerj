@@ -1121,6 +1121,41 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Fix: itinerário do BDT sem solicitação sumia da Agenda + PDF null**
+  (2026-07-29) — **reportado no teste**: trecho criado pelo app aparecia
+  certinho na folha do BDT, mas a Agenda continuava dizendo "Itinerário
+  a definir", o modal "Origem do BDT" dizia "Sem trechos cadastrados" e
+  o botão do PDF apontava pra `/solicitacoes/pdf/acompanhar/null`.
+  - **Causa**: um BDT sem solicitação ganhava **duas** solicitações
+    sintéticas — (1) `tipo_solicitante='bdt_sem_solicitacao'`, criada
+    junto do BDT e apontada por `trnsp_bdt.fk_solicitacao`, que é a que
+    a Agenda desenha, nascendo **sem trechos**; e (2)
+    `tipo_solicitante='avulso'`, criada no primeiro trecho e
+    **filtrada da Agenda de propósito** por ser interna. O trecho ia
+    parar na (2). A folha continuava certa porque lê
+    `trnsp_bdt_trechos_execucao`, não a solicitação — daí o sintoma
+    "no BDT está tudo ok, na Agenda não aparece".
+  - **Fix 1** — `BdtViagemService::getOrCreateSolicitacaoAvulsa` passa a
+    reusar a solicitação do PRÓPRIO BDT quando ela é do tipo
+    `bdt_sem_solicitacao`. BDT vindo de solicitação REAL continua
+    criando a 'avulso' separada: lá a separação é proposital, porque
+    adicionar trechos no pedido original adulteraria o que o solicitante
+    pediu e vê no acompanhamento.
+  - **Fix 2** — `criarEntradaAgenda` passa a gerar protocolo da
+    solicitação + **token de verificação**, como o
+    `PreBdtService::materializarSolicitacao` (que ele espelha) já fazia.
+    A falta do token era a causa direta do `/acompanhar/null` — a view
+    da Agenda lê `token_verificacao` do join com `trnsp_verificacao`.
+  - **Fix 3** — migration `BackfillBdtSemSolicitacaoAgenda` conserta o
+    que já está no banco: gera token pras sintéticas órfãs e move os
+    trechos da 'avulso' pro dia da solicitação da Agenda. Idempotente e
+    restrita a BDT cuja solicitação principal é `bdt_sem_solicitacao`.
+  - Verificado ponta a ponta: BDT criado → token presente → trecho cai
+    na MESMA solicitação que a Agenda desenha → nenhuma 'avulso' extra →
+    trecho segue reivindicado na execução (folha continua certa).
+  - **Backend-only** — nenhuma mudança no app foi necessária; o mobile já
+    chamava o endpoint certo.
+
 - ✅ **GPS offline — dedup no backend** (2026-07-28) — o duplo motor
   (timer + foreground service) compartilha a mesma fila, o que abria dois
   caminhos pro mesmo ponto chegar 2×: (a) **retry após timeout enganoso**
