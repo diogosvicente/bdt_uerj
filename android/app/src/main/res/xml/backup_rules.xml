@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSEC.9 — Auto Backup do Android, API 24 a 30.
+
+  Antes deste arquivo, `android:allowBackup` não estava declarado. O padrão
+  do Android é `true`, então TUDO do app ia para o backup do Google na conta
+  do condutor — inclusive a fila de GPS, que é trajeto de pessoa real.
+
+  A escolha aqui foi manter o backup ligado e excluir só o sensível, em vez
+  de `allowBackup="false"`: desligar tudo puniria o condutor (perde restore
+  ao trocar de aparelho) por causa de quatro arquivos.
+
+  Regra prática: só entra no backup o que for irrelevante se vazar E útil se
+  restaurado. Dado de pessoa, credencial e trajeto ficam de fora.
+
+  Para API 31+ (Android 12+) este arquivo é IGNORADO — quem vale é o
+  data_extraction_rules.xml, que precisa listar as mesmas exclusões. Manter
+  os dois em sincronia; `minSdk` é 24, então os dois estão em uso.
+-->
+<full-backup-content>
+
+    <!-- Token de acesso e refresh (flutter_secure_storage → EncryptedSharedPreferences).
+         A chave de cifra vive no Keystore e NÃO é copiada, então um restore
+         devolveria lixo ilegível de qualquer forma. Excluir evita que o
+         ciphertext saia do aparelho e evita o restore quebrado. -->
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+
+    <!-- Preferências do app: guarda flags de migração e estado de sessão.
+         Restaurar num aparelho novo reintroduz estado que não corresponde
+         ao secure storage (que não volta), gerando login inconsistente. -->
+    <exclude domain="sharedpref" path="FlutterSharedPreferences.xml" />
+
+    <!-- Fila de pontos de GPS ainda não enviados: latitude/longitude com
+         timestamp. É o dado mais sensível do app (LGPD) e não tem valor
+         nenhum restaurado — ou já foi enviado, ou perdeu a validade. -->
+    <exclude domain="database" path="bdt_gps_queue.db" />
+    <exclude domain="database" path="bdt_gps_queue.db-journal" />
+    <exclude domain="database" path="bdt_gps_queue.db-wal" />
+    <exclude domain="database" path="bdt_gps_queue.db-shm" />
+
+    <!-- Foto do condutor cacheada pelo MSEC.6. Dado pessoal; o app rebaixa
+         do servidor quando precisa. `getApplicationDocumentsDirectory()` do
+         path_provider aponta para files/app_flutter no Android. -->
+    <exclude domain="file" path="app_flutter/usuario_foto.bin" />
+
+</full-backup-content>

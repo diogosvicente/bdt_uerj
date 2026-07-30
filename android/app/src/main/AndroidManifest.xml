@@ -46,11 +46,23 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
+    <!-- ✅ MSEC.9: Auto Backup do Android. `allowBackup` não estava declarado
+         e o padrão do Android é `true` — tudo do app (token, preferências,
+         foto do condutor e a FILA DE GPS) ia para o backup do Google na
+         conta dele. Mantemos o backup ligado, mas excluímos o sensível:
+         desligar por completo faria o condutor perder restore ao trocar de
+         aparelho por causa de quatro arquivos.
+         `minSdk` 24 + `targetSdk` 36 ⇒ precisamos dos DOIS mecanismos:
+           - fullBackupContent   → API 24 a 30
+           - dataExtractionRules → API 31+ (o que vale nos aparelhos atuais)
+         As exclusões precisam ser mantidas em sincronia nos dois arquivos. -->
     <application
         android:label="BDT UERJ"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:localeConfig="@xml/locales_config">
+        android:localeConfig="@xml/locales_config"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <activity
             android:name=".MainActivity"
             android:exported="true"

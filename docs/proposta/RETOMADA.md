@@ -1,9 +1,10 @@
 # Retomada — o que falta no BDT Mobile
 
-**Congelado em:** 2026-07-30
+**Congelado em:** 2026-07-30 · **atualizado no mesmo dia**, depois de
+executar os pontos 3 e 4.
 **Motivo da parada:** o app está entregável para os primeiros testes com
-condutores. O que resta ou depende de decisão sua, ou depende de terceiros,
-ou é backlog declarado — nada está pela metade.
+condutores. **Não há mais pendência de segurança nem decisão sua em aberto**
+— o que resta é backlog declarado e higiene de repositório.
 
 Este documento existe para retomar **frio**, semanas depois, sem reler o
 histórico. O detalhe técnico de cada entrega continua no
@@ -53,90 +54,32 @@ Fluxos completos, testados manualmente pelo usuário e verificados em banco:
 
 ---
 
-## 3. Pendências que dependem de você
+## 3 e 4. Resolvidos em 2026-07-30 — nada a retomar
 
-### 3.1 MSEC.9 — Auto Backup do Android está ligado 🔴
+As duas seções originais ("pendências que dependem de você" e "que dependem
+de terceiros") foram executadas. Ficam registradas aqui só para quem lembrar
+delas não procurar em vão. Detalhe técnico no `SPRINTS_MOBILE.md`.
 
-**Recomendo tratar antes do piloto**, porque envolve dado de localização de
-pessoa real.
-
-`android:allowBackup` **não está declarado** em nenhum manifest, e o padrão
-do Android é `true`. O Auto Backup do Google copia hoje, para a conta do
-condutor:
-
-- a foto dele cacheada em `getApplicationDocumentsDirectory()`;
-- o `SharedPreferences` (preferências e flags de migração);
-- **o SQLite da fila de GPS** (`LocationQueueDb` — trajetos);
-- o `flutter_secure_storage` (`EncryptedSharedPreferences`).
-
-O token na prática sobrevive, porque a chave de cifra fica no Keystore e não
-é copiada — um restore devolve texto ilegível. Mas o ciphertext sai do
-aparelho, e prefs e SQLite estão em claro.
-
-**Duas saídas:**
-
-1. `android:allowBackup="false"` — uma linha, resolve tudo, e o condutor
-   perde backup/restore ao trocar de aparelho.
-2. `dataExtractionRules` — mantém o backup e exclui só o sensível. É o
-   mecanismo certo para `targetSdk = 36` (o `fullBackupContent` antigo não
-   vale mais). Exige acertar `cloud-backup` e `device-transfer` em separado.
-
-**Não implementei** porque as duas mudam comportamento visível para o
-condutor ou exigem decidir arquivo a arquivo — é chamada de produto.
-Estimativa da opção 2: ~30 linhas mais um teste de restore.
-
-**Onde mexer:** `android/app/src/main/AndroidManifest.xml`.
-
-### 3.2 Apagar um BDT direto deixa a solicitação-casca para trás 🟡
-
-A casca é criada por `BdtSemSolicitacaoService::criarEntradaAgenda` como
-registro independente. Excluir o BDT **não** a remove: sobra uma solicitação
-"Agendado" apontando para um BDT que não existe mais. Vale igual para a
-casca de Pré-BDT e para a `avulso`.
-
-No dev há 14 cascas, várias de BDTs já apagados. **Não deletei**: não dá
-para distinguir com segurança as minhas de teste das suas (uma é a
-`TRN-2026-0018`), e apagar solicitação alheia é pior que deixar lixo visível.
-
-**Duas saídas, e não escolhi por você:**
-
-1. Cascatear o soft-delete do BDT para a casca.
-2. Manter a casca como registro histórico — o BDT existiu e foi agendado, e
-   a solicitação documenta isso. Combina com a decisão que você já tomou de
-   manter a casca visível, mas aí a lista precisa marcar "BDT excluído", e
-   hoje ela não marca nada.
-
-**Não tracei o caminho de exclusão do BDT** — quem retomar precisa achar
-onde o delete acontece antes de decidir onde cascatear.
-
----
-
-## 4. Pendências que dependem de terceiros
-
-### 4.1 Enumeração de CPF no `login()` 🟡
-
-O `login()` ainda responde "Usuário não encontrado." quando o CPF não
-existe, e "CPF ou senha inválidos." quando existe — dá para enumerar CPFs de
-servidores. O `esqueci-senha` que fiz já nasceu sem o vazamento (resposta
-idêntica exista ou não o usuário; os motivos reais vão só para o log).
-
-Fechar exige **alinhar a mensagem com o time do web**: é a mesma tela que
-eles usam, e mudar de um lado só deixaria a UX inconsistente.
-
-**Onde:** `AuthApiController::login` (mobile) e `LoginController` (web), no
-`e-prefeitura`.
-
-### 4.2 Bug aberto: "trecho do mobile some ao adicionar outro pela web" 🟡
-
-Relatado em 21/07. Reproduzi o fluxo exato por script PHP e **não
-reproduzi** — os três trechos coexistem no banco, no `bdt/detalhes` do
-mobile e no sync.
-
-**Para destravar, preciso de:** o `ano/numero` do BDT em que você viu
-acontecer, e a sequência exata de cliques. Sem isso não há o que investigar.
-
-Vale testar de novo no piloto: várias correções de itinerário entraram
-depois do relato, e é possível que já tenha morrido junto.
+- **MSEC.9 — Auto Backup do Android** ✅ Backup mantido ligado, com o
+  sensível excluído em `backup_rules.xml` (API 24–30) **e**
+  `data_extraction_rules.xml` (31+, nas seções `cloud-backup` e
+  `device-transfer`). Fora do backup: token, preferências, fila de GPS e
+  foto do condutor.
+- **Casca órfã ao apagar BDT** ✅ — **o diagnóstico original estava errado**:
+  o cascade já existia desde a W13. O que faltava era ele cobrir só um dos
+  três tipos de casca e um dos dois caminhos de ligação. Corrigido, e as 10
+  órfãs do banco (vindas de `DELETE` direto em teste, não do fluxo de
+  exclusão) foram arquivadas por migration.
+- **Enumeração de CPF no `login()`** ✅ — não precisou do time do web: o
+  endpoint do app é próprio (`AuthApiController::login`), então dava para
+  fechar sem tocar na tela deles. Eram **três** desfechos distinguíveis, não
+  dois, e a mensagem idêntica não bastava — o caminho "CPF não existe"
+  respondia 270× mais rápido, e agora tem equalização por hash descartável.
+  **O `login()` da web segue vazando** — lá continua sendo conversa com eles.
+- **Bug "trecho some ao adicionar outro pela web"** ✅ — confirmado resolvido
+  por você. Nenhum commit fechou o item diretamente; morreu junto com as
+  correções de itinerário da Sprint 15. **A causa raiz nunca foi isolada** —
+  se reaparecer, começar pela relação entre a solicitação `avulso` e a casca.
 
 ---
 
@@ -156,6 +99,13 @@ Registro para ninguém confundir "entregue" com "testado ponta a ponta":
   contra produção com o pinning ativo. Se der erro de TLS no piloto, o
   escape hatch é buildar com `--dart-define=SSL_PINNING=off` — e aí o
   problema é a cadeia, não o app.
+- **Restore de backup com as regras novas (MSEC.9).** As exclusões foram
+  verificadas de forma indireta: o `flutter build apk` resolve as
+  referências `@xml/...` (referência inexistente quebraria o build) e os
+  dois arquivos saem empacotados em `res/xml/` do APK. Não consegui ler o
+  manifest binário de volta — não há `aapt2` neste SDK. **O teste definitivo
+  é um ciclo real**: fazer backup, restaurar num aparelho e conferir que o
+  app pede login de novo e que a fila de GPS voltou vazia.
 
 ---
 

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSEC.9 — Android 12+ (API 31+). Mesmas exclusões do backup_rules.xml, que
+  cobre API 24 a 30; os dois precisam andar juntos. `targetSdk` é 36, então
+  ESTE é o arquivo que vale nos aparelhos atuais.
+
+  A API 31 separou o que era um caminho só em dois:
+
+    - <cloud-backup>   → backup para a conta Google do condutor. É o vetor
+                         real: o dado sai do aparelho e vai para a nuvem.
+    - <device-transfer> → cópia direta aparelho→aparelho na migração. Não
+                         passa por servidor, mas ainda copia dado pessoal
+                         para um aparelho que pode não ser do mesmo dono.
+
+  Excluímos nos DOIS. Um item excluído só do cloud-backup continuaria sendo
+  copiado na troca de celular — que é justamente quando o aparelho velho
+  costuma ser repassado ou vendido.
+-->
+<data-extraction-rules>
+
+    <cloud-backup>
+        <!-- Token de acesso e refresh; ver justificativa no backup_rules.xml. -->
+        <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+        <exclude domain="sharedpref" path="FlutterSharedPreferences.xml" />
+
+        <!-- Fila de GPS — trajeto do condutor (LGPD). -->
+        <exclude domain="database" path="bdt_gps_queue.db" />
+        <exclude domain="database" path="bdt_gps_queue.db-journal" />
+        <exclude domain="database" path="bdt_gps_queue.db-wal" />
+        <exclude domain="database" path="bdt_gps_queue.db-shm" />
+
+        <!-- Foto do condutor (MSEC.6) — dado pessoal, rebaixável do servidor. -->
+        <exclude domain="file" path="app_flutter/usuario_foto.bin" />
+    </cloud-backup>
+
+    <device-transfer>
+        <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+        <exclude domain="sharedpref" path="FlutterSharedPreferences.xml" />
+
+        <exclude domain="database" path="bdt_gps_queue.db" />
+        <exclude domain="database" path="bdt_gps_queue.db-journal" />
+        <exclude domain="database" path="bdt_gps_queue.db-wal" />
+        <exclude domain="database" path="bdt_gps_queue.db-shm" />
+
+        <exclude domain="file" path="app_flutter/usuario_foto.bin" />
+    </device-transfer>
+
+</data-extraction-rules>

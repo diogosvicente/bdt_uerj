@@ -282,7 +282,7 @@ mobile.
 
 ---
 
-## Sprint MSEC 🔒 — Hardening de segurança pré-piloto (~11h) — ✅ concluída (2 pendências)
+## Sprint MSEC 🔒 — Hardening de segurança pré-piloto (~11h) — ✅ concluída
 
 **Origem:** análise de segurança pedida pelo usuário em **2026-07-21**
 ("como o app está lidando com rotas / usa CSRF / está tudo certo?").
@@ -309,14 +309,7 @@ reais em campo.
 > **cresceu de 4 para 9 itens** — MSEC.5 (pinning), MSEC.6 (foto no
 > avatar), MSEC.7 (fuso horário) e MSEC.8 (esqueci senha) nasceram
 > depois, no uso real; MSEC.9 saiu da conferência do checklist do
-> MSEC.6. Restam **duas** pendências, ambas dependendo de decisão de
-> fora do código:
-> 1. **MSEC.8** — o `login()` ainda distingue "Usuário não encontrado."
->    de "CPF ou senha inválidos.", o que permite enumerar CPFs. Fechar
->    exige alinhar a mensagem com o time do web.
-> 2. **MSEC.9** — o Auto Backup do Android está ligado (`allowBackup`
->    não declarado ⇒ default `true`). Escolher entre desligar o backup
->    ou excluir arquivo a arquivo é chamada de produto.
+> MSEC.6. **Todos entregues, sem pendência aberta.**
 
 - ✅ **MSEC.1 — Token no `flutter_secure_storage`** (2026-07-21)
   - Novo `lib/services/token_storage.dart` (STORAGE) espelhando
@@ -470,11 +463,11 @@ reais em campo.
     - [x] Retorna `204` (não `404 com erro descritivo`) se sem foto
       — não vazar "existe mas você não pode ver"
     - [x] Cache em local privado do app; nunca `external_storage`
-    - [ ] ❌ **Foto NÃO entra em backups do device** — **a premissa
-      estava errada.** Eu escrevi que `allowBackup=false` "já é o padrão
-      de projeto"; não é. O atributo **não está declarado em nenhum
-      manifest**, e o padrão do Android é `true`. Ver pendência MSEC.9
-      abaixo.
+    - [x] **Foto NÃO entra em backups do device** — a premissa original
+      estava errada (eu escrevi que `allowBackup=false` "já é o padrão de
+      projeto"; não é, e o atributo não estava declarado). Fechado em
+      2026-07-30 pelo MSEC.9 abaixo, que exclui a foto dos dois
+      mecanismos de backup.
     - [x] Logout apaga arquivo local
   - **Risco:** baixo — endpoint aditivo, cache local isolado, se
     algo falhar cai no ícone genérico.
@@ -543,15 +536,34 @@ reais em campo.
     reusando o `CaptchaField` do login. Validação inline no padrão da
     casa. A tela **nunca afirma "e-mail enviado"** — repete a frase
     condicional do backend, senão anularia a proteção anti-enumeração.
-  - ⚠️ **Pendência**: o `login()` ainda distingue "Usuário não
-    encontrado." de "CPF ou senha inválidos.", então a enumeração
-    continua possível por lá. Corrigir exige alinhar a mensagem com o
-    time do web — fica como próximo item de MSEC.
+  - ✅ **`login()` fechado também** (2026-07-30) — era a última pendência
+    da MSEC. Ao mexer, descobri que os desfechos distinguíveis eram **três**,
+    não dois, e todos alcançáveis **sem saber a senha**:
+    `Usuário não encontrado.` (CPF não existe), `Cadastro incompleto…`
+    (existe, sem senha) e `CPF ou senha inválidos.` (existe, senha errada).
+    Os três agora respondem byte a byte igual: mesmo 401, mesmo `status`,
+    mesma mensagem; o motivo real vai só pro log.
+    - **A frase mantém a orientação de primeiro acesso** — "CPF ou senha
+      inválidos. Se você ainda não fez o primeiro acesso, cadastre sua senha
+      pelo site." Como aparece para **todos**, inclusive para CPF que não
+      existe, quem sonda não aprende nada, e quem nunca cadastrou senha
+      continua sabendo o que fazer. Suprimir a dica teria trocado um
+      problema de segurança por um de suporte.
+    - **Equalização de tempo**: mensagem idêntica não bastava. O caminho
+      "CPF não existe" retornava antes de qualquer hashing — medido aqui,
+      **0,17 ms contra 45,65 ms** do caminho com `password_verify` real. Uma
+      diferença de 270× enumera por cronômetro. Os dois ramos que não
+      chegam ao hash real passaram a rodar `password_verify` contra um hash
+      bcrypt descartável.
+    - **O 403 de "sem permissão para o módulo Transporte" ficou específico
+      de propósito**: para chegar lá o `password_verify` já passou, então
+      quem lê a mensagem já tem credencial válida. Não é vetor de
+      enumeração, e generalizar ali só geraria chamado de suporte.
 
-- 🟡 **MSEC.9 — Auto Backup do Android está ligado** (descoberto 2026-07-30,
-  ao conferir o checklist do MSEC.6) — `android:allowBackup` **não está
+- ✅ **MSEC.9 — Auto Backup do Android** (descoberto e fechado em 2026-07-30,
+  ao conferir o checklist do MSEC.6) — `android:allowBackup` **não estava
   declarado** em nenhum manifest do projeto, e o padrão do Android é
-  `true`. Ou seja: o Auto Backup do Google copia os dados do app para a
+  `true`. Ou seja: o Auto Backup do Google copiava os dados do app para a
   conta do condutor, e eu tinha registrado o oposto como se fosse fato.
   - **O que sai do aparelho hoje**: a foto do condutor cacheada pelo
     MSEC.6, o `SharedPreferences` (preferências e flags de migração), o
@@ -563,17 +575,25 @@ reais em campo.
     (falha conhecida do pacote). Isso protege o token na prática, mas
     não muda o fato de o ciphertext sair do aparelho — e não protege
     nada do que está em claro (prefs e SQLite).
-  - **Duas saídas, e a escolha é do usuário**:
-    1. `android:allowBackup="false"` — resolve tudo numa linha, mas o
-       condutor perde backup/restore do app ao trocar de aparelho.
-    2. `dataExtractionRules` (o mecanismo de API 31+; `targetSdk = 36`,
-       então é este e não o `fullBackupContent` antigo) — mantém o
-       backup e exclui só o que é sensível. Mais preciso, mais código,
-       e exige acertar as regras de `cloud-backup` e `device-transfer`
-       separadamente.
-  - **Não implementei**: as duas opções mudam comportamento visível pro
-    condutor (perder restore) ou exigem decidir arquivo a arquivo o que
-    pode ser copiado. É chamada de produto, não de implementação.
+  - **Escolha: manter o backup ligado e excluir só o sensível.**
+    `allowBackup="false"` resolveria numa linha, mas puniria o condutor —
+    perder restore ao trocar de aparelho — por causa de quatro arquivos.
+  - **`minSdk` 24 + `targetSdk` 36 exigem os DOIS mecanismos**, não só o
+    moderno: `res/xml/backup_rules.xml` (`fullBackupContent`, API 24–30) e
+    `res/xml/data_extraction_rules.xml` (API 31+, o que vale nos aparelhos
+    atuais). As exclusões precisam ser mantidas em sincronia nos dois — um
+    item excluído só de um lado continua vazando pelo outro.
+  - **No arquivo da API 31+, excluído nas duas seções**: `<cloud-backup>`
+    (vai pra nuvem) **e** `<device-transfer>` (cópia direta na troca de
+    aparelho). Excluir só do cloud deixaria o dado ser copiado justamente
+    quando o aparelho velho costuma ser repassado ou vendido.
+  - **Excluídos**: `FlutterSecureStorage.xml`, `FlutterSharedPreferences.xml`,
+    `bdt_gps_queue.db` (+ `-journal`/`-wal`/`-shm`) e
+    `app_flutter/usuario_foto.bin`.
+  - **Verificado**: `flutter build apk` passa com 0 erros e 0 warnings, e os
+    dois XMLs saem empacotados em `res/xml/` do APK — referência de recurso
+    inexistente quebraria o build. Não consegui ler o manifest binário de
+    volta (sem `aapt2` neste SDK), então a conferência é indireta.
 
 - ✅ **MSEC.7 — Convenção de fuso horário end-to-end** (2026-07-24)
   — **Origem:** o app estava exibindo hora errada (~3h à frente do
@@ -918,13 +938,20 @@ refino desses, registrar aqui em vez de deixar só no commit
   `folha.php` do web usa) — cria solicitação avulsa + designação +
   dia corretamente. Aplicando [[bdt_uerj_reusar_codigo_web]].
 
-- 🟡 **Bug reportado: "trecho do mobile some ao adicionar outro pela web"**
-  (2026-07-21) — usuário relatou que ao aprovar Pré-BDT e depois
-  clicar "Adicionar trecho avulso" na `folha.php`, o trecho do
-  Pré-BDT some. Investiguei via script PHP reproduzindo o fluxo
-  exato: **não reproduzi** — os 3 trechos coexistem no banco, no
-  `bdt/detalhes` mobile e no sync. Aguardando `ano/numero` do BDT
-  que ele viu bugar + sequência exata de cliques pra reproduzir.
+- ✅ **Bug "trecho do mobile some ao adicionar outro pela web" — resolvido**
+  (relatado 2026-07-21, confirmado resolvido pelo usuário em 2026-07-30) —
+  ao aprovar Pré-BDT e depois clicar "Adicionar trecho avulso" na
+  `folha.php`, o trecho do Pré-BDT sumia. Na época investiguei por script
+  PHP reproduzindo o fluxo e **não reproduzi**: os 3 trechos coexistiam no
+  banco, no `bdt/detalhes` do mobile e no sync — por isso ficou parado
+  aguardando dados de reprodução.
+  - **Não houve um commit que fechasse este item.** Entre o relato e a
+    confirmação entraram as correções de itinerário da Sprint 15
+    (`04c1c6dc`, `f7ae02ed`, `141ae933` e o revert `84c36ba6`), que mexeram
+    justamente em onde o trecho mora e em quem o lê. O sintoma morreu junto
+    com alguma delas.
+  - Fica registrado que a causa raiz nunca foi isolada — se reaparecer,
+    começar pela relação entre a solicitação `avulso` e a casca do BDT.
 
 - ✅ **Odômetro saída/chegada opcional com alerta** (2026-07-22) — os
   sheets "Iniciar trecho" e "Finalizar trecho" **bloqueavam** o botão
@@ -1324,23 +1351,31 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     `Services::email(true)` e `config('Email')`. Assunto, template e link
     saem idênticos ao fluxo pelo navegador; nada foi reimplementado.
 
-- 🟡 **Pendência: apagar um BDT direto deixa a solicitação-casca para trás**
-  (2026-07-30) — descoberto ao limpar o dev DB depois dos testes de
-  Sprint 15. A casca é criada por `criarEntradaAgenda` como registro
-  independente; excluir o BDT **não** a remove. Sobra uma solicitação
-  "Agendado" na lista, apontando para um BDT que não existe mais.
-  - **No dev**: 14 cascas, várias de BDTs já apagados. Não deletei —
-    não dá pra distinguir com segurança as minhas de teste das do
-    usuário (uma delas é a `TRN-2026-0018` dele), e apagar solicitação
-    alheia é pior que deixar lixo visível.
-  - **Em produção o efeito é recorrente**: todo BDT direto excluído vai
-    deixar uma. O mesmo vale pra casca de Pré-BDT e pra `avulso`.
-  - **Não decidido** qual é o comportamento certo: cascatear o
-    soft-delete do BDT para a casca, ou manter a casca como registro
-    histórico (o BDT existiu, foi agendado, e a solicitação documenta
-    isso). A segunda opção combina com a decisão de manter a casca
-    visível, mas aí a lista precisa marcar "BDT excluído" — hoje não
-    marca nada. **Precisa da chamada do usuário antes de codar.**
+- ✅ **Cascas órfãs: cascade ampliado + passivo arquivado** (2026-07-30) —
+  **eu tinha diagnosticado errado.** Registrei que "excluir o BDT não remove
+  a casca"; na verdade `BdtExclusaoService` **já cascateava** o soft-delete
+  desde a W13. O defeito era mais estreito e em outro lugar.
+  - **O que de fato faltava**: o cascade cobria só `tipo_solicitante =
+    'bdt_sem_solicitacao'` e só o caminho `trnsp_bdt.fk_solicitacao`.
+    Ficavam de fora as cascas `pre_bdt` (criada ao aprovar — vira BDT "Em
+    aberto" sem trechos, que é exatamente o estado que a exclusão aceita) e
+    `avulso` (que nem é alcançável por `fk_solicitacao`). Corrigido: os três
+    tipos, pelos dois caminhos de ligação.
+  - **As 10 órfãs deste banco não vieram do fluxo de exclusão** — não existe
+    nem linha soft-deletada em `trnsp_bdt` para elas. Foram BDTs removidos
+    por `DELETE` direto durante os testes. Migration
+    `SoftDeleteCascasBdtOrfas` arquiva o passivo.
+  - **A armadilha que quase me pegou**: casca se liga ao BDT por **dois**
+    caminhos independentes — `trnsp_bdt.fk_solicitacao` (BDT direto e
+    Pré-BDT) e `trnsp_bdt_designacao → trnsp_solicitacao_designacao`
+    (`avulso`, e também BDT direto cujo `fk_solicitacao` ficou nulo). Um
+    teste de via única teria arquivado **4 cascas vivas**: as 3 `avulso` e a
+    `2026/17`. Conferi no banco antes de escrever o WHERE, que exige que
+    nenhum dos dois caminhos ache BDT.
+  - **Soft-delete, não `DELETE`** — reversível, e o log da migration lista
+    ano/número de cada uma para desfazer pontualmente se preciso.
+  - Verificado: 10 arquivadas, **7 cascas vivas preservadas** e as 15
+    solicitações reais intactas.
 
 - ✅ **Carga do BDT × carga do Pré-BDT: rótulo por situação** (2026-07-30) —
   **erro de premissa meu**: eu rotulava toda carga guardada em `trnsp_bdt`
@@ -1923,7 +1958,7 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
 | M3 | Pré-BDT criação | 32 |
 | M4 | Validação atendimento | 88 |
 | M5 | Alertas inteligentes | 40 |
-| MSEC | Hardening de segurança pré-piloto (✅ entregue; cresceu de 4 p/ 9 itens; 2 pendências) | 11 |
+| MSEC | Hardening de segurança pré-piloto (✅ entregue; cresceu de 4 p/ 9 itens) | 11 |
 | MUX | Refinos UX pós-piloto (rolling, sem estimativa fixa) | — |
 | **TOTAL mobile only** | | **301h** |
 | Complementar Web+Mobile (estimativa) | | ~80-100h |
