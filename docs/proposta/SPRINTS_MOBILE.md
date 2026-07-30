@@ -730,6 +730,24 @@ refino desses, registrar aqui em vez de deixar só no commit
     ninguém "corrigir" por simetria depois.
   - Verificado em transação com rollback: com o BDT vivo o mês fecha em 4
     BDTs e 123 KM; após o soft-delete, 3 BDTs, 0 KM e origem vazia.
+  - **Revisão das outras 33 tabelas com soft-delete** (2026-07-30) — mais
+    **2** defeitos reais, ambos por assimetria dentro do próprio arquivo:
+    - `BdtViagemService::getViagemCompleta`: ocorrência excluída ainda saía
+      no PDF do BDT, enquanto a consulta de manutenções **no mesmo array**
+      sempre filtrou.
+    - `BdtRepository::getOrigemBdt` (trechos): trecho e dia excluídos
+      apareciam no itinerário do modal "Origem"; o fallback de Pré-BDT logo
+      abaixo já filtrava.
+  - **Critério que separou defeito de comportamento correto** — vale para
+    quem revisar isso de novo: o filtro importa quando a consulta **enumera
+    filhos** (trecho, ocorrência, passageiro), porque o filho morre sozinho,
+    com o pai vivo. Busca por id já validado pelo caller é só defensiva, e
+    consulta de **identificação histórica deve enxergar o excluído** — se
+    `BdtHistoricoService::nomeCondutor` filtrasse, um BDT antigo passaria a
+    mostrar "Condutor #12" no lugar do nome. As 13 restantes caem nessas
+    duas categorias e ficam como estão, deliberadamente.
+  - Verificado com fixture em transação + rollback: trecho e ocorrência
+    recém-criados aparecem (1) e somem ao serem excluídos (0).
   - Verificado chamando os três caminhos em transação com rollback: BDT vivo
     aparece e aceita escrita; soft-deletado some da lista, `getBdtComVeiculo`
     devolve null, guard bloqueia e `bdt/detalhes` responde 404 "Este BDT foi

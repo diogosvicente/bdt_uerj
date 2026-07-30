@@ -17,8 +17,8 @@ e por quê.
 
 | Repo | Branch | HEAD | Situação |
 |---|---|---|---|
-| `bdt_uerj` (Flutter) | `main` | `2391bd8` (+ o commit deste doc) | limpo, sincronizado |
-| `e-prefeitura` (CI4) | `feature/027-mobile-support` | `5d1856cb` | limpo, sincronizado |
+| `bdt_uerj` (Flutter) | `main` | `52d3763` (+ o commit deste doc) | limpo, sincronizado |
+| `e-prefeitura` (CI4) | `feature/027-mobile-support` | `1fa1fa13` | limpo, sincronizado |
 
 As duas branches fecham juntas — a do backend **não** foi mergeada em
 `development` ainda. Antes de rodar o app contra o servidor de dev, confira
@@ -109,42 +109,40 @@ Registro para ninguém confundir "entregue" com "testado ponta a ponta":
 
 ---
 
-## 6. Higiene pendente
+## 6. Higiene — ✅ resolvida em 2026-07-30
 
-### 6.1 Soft-delete ignorado: revisar o resto do módulo 🟡
+**Soft-delete ignorado: revisão concluída.** O bug do "BDT zumbi" era uma
+**classe** de defeito — consulta montada com o query builder cru
+(`$this->db->table(...)`) **não** aplica o soft-delete do model, ao
+contrário de `find()`. Corrigidas 8 ocorrências em `trnsp_bdt` e, na
+revisão das outras 33 tabelas com soft-delete do módulo, mais **2**:
 
-O bug do "BDT zumbi" (30/07) não era um caso isolado, era uma **classe**:
-consulta montada com o query builder cru (`$this->db->table(...)`) **não**
-aplica o soft-delete do model, ao contrário de `find()`. Corrigi as 8
-ocorrências em `trnsp_bdt` (app, dashboard, duplicatas, origem).
+- **`BdtViagemService::getViagemCompleta`** — ocorrência excluída ainda
+  saía no PDF do BDT. Era assimetria pura: no MESMO array, a consulta de
+  manutenções logo abaixo sempre filtrou.
+- **`BdtRepository::getOrigemBdt`** (trechos) — trecho e dia excluídos
+  apareciam no itinerário do modal "Origem". O fallback de Pré-BDT logo
+  abaixo já filtrava; a consulta principal era a fora do padrão.
 
-Depois varri as **34 tabelas com soft-delete** do módulo Transporte. Sobram
-**15 consultas de LEITURA** com a mesma forma, em `trnsp_solicitacoes`,
-`trnsp_solicitacao_trechos`, `trnsp_condutores`, `trnsp_veiculos`,
-`trnsp_bdt_ocorrencias` e outras (as de ESCRITA foram descartadas — filtro
-não se aplica a INSERT/UPDATE).
+**O critério que separou defeito de comportamento correto:** o filtro
+importa quando a consulta **enumera filhos** — trecho, ocorrência,
+passageiro — porque o filho pode ser apagado com o pai vivo. Consulta que
+busca por um id já validado pelo caller é apenas defensiva, e consulta de
+**identificação histórica** deve mesmo enxergar o excluído: se
+`BdtHistoricoService::nomeCondutor` filtrasse, um BDT antigo passaria a
+exibir "Condutor #12" no lugar do nome. As 13 restantes caem nessas duas
+categorias e ficam como estão, deliberadamente.
 
-**Não são 15 bugs, e não revisei nenhuma.** Boa parte é legítima: uma
-consulta de exibição histórica como `BdtHistoricoService::nomeCondutor`
-**deve** resolver o nome de um condutor já excluído, senão o registro
-antigo perde a identificação. Separar as que são defeito das que estão
-certas exige olhar caso a caso — é o trabalho que falta.
-
-Comando que gera a lista (roda de dentro do WSL, na raiz do
-`e-prefeitura`): procurar `table('<tabela>')` nos diretórios `app/Models`,
-`app/Services`, `app/Repositories` e `app/Controllers`, e conferir se a
-consulta até o `->get()` menciona `deleted_at`.
-
-> ⚠️ Contra-exemplo importante, para não "corrigir" por simetria:
+> ⚠️ Contra-exemplo, para não "corrigir" por simetria:
 > `BdtModel::getProximoNumeroParaAno` usa o builder cru **de propósito** e
 > os excluídos **precisam** contar — há `UNIQUE(ano, numero)` e reusar o
 > número de um BDT apagado colide no INSERT.
 
-### 6.2 Trailers de co-autoria
+Verificado com fixture em transação e rollback: trecho e ocorrência
+recém-criados aparecem (1), somem ao serem excluídos (0).
 
-**`Co-Authored-By: Claude` no `e-prefeitura`**: 20 commits numa branch e 16
-noutra ainda os carregam. Te mostrei as opções e você não escolheu; segue
-lá. No `bdt_uerj` já está limpo.
+*(Os trailers `Co-Authored-By` no `e-prefeitura` saíram desta lista — o
+usuário decidiu em 30/07 que não importam mais.)*
 
 Relacionado: o GitHub continua listando "claude" como contribuidor na
 sidebar do repo mesmo com o Insights já limpo — é cache do lado deles, e a
