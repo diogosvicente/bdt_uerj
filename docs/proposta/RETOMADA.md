@@ -17,7 +17,7 @@ e por quê.
 
 | Repo | Branch | HEAD | Situação |
 |---|---|---|---|
-| `bdt_uerj` (Flutter) | `main` | `52d3763` (+ o commit deste doc) | limpo, sincronizado |
+| `bdt_uerj` (Flutter) | `main` | `f6e2538` (+ o commit deste doc) | limpo, sincronizado |
 | `e-prefeitura` (CI4) | `feature/027-mobile-support` | `d051d5a6` | limpo, sincronizado |
 
 As duas branches fecham juntas — a do backend **não** foi mergeada em
