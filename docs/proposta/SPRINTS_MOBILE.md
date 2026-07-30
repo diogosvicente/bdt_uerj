@@ -277,7 +277,7 @@ mobile.
 
 ---
 
-## Sprint MSEC 🔒 — Hardening de segurança pré-piloto (~11h) — ✅ concluída (1 pendência)
+## Sprint MSEC 🔒 — Hardening de segurança pré-piloto (~11h) — ✅ concluída (2 pendências)
 
 **Origem:** análise de segurança pedida pelo usuário em **2026-07-21**
 ("como o app está lidando com rotas / usa CSRF / está tudo certo?").
@@ -301,13 +301,17 @@ o app pra piloto real com condutores") e cabe em um bloco.
 reais em campo.
 
 > **Status (2026-07-30):** os 4 gaps originais fecharam, e a sprint
-> **cresceu de 4 para 8 itens** — MSEC.5 (pinning), MSEC.6 (foto no
+> **cresceu de 4 para 9 itens** — MSEC.5 (pinning), MSEC.6 (foto no
 > avatar), MSEC.7 (fuso horário) e MSEC.8 (esqueci senha) nasceram
-> depois, no uso real. Todos ✅. Resta **uma** pendência, no fim de
-> MSEC.8: o `login()` ainda distingue "Usuário não encontrado." de
-> "CPF ou senha inválidos.", o que permite enumerar CPFs. Fechar exige
-> alinhar a mensagem com o time do web — é mudança de UX de uma tela
-> que não é minha.
+> depois, no uso real; MSEC.9 saiu da conferência do checklist do
+> MSEC.6. Restam **duas** pendências, ambas dependendo de decisão de
+> fora do código:
+> 1. **MSEC.8** — o `login()` ainda distingue "Usuário não encontrado."
+>    de "CPF ou senha inválidos.", o que permite enumerar CPFs. Fechar
+>    exige alinhar a mensagem com o time do web.
+> 2. **MSEC.9** — o Auto Backup do Android está ligado (`allowBackup`
+>    não declarado ⇒ default `true`). Escolher entre desligar o backup
+>    ou excluir arquivo a arquivo é chamada de produto.
 
 - ✅ **MSEC.1 — Token no `flutter_secure_storage`** (2026-07-21)
   - Novo `lib/services/token_storage.dart` (STORAGE) espelhando
@@ -455,15 +459,18 @@ reais em campo.
       mantém o ícone genérico.
     - `AuthService.logout()` limpa o arquivo cached (senão
       próximo condutor logando vê foto do anterior por 1 seg).
-  - **Segurança / LGPD checklist**:
-    - [ ] Endpoint só via Bearer, NUNCA aceita `usuario_id` no body
-    - [ ] `userId` sempre resolvido do token (defesa de ownership)
-    - [ ] Retorna `204` (não `404 com erro descritivo`) se sem foto
+  - **Segurança / LGPD checklist** (conferido item a item em 2026-07-30):
+    - [x] Endpoint só via Bearer, NUNCA aceita `usuario_id` no body
+    - [x] `userId` sempre resolvido do token (defesa de ownership)
+    - [x] Retorna `204` (não `404 com erro descritivo`) se sem foto
       — não vazar "existe mas você não pode ver"
-    - [ ] Cache em local privado do app; nunca `external_storage`
-    - [ ] Foto NÃO entra em backups do device (Android:
-      `allowBackup=false` já é o padrão de projeto)
-    - [ ] Logout apaga arquivo local
+    - [x] Cache em local privado do app; nunca `external_storage`
+    - [ ] ❌ **Foto NÃO entra em backups do device** — **a premissa
+      estava errada.** Eu escrevi que `allowBackup=false` "já é o padrão
+      de projeto"; não é. O atributo **não está declarado em nenhum
+      manifest**, e o padrão do Android é `true`. Ver pendência MSEC.9
+      abaixo.
+    - [x] Logout apaga arquivo local
   - **Risco:** baixo — endpoint aditivo, cache local isolado, se
     algo falhar cai no ícone genérico.
   - **Entregue**: backend `72a361a1` + mobile no próximo commit.
@@ -535,6 +542,33 @@ reais em campo.
     encontrado." de "CPF ou senha inválidos.", então a enumeração
     continua possível por lá. Corrigir exige alinhar a mensagem com o
     time do web — fica como próximo item de MSEC.
+
+- 🟡 **MSEC.9 — Auto Backup do Android está ligado** (descoberto 2026-07-30,
+  ao conferir o checklist do MSEC.6) — `android:allowBackup` **não está
+  declarado** em nenhum manifest do projeto, e o padrão do Android é
+  `true`. Ou seja: o Auto Backup do Google copia os dados do app para a
+  conta do condutor, e eu tinha registrado o oposto como se fosse fato.
+  - **O que sai do aparelho hoje**: a foto do condutor cacheada pelo
+    MSEC.6, o `SharedPreferences` (preferências e flags de migração), o
+    SQLite da fila de GPS (`LocationQueueDb` — coordenadas de trajeto,
+    dado sensível) e o `flutter_secure_storage`, que no Android é
+    `EncryptedSharedPreferences`.
+  - **Nuance do secure_storage**: a chave de cifra vive no Keystore e
+    **não** é copiada, então um restore devolve texto cifrado ilegível
+    (falha conhecida do pacote). Isso protege o token na prática, mas
+    não muda o fato de o ciphertext sair do aparelho — e não protege
+    nada do que está em claro (prefs e SQLite).
+  - **Duas saídas, e a escolha é do usuário**:
+    1. `android:allowBackup="false"` — resolve tudo numa linha, mas o
+       condutor perde backup/restore do app ao trocar de aparelho.
+    2. `dataExtractionRules` (o mecanismo de API 31+; `targetSdk = 36`,
+       então é este e não o `fullBackupContent` antigo) — mantém o
+       backup e exclui só o que é sensível. Mais preciso, mais código,
+       e exige acertar as regras de `cloud-backup` e `device-transfer`
+       separadamente.
+  - **Não implementei**: as duas opções mudam comportamento visível pro
+    condutor (perder restore) ou exigem decidir arquivo a arquivo o que
+    pode ser copiado. É chamada de produto, não de implementação.
 
 - ✅ **MSEC.7 — Convenção de fuso horário end-to-end** (2026-07-24)
   — **Origem:** o app estava exibindo hora errada (~3h à frente do
@@ -1884,7 +1918,7 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
 | M3 | Pré-BDT criação | 32 |
 | M4 | Validação atendimento | 88 |
 | M5 | Alertas inteligentes | 40 |
-| MSEC | Hardening de segurança pré-piloto (✅ entregue; cresceu de 4 p/ 8 itens) | 11 |
+| MSEC | Hardening de segurança pré-piloto (✅ entregue; cresceu de 4 p/ 9 itens; 2 pendências) | 11 |
 | MUX | Refinos UX pós-piloto (rolling, sem estimativa fixa) | — |
 | **TOTAL mobile only** | | **301h** |
 | Complementar Web+Mobile (estimativa) | | ~80-100h |
