@@ -682,6 +682,42 @@ Não tem "estimativa total" — vai crescendo. Sempre que fizer um
 refino desses, registrar aqui em vez de deixar só no commit
 (regra [[bdt_uerj_registrar_fora_de_escopo]]).
 
+- ✅ **BDT excluído pela web continuava "zumbi" no app** (2026-07-30) —
+  reportado no teste: BDT sem solicitação criado pela web aparecia no app
+  (correto), mas ao ser excluído continuava lá. Idem para o criado pelo app
+  (a exclusão só existe na web).
+  - **Causa**: `listarDoDiaPorCondutor` e `getBdtComVeiculo` montam a
+    consulta com o query builder **cru** (`$this->db->table('trnsp_bdt b')`),
+    que **não** aplica o soft-delete do model — ao contrário de `find()`.
+    `BdtModel` tem `useSoftDeletes = true`, então a proteção parecia estar
+    lá. Detalhe revelador: os joins da subquery já filtravam `deleted_at` de
+    designação, dias e trechos; faltava justamente o do próprio BDT.
+  - **O sintoma visível era a metade menos grave.** `assertBdtPertence` —
+    guard comum de **todos** os endpoints de escrita — resolvia só pela
+    tabela de vínculo `trnsp_bdt_condutores`, sem olhar `trnsp_bdt`. Um BDT
+    excluído continuava **aceitando gravação**: iniciar trecho, lançar
+    abastecimento, receber ponto de GPS. O condutor via um zumbi e o backend
+    escrevia em cima de uma viagem que a web considera morta.
+  - **Fix nos três pontos**, com o guard fazendo o trabalho pesado: um
+    `INNER JOIN … AND b.deleted_at IS NULL` no `bdtPertenceAoCondutor` fecha
+    todos os endpoints de escrita de uma vez, em vez de caçar consulta por
+    consulta.
+  - **Mensagem honesta**: o guard passou a distinguir "não é seu" (403) de
+    **"Este BDT foi excluído." (404)**, para quem estava com a tela aberta
+    na hora. Não vaza nada — o vínculo com o condutor é condição da
+    consulta, então só quem já era dono vê a mensagem específica.
+  - **Nada a fazer no app**: não há cache local da lista (`bdt/dia` é
+    sempre rede), e `bdt/dia` é o único endpoint que lista BDT — o resto é
+    por id e passa pelo guard.
+  - **Não toquei** `getProximoNumeroParaAno` (cru de propósito: o número não
+    pode ser reusado, há UNIQUE(ano, numero)) nem as três estatísticas de
+    KM/total do dashboard, que também ignoram `deleted_at` mas são **da
+    web** — mudar o número que o gestor vê é decisão dele, não minha.
+  - Verificado chamando os três caminhos em transação com rollback: BDT vivo
+    aparece e aceita escrita; soft-deletado some da lista, `getBdtComVeiculo`
+    devolve null, guard bloqueia e `bdt/detalhes` responde 404 "Este BDT foi
+    excluído."; após o rollback, tudo volta ao normal.
+
 - ✅ **Remove card duplicado de Marcos do BdtFormPage** (2026-07-24)
   — O Formulário do BDT tinha um card "Marcos da Jornada" duplicado, com:
   (a) só 3 dos 4 marcos (faltava "Hora de saída" adicionado na Sprint 5
