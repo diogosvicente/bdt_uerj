@@ -1121,6 +1121,29 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Status "Agendado" + Pré-BDT alinhado ao BDT direto** (2026-07-30) —
+  duas correções que fecham o tratamento das cascas.
+  - **Status vazio**: `criarEntradaAgenda` e `materializarSolicitacao`
+    definiam `fk_status_atual = 5` (Agendado) na tabela de solicitações, mas
+    nunca inseriam linha em `trnsp_solicitacoes_status`. A listagem e o
+    acompanhamento leem o **histórico** (join `ss`), não a coluna — daí o
+    badge de status vazio e o "Indefinido". Nos dois casos a viagem já
+    **está** agendada quando a casca nasce (no BDT direto veículo e condutor
+    saem definidos; no Pré-BDT, aprovar é o ato de agendar), então registrar
+    "Agendado" descreve o que aconteceu. Migration
+    `BackfillStatusHistoricoCascasBdt` cuida do que já existe (idempotente).
+  - **Pré-BDT visível como o BDT direto**: `PRE_BDT` saiu de `sinteticos()`,
+    que fica só com `AVULSO` — este último não é viagem, é o balde interno
+    dos trechos avulsos, e segue invisível. Um Pré-BDT aprovado é, para
+    todos os efeitos, um BDT agendado; ter um visível e o outro oculto eram
+    dois tratamentos pro mesmo fim.
+  - ⚠️ **Pré-BDT pendente continua fora da lista** — não por filtro, mas
+    porque só ganha solicitação na aprovação (`fk_solicitacao` NULL antes).
+    São dois mecanismos distintos; a nota ficou no docblock pra não
+    confundirem um com o outro ao investigar.
+  - Docblocks e os comentários das duas consultas do `SolicitacaoModel`
+    atualizados: diziam "oculta cascas de Pré-BDT", o que ficou falso.
+
 - ✅ **Solicitação-casca do BDT direto: origem explícita** (2026-07-29) — a
   solicitação criada para o BDT direto aparecia na lista e no
   acompanhamento com Solicitante, Responsável, Aprovador e Unidade todos
