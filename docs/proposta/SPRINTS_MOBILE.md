@@ -9,6 +9,11 @@ _Extrato do plano geral só com os itens que serão implementados no app Flutter
 
 ---
 
+> 📌 **Parando aqui (2026-07-30)** — o app está entregável para os primeiros
+> testes. O que falta, por que parou e como retomar frio está em
+> **[RETOMADA.md](RETOMADA.md)**. Este documento segue sendo o histórico
+> técnico de cada entrega.
+
 ## Princípio arquitetural — sempre reusar código web quando existir
 
 Quando o mobile precisar implementar um comportamento que o web
