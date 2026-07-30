@@ -277,7 +277,7 @@ mobile.
 
 ---
 
-## Sprint MSEC 🔒 — Hardening de segurança pré-piloto (~11h) — ⏳ planejada
+## Sprint MSEC 🔒 — Hardening de segurança pré-piloto (~11h) — ✅ concluída (1 pendência)
 
 **Origem:** análise de segurança pedida pelo usuário em **2026-07-21**
 ("como o app está lidando com rotas / usa CSRF / está tudo certo?").
@@ -299,6 +299,15 @@ o app pra piloto real com condutores") e cabe em um bloco.
 
 **Objetivo:** fechar os 4 gaps antes de rodar o app com condutores
 reais em campo.
+
+> **Status (2026-07-30):** os 4 gaps originais fecharam, e a sprint
+> **cresceu de 4 para 8 itens** — MSEC.5 (pinning), MSEC.6 (foto no
+> avatar), MSEC.7 (fuso horário) e MSEC.8 (esqueci senha) nasceram
+> depois, no uso real. Todos ✅. Resta **uma** pendência, no fim de
+> MSEC.8: o `login()` ainda distingue "Usuário não encontrado." de
+> "CPF ou senha inválidos.", o que permite enumerar CPFs. Fechar exige
+> alinhar a mensagem com o time do web — é mudança de UX de uma tela
+> que não é minha.
 
 - ✅ **MSEC.1 — Token no `flutter_secure_storage`** (2026-07-21)
   - Novo `lib/services/token_storage.dart` (STORAGE) espelhando
@@ -696,6 +705,110 @@ refino desses, registrar aqui em vez de deixar só no commit
     `5aacffdc5`).
   - **Sem migration nova.** Todo o schema (`trnsp_abastecimento_tipo_foto`,
     `doc_tipos.FOTO_*`, `doc_documentos`, `doc_referencias`) já existia.
+
+- ✅ **Sprint 18.1 e 18.2 — editar ocorrência, galeria e telas de detalhe**
+  (2026-07-23/24, commits `68a7119`, `071cfd3`, `f2c1c15`) — desdobramentos
+  da 18 que só apareceram no teste com o emulador.
+  - **Crash ao editar ocorrência** (18.1): `DropdownButtonFormField`
+    assertava *"Either zero or 2 or more DropdownMenuItems were detected
+    with the same value: 4"*. No primeiro frame o `FutureBuilder` ainda
+    não tinha os tipos, então `items` só continha o placeholder e o
+    `initialValue=4` não casava com item nenhum. Fix: quando `_tipoId`
+    está setado mas fora do catálogo atual, injeta um item invisível
+    `Tipo #N (fora do catálogo)`; o `setState` reconcilia quando o Future
+    resolve e o placeholder some.
+  - **`FotoGaleriaPage`** (18.2, rota `/foto/galeria`) substitui a
+    `FotoViewerPage` de foto única pelo caso comum: `PageView` horizontal,
+    contador `N/M · Título` no header, legenda com o subtipo da foto atual
+    (Hodômetro / Antes / Nota Fiscal…), chevrons pra navegar e
+    pinch-to-zoom via `InteractiveViewer`. Carrega sob demanda.
+  - **Cards do BDT perdem a tira de miniaturas** — no teste real ficou
+    poluído. Trocada por trailing padronizado `[n fotos] [Ver] [Editar]
+    [Excluir]`, reusado nos 3 cards via `_acoesDoRegistro`. Daí nasceram
+    `AbastecimentoDetalhePage` e `ManutencaoDetalhePage`, irmãs da
+    `OcorrenciaDetalhePage`.
+  - **`AssinaturaMarcoPage` no padrão dos outros forms**: o SnackBar
+    genérico *"Falha ao registrar marco."* mascarava o erro real do
+    backend (coluna faltando, ordem inválida, BDT que não aceita marco).
+    Agora banner `errorContainer` no topo + `errorText` inline no nome, e
+    a mensagem real chega ao usuário — que pode agir (ex.: rodar
+    `php spark migrate` se aparecer coluna faltando).
+
+- ✅ **"Odômetro" → "Hodômetro" nas strings visíveis** (2026-07-24, commit
+  `ec2d29e`) — preferência da equipe pela grafia dicionarizada. Trocado nos
+  labels, dialogs, snackbars e resumos de `bdt_page` e `bdt_form_page`.
+  **Deliberadamente NÃO trocado**: identificadores de código (`odoCtrl`,
+  `_asOdo`), chaves de payload da API (`odometro_km`, `odometro_saida`) e o
+  subtipo `"Odometro"` do catálogo `trnsp_abastecimento_tipo_foto` — este
+  último exigiria seed migration + update das descrições já gravadas em
+  `doc_documentos`, custo desproporcional pra um rótulo.
+  - ⚠️ **Este documento ainda escreve "odômetro"** nas entradas anteriores
+    a esta data. Não reescrevi o histórico: as entradas descrevem o que
+    era verdade quando foram escritas. Da UI, vale "hodômetro".
+
+- ✅ **Select de combustível nunca vazio** (2026-07-24, commit `fd0676f`) —
+  o dropdown "Tipo combustível" abria vazio no emulador, por **duas** causas
+  independentes: (a) o `DropdownButtonFormField` não remonta só porque
+  `items` mudou, então ficava preso ao estado inicial `items=[]` do loading
+  — resolvido com `key` derivada de `items.length`; (b) se
+  `POST /bdt/abastecimentos/tipos` falhasse (rede instável, token expirado,
+  404), o condutor ficava sem opção nenhuma — agora há fallback local com os
+  6 tipos canônicos espelhando `App\Constants\CombustivelTipo`. Tipo novo
+  cadastrado pelo admin só aparece online; offline mostra os 6 que cobrem a
+  frota. O log de warn passou a incluir `http_status` pra diagnosticar por
+  que caiu no fallback.
+
+- ✅ **Alinhamento de Hodômetro e Litros na mesma linha** (2026-07-24, commit
+  `cd2cde6`) — os dois campos da `Row` ficavam com bases desalinhadas porque
+  só o Hodômetro tinha `helperText: 'Opcional'` (reserva ~18px). Fix:
+  `helperText: ' '` no Litros — reserva a mesma altura sem texto visível.
+
+- ✅ **Limpeza de warnings pré-existentes** (2026-07-25, commit `b77f926`) —
+  campos guardados e nunca lidos poluíam o `flutter analyze` desde sprints
+  anteriores: `_two` do `BdtFormPage` (morto após a migração pro `DateFmt`),
+  `_bdtId`/`_trechoId` do `GpsLiveService` (só `_agendaId` é lido no callback
+  do timer) e a atribuição `_fotosCargaLoader` do `PreBdtFormPage`. Zero
+  mudança de comportamento. Comentário no `GpsLiveService` registra o que
+  eram, pra ressuscitar rápido se um dia `status()` precisar expor BDT/trecho
+  ativo.
+
+- ✅ **`.gitattributes` + normalização pra LF** (2026-07-24, commit `b06d8a8`)
+  — sem `.gitattributes`, o mesmo diretório era visto de forma diferente pelo
+  Git-for-Windows (`autocrlf=true`) e pelo Git dentro do WSL (`autocrlf`
+  vazio): o WSL enxergava **todos** os `.dart` como modificados, impedindo
+  commit limpo de lá. Fix: `* text=auto eol=lf` — repo sempre em LF, checkout
+  respeitando o `autocrlf` local (Windows continua com CRLF no disco, sem
+  mudança visível). Exceções explícitas: `*.bat/.cmd/.ps1` sempre CRLF,
+  binários marcados `binary`, `*.pem` forçado LF (o bootstrap SSL espera),
+  `gradlew` LF e `gradlew.bat` CRLF. O `--renormalize` reescreveu 46 arquivos
+  no índice (4749 inserções / 4749 remoções, zero mudança de conteúdo).
+  - Este é o episódio que originou a regra [[bdt_uerj_git_backend_pelo_wsl]]:
+    no **backend** o problema é pior (não tem `.gitattributes` equivalente),
+    então git de lá roda sempre por dentro do WSL.
+
+- ✅ **Migrations: trait de bypass do cache de metadados do CI4** (2026-07-24,
+  backend `bd6571d0` + `7a2e0056`) — dois `migrate:refresh` seguidos
+  quebraram, primeiro com `Unknown column 'datahora_hora_saida'`, depois com
+  `Duplicate column name 'distancia_km'`. **Mesma causa**: no `refresh` todas
+  as migrations rodam no MESMO processo PHP e na mesma conexão, e o
+  `fieldExists`/`tableExists` do CI4 memoiza metadados em `dataCache`. Se uma
+  migration anterior consultou a tabela antes de a coluna existir, o cache
+  congela — e a migration seguinte ou pula o trabalho (false-negative) ou
+  tenta recriar o que já existe (true stale). Fix generalizado no trait
+  `App\Database\MigrationSchemaTrait` (`columnExistsSafe`, `tableExistsSafe`,
+  `indexExistsSafe` consultando `INFORMATION_SCHEMA` direto, mais
+  `resetSchemaCache`). Duas migrations refatoradas pra usá-lo.
+
+- ✅ **`AgendaTrechosModel::find()` resiliente a `distancia_km` ausente**
+  (2026-07-22, backend `7150cbb2`) — o **fix definitivo** do sintoma
+  registrado acima em "Iniciar/Finalizar trecho — retorno de exec ignorado".
+  Mesmo com a migration self-healing, o dev DB perdeu a coluna duas vezes na
+  mesma semana, e todo fluxo que passa pelo `find()` explodia — incluindo
+  `atualizarTrechoExecucao`, que produzia o sintoma confuso "Trecho iniciado,
+  mas hora/hodômetro não foram salvos". Agora o `find()` checa `fieldExists`
+  antes de selecionar e, faltando, devolve `NULL AS distancia_km` —
+  indistinguível de valor nulo no banco, que o consumidor já trata. Zero
+  impacto quando a coluna existe; testado nos dois cenários.
 
 - ✅ **Padronização UX pós-teste — 3 ajustes** (2026-07-24)
   - **Dashboard sem "Histórico de ocorrências"** — o card
@@ -1171,6 +1284,24 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     `LoginController::forgotPasswordValidate` do web, com o mesmo
     `Services::email(true)` e `config('Email')`. Assunto, template e link
     saem idênticos ao fluxo pelo navegador; nada foi reimplementado.
+
+- 🟡 **Pendência: apagar um BDT direto deixa a solicitação-casca para trás**
+  (2026-07-30) — descoberto ao limpar o dev DB depois dos testes de
+  Sprint 15. A casca é criada por `criarEntradaAgenda` como registro
+  independente; excluir o BDT **não** a remove. Sobra uma solicitação
+  "Agendado" na lista, apontando para um BDT que não existe mais.
+  - **No dev**: 14 cascas, várias de BDTs já apagados. Não deletei —
+    não dá pra distinguir com segurança as minhas de teste das do
+    usuário (uma delas é a `TRN-2026-0018` dele), e apagar solicitação
+    alheia é pior que deixar lixo visível.
+  - **Em produção o efeito é recorrente**: todo BDT direto excluído vai
+    deixar uma. O mesmo vale pra casca de Pré-BDT e pra `avulso`.
+  - **Não decidido** qual é o comportamento certo: cascatear o
+    soft-delete do BDT para a casca, ou manter a casca como registro
+    histórico (o BDT existiu, foi agendado, e a solicitação documenta
+    isso). A segunda opção combina com a decisão de manter a casca
+    visível, mas aí a lista precisa marcar "BDT excluído" — hoje não
+    marca nada. **Precisa da chamada do usuário antes de codar.**
 
 - ✅ **Carga do BDT × carga do Pré-BDT: rótulo por situação** (2026-07-30) —
   **erro de premissa meu**: eu rotulava toda carga guardada em `trnsp_bdt`
@@ -1753,7 +1884,7 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
 | M3 | Pré-BDT criação | 32 |
 | M4 | Validação atendimento | 88 |
 | M5 | Alertas inteligentes | 40 |
-| MSEC | Hardening de segurança pré-piloto (nova, planejada) | 11 |
+| MSEC | Hardening de segurança pré-piloto (✅ entregue; cresceu de 4 p/ 8 itens) | 11 |
 | MUX | Refinos UX pós-piloto (rolling, sem estimativa fixa) | — |
 | **TOTAL mobile only** | | **301h** |
 | Complementar Web+Mobile (estimativa) | | ~80-100h |
