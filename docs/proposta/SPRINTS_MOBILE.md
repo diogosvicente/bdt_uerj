@@ -1143,6 +1143,29 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     Novo helper `usuarioIdDoCondutor()` traduz
     `trnsp_condutores.id` → `usuarios.id` (a designação guarda um,
     `fk_solicitante` aponta pro outro).
+  - **Unidade do solicitante na casca** (2026-07-30): faltava
+    `fk_unidade_solicitante`, então o card Solicitante do acompanhamento
+    exibia "Unidade: —" mesmo com o nome já correto. A unidade acompanha o
+    **solicitante**, não quem registrou — a viagem pertence à lotação de
+    quem vai rodar. Reusa `UsuarioModel::getUnidadeIdByUserId()` (já
+    existia), sem novo helper. `nome_unidade_solicitante` fica NULL de
+    propósito: é texto livre para solicitante EXTERNO, e casca é sempre de
+    usuário interno.
+    - Os **três** criadores de casca tinham o mesmo buraco, não só o BDT
+      direto: `PreBdtService::materializarSolicitacao` (Pré-BDT aprovado) e
+      `BdtViagemService::getOrCreateSolicitacaoAvulsa` (trecho extra, feature
+      da web) também. Corrigidos juntos — deixar dois com o defeito só
+      geraria o mesmo relato de bug de outro ângulo.
+    - Migration `BackfillSolicitanteEUnidadeCascasBdt` cuida do histórico:
+      preenche `fk_solicitante` (condutor designado → `fk_usuario_cadastro`
+      como fallback) e depois a unidade. As 14 cascas antigas estavam com
+      **as duas** colunas NULL — o fix de solicitante acima só valia pra
+      registros novos. Idempotente, só preenche coluna vazia, não move dado
+      de lugar (nada do episódio de 2026-07-29, em que mudar onde o trecho
+      morava quebrou os JOINs de `tipo_solicitante = 'avulso'`).
+    - Verificado chamando `criarEntradaAgenda` em transação com rollback:
+      admin (unid 20) abrindo para condutora de unidade 4 grava **unidade
+      4** — a dela, não a de quem registrou.
   - **E-mail do esqueci-senha confirmado**: usa o helper
     `enviar_email_reset_senha` — o MESMO do
     `LoginController::forgotPasswordValidate` do web, com o mesmo
