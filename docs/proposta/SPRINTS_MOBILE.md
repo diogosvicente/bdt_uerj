@@ -1121,6 +1121,38 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Carga duplicada no card do mobile** (2026-07-29) — **regressão do item
+  anterior**: um Pré-BDT aprovado passou a aparecer DUAS vezes no card
+  "Carga declarada" — uma pela solicitação (com as fotos) e outra pelo BDT
+  (sem nenhuma). Causa: na aprovação, `materializarSolicitacao` copia a
+  carga para `trnsp_solicitacoes` **e migra as fotos** para lá, mas
+  `trnsp_bdt.tem_carga` permanece `1` — então o fallback que eu havia
+  adicionado criava uma segunda entrada já órfã de fotos. Corrigido com a
+  guarda `empty($out)`: a entrada do BDT só entra quando a carga NÃO foi
+  materializada (Pré-BDT pendente, BDT criado direto pelo app).
+  Verificado nos três estados: BDT direto → 1 item `TRN-BDT-` com foto;
+  Pré-BDT pendente → 1 item `TRN-BDT-` com foto; Pré-BDT aprovado → 1 item
+  `TRN-` com foto.
+
+- ✅ **Fotos da carga na WEB, dentro do BDT** (2026-07-29) — as fotos
+  existiam desde a Sprint 11 W+M, mas na web só apareciam na tela da
+  **solicitação do solicitante**. Na Agenda e no BDT não havia nada — e
+  para BDT direto / Pré-BDT não havia lugar NENHUM, já que esses não têm
+  solicitação de usuário por trás.
+  - Novo partial `_carga.php` na folha do BDT, incluído **antes** do card
+    de Divergências (a carga é o previsto; a divergência é a reação a ela).
+    Auto-oculta quando não há carga declarada.
+  - Cobre as **três origens** com a mesma regra anti-duplicação do mobile:
+    cargas das solicitações vinculadas (pedido real e Pré-BDT aprovado) e,
+    quando não materializada, a carga do próprio BDT. A de BDT ganha o
+    badge "declarada no BDT" — senão o protocolo `TRN-BDT-` confunde quem
+    procura o pedido de origem.
+  - Miniaturas reusam o contrato `data-group` + `title` da galeria que já
+    existe na folha (mesmo modal de abastecimento/manutenção/ocorrência,
+    com prev/next, legenda e navegação por seta). **Zero JS novo.**
+  - Sai também na impressão: a carga faz parte do registro da viagem,
+    como já sai no PDF.
+
 - ✅ **Editar Pré-BDT trazia a carga em branco** (2026-07-29) — **bug de
   leitura**: o form de edição abria com o switch "Vai levar carga?"
   DESLIGADO e os campos vazios, mesmo com carga declarada. A gravação
