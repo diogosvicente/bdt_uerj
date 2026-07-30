@@ -93,6 +93,14 @@ class CargaDoBdt {
   /// de referência. Ver doc do método.
   final String origem;
 
+  /// Estado do Pré-BDT quando a carga é do próprio BDT (`'pendente'`,
+  /// `'aprovado'`, `'recusado'`) — null no BDT criado direto.
+  ///
+  /// É o que separa carga DEFINITIVA de PROVISÓRIA: a recusa de um Pré-BDT
+  /// **não apaga** a carga de `trnsp_bdt`, então sem isso o app mostraria
+  /// como carga real algo de uma viagem que não vai acontecer.
+  final String? preBdtStatus;
+
   const CargaDoBdt({
     required this.solicitacaoId,
     required this.ano,
@@ -105,11 +113,52 @@ class CargaDoBdt {
     this.pessoalApoio,
     this.fotos = const [],
     this.origem = 'solicitacao',
+    this.preBdtStatus,
   });
 
   /// True quando a carga foi declarada no próprio BDT (BDT criado direto pelo
   /// app, ou Pré-BDT ainda não aprovado) em vez de numa solicitação.
   bool get declaradaNoBdt => origem == 'bdt';
+
+  /// True quando a viagem desta carga foi RECUSADA — a carga fica no
+  /// histórico mas não deve ser conferida.
+  bool get viagemRecusada => declaradaNoBdt && preBdtStatus == 'recusado';
+
+  /// True quando a carga ainda depende de aprovação do Pré-BDT.
+  bool get aguardandoAprovacao =>
+      declaradaNoBdt && preBdtStatus == 'pendente';
+
+  /// Rótulo da origem, ou null quando a carga vem de solicitação (aí o
+  /// próprio protocolo TRN- já diz tudo).
+  ///
+  /// Mesmas regras do `BDTController::rotuloOrigemCarga` no backend.
+  String? get rotuloOrigem {
+    if (!declaradaNoBdt) return null;
+    switch (preBdtStatus) {
+      case 'pendente':
+        return 'declarada no Pré-BDT · aguardando aprovação';
+      case 'recusado':
+        return 'Pré-BDT recusado · carga não se realiza';
+      case 'aprovado':
+        return 'declarada no Pré-BDT (aprovado)';
+      default:
+        // Sem preBdtStatus = BDT criado direto: definitivo.
+        return 'declarada no BDT';
+    }
+  }
+
+  /// Aviso a exibir junto do rótulo, quando a carga não é definitiva.
+  String? get avisoOrigem {
+    if (aguardandoAprovacao) {
+      return 'Carga provisória: se o Pré-BDT for recusado, esta viagem não '
+          'acontece.';
+    }
+    if (viagemRecusada) {
+      return 'O Pré-BDT foi recusado. Esta carga fica no histórico, mas não '
+          'deve ser conferida.';
+    }
+    return null;
+  }
 
   /// Protocolo formatado. `TRN-BDT-` quando a carga é do próprio BDT (a
   /// numeração vem de `trnsp_bdt`, sequência distinta da de solicitações);
@@ -164,6 +213,9 @@ class CargaDoBdt {
       origem: (j['origem']?.toString().trim().isNotEmpty ?? false)
           ? j['origem'].toString()
           : 'solicitacao',
+      preBdtStatus: (j['pre_bdt_status']?.toString().trim().isNotEmpty ?? false)
+          ? j['pre_bdt_status'].toString()
+          : null,
     );
   }
 }

@@ -2216,13 +2216,17 @@ class _BdtFormPageState extends State<BdtFormPage> {
             ),
             const SizedBox(height: 4),
             Text(
-              // A carga pode vir do pedido OU ter sido declarada direto no
-              // BDT (BDT criado pelo app / Pré-BDT) — o texto cobre os dois.
-              cargas.any((c) => c.declaradaNoBdt)
-                  ? 'Confira o que foi declarado. Se a carga real não bater, '
-                    'registre em "Divergências de carga".'
-                  : 'Confira o que foi declarado no pedido. Se a carga real '
-                    'não bater, registre em "Divergências de carga".',
+              // Não mandar "conferir" uma carga cuja viagem ainda não foi
+              // confirmada (ou foi recusada) — nesses casos ela é declaração,
+              // não fato da viagem.
+              cargas.any((c) => c.aguardandoAprovacao || c.viagemRecusada)
+                  ? 'Veja a situação de cada item abaixo — há carga cuja '
+                    'viagem ainda não foi confirmada.'
+                  : cargas.any((c) => c.declaradaNoBdt)
+                      ? 'Confira o que foi declarado. Se a carga real não '
+                        'bater, registre em "Divergências de carga".'
+                      : 'Confira o que foi declarado no pedido. Se a carga '
+                        'real não bater, registre em "Divergências de carga".',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 10),
@@ -2252,22 +2256,63 @@ class _BdtFormPageState extends State<BdtFormPage> {
       }
     }
 
+    // Carga em `trnsp_bdt` pode ser definitiva (BDT direto) ou provisória
+    // (Pré-BDT pendente), ou de uma viagem recusada — a recusa não apaga a
+    // carga. O tile precisa dizer qual é o caso.
+    final corRotulo = c.viagemRecusada
+        ? Theme.of(context).colorScheme.error
+        : (c.aguardandoAprovacao ? Colors.orange.shade800 : Colors.black54);
+
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
-      title: Text(
-        c.protocolo,
-        style: const TextStyle(fontWeight: FontWeight.w700),
+      title: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              c.protocolo,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
-      subtitle: Text(
-        [
-          if ((c.descricao ?? '').trim().isNotEmpty) c.descricao!.trim(),
-          if (medidas.isNotEmpty) medidas.join(' • '),
-          if ((c.pessoalApoio ?? '').trim().isNotEmpty)
-            'Apoio: ${c.pessoalApoio!.trim()}',
-        ].join('\n'),
-        maxLines: 4,
-        overflow: TextOverflow.ellipsis,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (c.rotuloOrigem != null)
+            Text(
+              c.rotuloOrigem!,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: corRotulo,
+              ),
+            ),
+          Text(
+            [
+              if ((c.descricao ?? '').trim().isNotEmpty) c.descricao!.trim(),
+              if (medidas.isNotEmpty) medidas.join(' • '),
+              if ((c.pessoalApoio ?? '').trim().isNotEmpty)
+                'Apoio: ${c.pessoalApoio!.trim()}',
+            ].join('\n'),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (c.avisoOrigem != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                c.avisoOrigem!,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: corRotulo,
+                ),
+              ),
+            ),
+        ],
       ),
       isThreeLine: true,
       trailing: Row(
@@ -2302,6 +2347,20 @@ class _BdtFormPageState extends State<BdtFormPage> {
         label: c.declaradaNoBdt ? 'BDT' : 'Solicitação',
         valor: c.protocolo,
       ),
+      // Situação vem logo depois do protocolo: é o que decide se o condutor
+      // deve conferir esta carga ou apenas consultá-la.
+      if (c.rotuloOrigem != null)
+        RegistroBdtLinha(
+          icone: c.viagemRecusada
+              ? Icons.block
+              : (c.aguardandoAprovacao
+                  ? Icons.hourglass_bottom
+                  : Icons.check_circle_outline),
+          label: 'Situação',
+          valor: c.avisoOrigem != null
+              ? '${c.rotuloOrigem}\n${c.avisoOrigem}'
+              : c.rotuloOrigem!,
+        ),
       if (c.pesoKg != null)
         RegistroBdtLinha(
           icone: Icons.scale,

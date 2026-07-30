@@ -1121,6 +1121,31 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Carga do BDT × carga do Pré-BDT: rótulo por situação** (2026-07-30) —
+  **erro de premissa meu**: eu rotulava toda carga guardada em `trnsp_bdt`
+  como "declarada no BDT", tratando como um caso só o que são quatro.
+  - Carga em `trnsp_bdt` pode ser **definitiva** (BDT criado direto — a
+    viagem existe) ou **provisória** (Pré-BDT pendente — ainda depende de
+    aprovação). E `PreBdtService::recusar` **não apaga** a carga: um
+    Pré-BDT recusado mantém a carga ali, então o rótulo antigo mostrava
+    como carga real algo de uma viagem que não vai acontecer.
+  - Novo `BDTController::rotuloOrigemCarga($origem, $preBdtStatus)`
+    centraliza a regra pra folha e PDF; o mobile tem os getters
+    equivalentes (`rotuloOrigem` / `avisoOrigem` / `viagemRecusada` /
+    `aguardandoAprovacao`) em `CargaDoBdt`. Estados:
+    - sem `pre_bdt_status` → "declarada no BDT" (definitiva, sem aviso)
+    - `pendente` → "declarada no Pré-BDT · aguardando aprovação" + aviso
+      de que a viagem pode não acontecer (âmbar)
+    - `recusado` → "Pré-BDT recusado · carga não se realiza" + aviso de
+      não conferir (vermelho)
+    - `aprovado` → só chega aqui se a materialização ficou incompleta
+      (normalmente a origem viraria `solicitacao`); rotula como aprovado
+      em vez de mentir "declarada no BDT"
+  - O texto de apoio do card também deixou de mandar "conferir" quando há
+    item cuja viagem não foi confirmada — nesse caso a carga é declaração,
+    não fato da viagem. Vale no mobile, na folha e no PDF.
+  - `bdt/carga` passou a enviar `pre_bdt_status`. Verificado nos 4 estados.
+
 - ✅ **Status "Agendado" + Pré-BDT alinhado ao BDT direto** (2026-07-30) —
   duas correções que fecham o tratamento das cascas.
   - **Status vazio**: `criarEntradaAgenda` e `materializarSolicitacao`
