@@ -17,7 +17,7 @@ e por quê.
 
 | Repo | Branch | HEAD | Situação |
 |---|---|---|---|
-| `bdt_uerj` (Flutter) | `main` | `8d8f1f1` | limpo, sincronizado |
+| `bdt_uerj` (Flutter) | `main` | `2391bd8` (+ o commit deste doc) | limpo, sincronizado |
 | `e-prefeitura` (CI4) | `feature/027-mobile-support` | `5d1856cb` | limpo, sincronizado |
 
 As duas branches fecham juntas — a do backend **não** foi mergeada em
@@ -111,9 +111,40 @@ Registro para ninguém confundir "entregue" com "testado ponta a ponta":
 
 ## 6. Higiene pendente
 
-**Trailers `Co-Authored-By: Claude` no `e-prefeitura`**: 20 commits numa
-branch e 16 noutra ainda os carregam. Te mostrei as opções e você não
-escolheu; segue lá. No `bdt_uerj` já está limpo.
+### 6.1 Soft-delete ignorado: revisar o resto do módulo 🟡
+
+O bug do "BDT zumbi" (30/07) não era um caso isolado, era uma **classe**:
+consulta montada com o query builder cru (`$this->db->table(...)`) **não**
+aplica o soft-delete do model, ao contrário de `find()`. Corrigi as 8
+ocorrências em `trnsp_bdt` (app, dashboard, duplicatas, origem).
+
+Depois varri as **34 tabelas com soft-delete** do módulo Transporte. Sobram
+**15 consultas de LEITURA** com a mesma forma, em `trnsp_solicitacoes`,
+`trnsp_solicitacao_trechos`, `trnsp_condutores`, `trnsp_veiculos`,
+`trnsp_bdt_ocorrencias` e outras (as de ESCRITA foram descartadas — filtro
+não se aplica a INSERT/UPDATE).
+
+**Não são 15 bugs, e não revisei nenhuma.** Boa parte é legítima: uma
+consulta de exibição histórica como `BdtHistoricoService::nomeCondutor`
+**deve** resolver o nome de um condutor já excluído, senão o registro
+antigo perde a identificação. Separar as que são defeito das que estão
+certas exige olhar caso a caso — é o trabalho que falta.
+
+Comando que gera a lista (roda de dentro do WSL, na raiz do
+`e-prefeitura`): procurar `table('<tabela>')` nos diretórios `app/Models`,
+`app/Services`, `app/Repositories` e `app/Controllers`, e conferir se a
+consulta até o `->get()` menciona `deleted_at`.
+
+> ⚠️ Contra-exemplo importante, para não "corrigir" por simetria:
+> `BdtModel::getProximoNumeroParaAno` usa o builder cru **de propósito** e
+> os excluídos **precisam** contar — há `UNIQUE(ano, numero)` e reusar o
+> número de um BDT apagado colide no INSERT.
+
+### 6.2 Trailers de co-autoria
+
+**`Co-Authored-By: Claude` no `e-prefeitura`**: 20 commits numa branch e 16
+noutra ainda os carregam. Te mostrei as opções e você não escolheu; segue
+lá. No `bdt_uerj` já está limpo.
 
 Relacionado: o GitHub continua listando "claude" como contribuidor na
 sidebar do repo mesmo com o Insights já limpo — é cache do lado deles, e a
