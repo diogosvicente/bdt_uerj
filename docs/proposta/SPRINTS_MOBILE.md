@@ -682,6 +682,33 @@ Não tem "estimativa total" — vai crescendo. Sempre que fizer um
 refino desses, registrar aqui em vez de deixar só no commit
 (regra [[bdt_uerj_registrar_fora_de_escopo]]).
 
+- ✅ **Foto de carga do BDT direto se declarava "Pré-BDT mobile"** (2026-07-30)
+  — encontrado num teste aleatório: subir imagem de carga num BDT direto
+  gravava a legenda `Foto de carga (Pré-BDT mobile)`. Procedência errada num
+  campo que existe justamente para registrar procedência.
+  - **Causa**: `uploadFotoCarga` tinha a `descricao` **fixa**. A frase estava
+    certa quando só o Pré-BDT declarava carga; na Sprint 15 o BDT direto
+    passou a usar o MESMO endpoint e herdou o rótulo do vizinho.
+  - Agora a legenda sai de `pre_bdt_status` (preenchido só no Pré-BDT; NULL no
+    BDT direto), via `descricaoFotoCarga()`.
+  - **Mesmo defeito no guard, achado na varredura**: `assertPreBdtOwnership`
+    também serve os 4 endpoints de foto de carga desde a Sprint 15 — o nome e
+    as mensagens ("Pré-BDT não encontrado.", "Pré-BDT não pertence a este
+    usuário.") mentiam para metade dos casos. Renomeado para
+    `assertBdtDoCriador`, com mensagens neutras.
+  - **O resto das legendas está correto**: "Foto da ocorrência (mobile)" e
+    "Foto da divergência" não afirmam procedência; o `rotuloOrigem` do app
+    (`carga_service.dart`) é data-driven pelo `preBdtStatus`, então só diz
+    "Pré-BDT" quando é um de verdade; e a mensagem de `obterPreBdt` está num
+    fluxo genuinamente exclusivo de Pré-BDT.
+  - Migration `CorrigeDescricaoFotoCargaBdtDireto` conserta as fotos já
+    gravadas — só onde as três condições batem (referência em `trnsp_bdt`,
+    legenda exatamente a antiga, e BDT com `pre_bdt_status` vazio). Foto de
+    Pré-BDT de verdade não entra no WHERE. Reversível.
+  - Verificado com fixture em transação: o helper acerta os 5 estados de
+    origem, e o UPDATE corrige a foto do BDT direto deixando a do Pré-BDT
+    intacta.
+
 - ✅ **BDT excluído pela web continuava "zumbi" no app** (2026-07-30) —
   reportado no teste: BDT sem solicitação criado pela web aparecia no app
   (correto), mas ao ser excluído continuava lá. Idem para o criado pelo app
