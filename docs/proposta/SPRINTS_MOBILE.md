@@ -1121,6 +1121,24 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Carga declarada no PDF da folha** (2026-07-29) — antes a carga só
+  aparecia no PDF como coluna "Declarado" **dentro** das divergências: sem
+  divergência registrada o documento não dizia nada sobre a carga, e para
+  BDT direto / Pré-BDT não dizia nunca (`$cargasDeclaradas` cobre apenas
+  solicitações).
+  - Seção própria "Carga declarada" antes de Divergências (mesma ordem da
+    folha). Tabela com origem/protocolo, descrição, peso, C×L×A e contagem
+    de fotos; linha extra pra pessoal de apoio. Placeholder "Sem carga
+    declarada" no padrão `$vazio()` das outras seções.
+  - **Sem miniaturas, de propósito**: este PDF não embute imagem em seção
+    nenhuma (abastecimento, manutenção e ocorrência também não). Mostra a
+    contagem e aponta onde ver — documento coerente e paginação previsível.
+  - Extraído `montarCargasDoBdt()` no `BDTController`, agora compartilhado
+    por `folha()` e `folhaPdf()`. A regra das três origens + guarda
+    anti-duplicação estava inline na folha; deixar as duas actions com
+    cópias era convite pra divergirem — exatamente o descasamento que
+    gerou o bug da carga duplicada.
+
 - ✅ **Carga duplicada no card do mobile** (2026-07-29) — **regressão do item
   anterior**: um Pré-BDT aprovado passou a aparecer DUAS vezes no card
   "Carga declarada" — uma pela solicitação (com as fotos) e outra pelo BDT
