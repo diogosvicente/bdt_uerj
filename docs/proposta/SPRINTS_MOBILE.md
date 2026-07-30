@@ -709,10 +709,27 @@ refino desses, registrar aqui em vez de deixar só no commit
   - **Nada a fazer no app**: não há cache local da lista (`bdt/dia` é
     sempre rede), e `bdt/dia` é o único endpoint que lista BDT — o resto é
     por id e passa pelo guard.
-  - **Não toquei** `getProximoNumeroParaAno` (cru de propósito: o número não
-    pode ser reusado, há UNIQUE(ano, numero)) nem as três estatísticas de
-    KM/total do dashboard, que também ignoram `deleted_at` mas são **da
-    web** — mudar o número que o gestor vê é decisão dele, não minha.
+  - **Varredura do mesmo padrão no resto do código** (2026-07-30, autorizada
+    depois) — o furo não estava só no caminho do app. Percorri toda consulta
+    crua em `trnsp_bdt` fora de Commands/Migrations e achei mais **cinco**:
+    - **Indicadores do dashboard web** (`getKmPorMes`, `getKmTotalMesAtual`,
+      `getTotalBdtsMesAtual`): BDT excluído seguia somando KM e contando no
+      total. O gestor via número inflado sem nada indicando isso.
+    - **`SolicitacaoDuplasService`** (duas consultas) — a pior das cinco:
+      alimentava a detecção de duplicidade com BDT excluído, então avisava
+      *"este condutor/veículo já está em outro BDT"* apontando para uma
+      viagem que a web já apagou. Aviso falso sobre registro inexistente.
+    - **`BdtRepository::getOrigemBdt`** — o modal "Origem" ainda descrevia a
+      procedência de um BDT excluído.
+    - Já estavam corretos: `getCabecalho`, as 5 consultas do
+      `PreBdtRepository`, `AgendaEstadoService` e o `RelatorioRepository`.
+  - **`getProximoNumeroParaAno` fica como está, de propósito**: ali o builder
+    cru é deliberado e os excluídos PRECISAM contar, porque há
+    `UNIQUE(ano, numero)` e reusar o número de um BDT apagado colide no
+    INSERT. Deixei o comentário apontando isso ao lado do fix vizinho, para
+    ninguém "corrigir" por simetria depois.
+  - Verificado em transação com rollback: com o BDT vivo o mês fecha em 4
+    BDTs e 123 KM; após o soft-delete, 3 BDTs, 0 KM e origem vazia.
   - Verificado chamando os três caminhos em transação com rollback: BDT vivo
     aparece e aceita escrita; soft-deletado some da lista, `getBdtComVeiculo`
     devolve null, guard bloqueia e `bdt/detalhes` responde 404 "Este BDT foi

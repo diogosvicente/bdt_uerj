@@ -18,7 +18,7 @@ e por quê.
 | Repo | Branch | HEAD | Situação |
 |---|---|---|---|
 | `bdt_uerj` (Flutter) | `main` | `8d8f1f1` | limpo, sincronizado |
-| `e-prefeitura` (CI4) | `feature/027-mobile-support` | `42423392` | limpo, sincronizado |
+| `e-prefeitura` (CI4) | `feature/027-mobile-support` | `5d1856cb` | limpo, sincronizado |
 
 As duas branches fecham juntas — a do backend **não** foi mergeada em
 `development` ainda. Antes de rodar o app contra o servidor de dev, confira
