@@ -17,8 +17,8 @@ e por quê.
 
 | Repo | Branch | HEAD | Situação |
 |---|---|---|---|
-| `bdt_uerj` (Flutter) | `main` | `4435211` | limpo, sincronizado |
-| `e-prefeitura` (CI4) | `feature/027-mobile-support` | `8cfa4a91` | limpo, sincronizado |
+| `bdt_uerj` (Flutter) | `main` | `8d8f1f1` | limpo, sincronizado |
+| `e-prefeitura` (CI4) | `feature/027-mobile-support` | `269350a9` | limpo, sincronizado |
 
 As duas branches fecham juntas — a do backend **não** foi mergeada em
 `development` ainda. Antes de rodar o app contra o servidor de dev, confira
@@ -30,9 +30,9 @@ nenhum endpoint mobile, e o sintoma foi "o app não faz mais nada".
 > problema (tem `.gitattributes`).
 
 **Migrations do backend estão aplicadas no dev.** A última é
-`2026-07-30-160000_BackfillSolicitanteEUnidadeCascasBdt`. Em outro ambiente,
-rodar `php spark migrate` antes de testar — várias correções recentes
-dependem de backfill.
+`2026-07-30-180000_SoftDeleteCascasBdtOrfas`. Em outro ambiente, rodar
+`php spark migrate` antes de testar — várias correções recentes dependem de
+backfill.
 
 ---
 
