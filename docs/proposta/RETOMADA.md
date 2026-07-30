@@ -20,6 +20,28 @@ e por quê.
 | `bdt_uerj` (Flutter) | `main` | `f6e2538` (+ o commit deste doc) | limpo, sincronizado |
 | `e-prefeitura` (CI4) | `feature/027-mobile-support` | `d051d5a6` | limpo, sincronizado |
 
+> ⛔ **BLOQUEIO PARA O PILOTO — produção ainda não tem esta API** (medido em
+> 2026-07-30, por requisição real a `www.e-prefeitura.uerj.br`).
+>
+> O app já aponta para produção por padrão (`_productionBase`, e release
+> ignora `--dart-define`). O problema é o outro lado: produção roda um corte
+> **muito anterior** a esta branch. Das 14 rotas que sondei, só **duas**
+> existem lá:
+>
+> | Rota | Produção |
+> |---|---|
+> | `transporte/api/login` | existe (400) |
+> | `transporte/api/bdt/dia` | existe (401) |
+> | `captcha/new`, `bdt/pre-bdt/criar`, `bdt/passageiros/marcar-presenca`, `bdt/token/refresh`, `bdt/usuario/foto`, `bdt/seguranca/textos`, `bdt/seguro`, `bdt/ocorrencias/historico`, `bdt/abastecimentos/tipos`, `bdt/divergencias/listar`, `bdt/criar-sem-solicitacao`, `bdt/permissoes-mobile`, `esqueci-senha` | **404** |
+>
+> Na prática o condutor **consegue logar** (o app tem retrocompat: lê
+> `access_token ?? token`) e depois falha em quase toda tela. Não adianta
+> distribuir APK antes do deploy.
+>
+> Para destravar: mergear esta branch, publicar e rodar `php spark migrate`
+> em produção — incluindo `ConvertTrnspBdtTimestampsBrtToUtc`, que **altera
+> dados históricos** (+3h nas colunas operacionais do BDT).
+
 As duas branches fecham juntas — a do backend **não** foi mergeada em
 `development` ainda. Antes de rodar o app contra o servidor de dev, confira
 que o backend está nessa branch: já aconteceu de estar em `development`, sem
@@ -94,11 +116,13 @@ Registro para ninguém confundir "entregue" com "testado ponta a ponta":
 - **As telas web que mexi** (folha, PDF, modal Origem, card Solicitante)
   foram conferidas por lint, query em banco e render — não abri as páginas
   autenticadas. Quem validou de fato foi você, pelos prints.
-- **Pinning de certificado em rede real.** Verifiquei com `openssl` que a
-  cadeia da RNP valida e que CA de fora é recusada, mas o app não rodou
-  contra produção com o pinning ativo. Se der erro de TLS no piloto, o
-  escape hatch é buildar com `--dart-define=SSL_PINNING=off` — e aí o
-  problema é a cadeia, não o app.
+- **Pinning de certificado — verificado contra produção em 2026-07-30.** As
+  impressões SHA-256 da intermediária (`RNP ICPEdu GR46 OV TLS CA 2025`,
+  `E1:07:47…`) e da raiz (`GlobalSign Root R46`, `4F:A3:12…`) são idênticas
+  às do `assets/certs/rnp_icpedu_chain.pem`, e o `www.e-prefeitura.uerj.br`
+  valida usando **apenas** esse PEM como CA. Falta só o app rodar de fato
+  contra produção. Se aparecer erro de TLS no piloto, o escape hatch é
+  `--dart-define=SSL_PINNING=off` — e aí o problema é a cadeia, não o app.
 - **Restore de backup com as regras novas (MSEC.9).** As exclusões foram
   verificadas de forma indireta: o `flutter build apk` resolve as
   referências `@xml/...` (referência inexistente quebraria o build) e os
