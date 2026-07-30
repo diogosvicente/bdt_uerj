@@ -1121,6 +1121,31 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Solicitação-casca do BDT direto: origem explícita** (2026-07-29) — a
+  solicitação criada para o BDT direto aparecia na lista e no
+  acompanhamento com Solicitante, Responsável, Aprovador e Unidade todos
+  "—" e status vazio, parecendo cadastro corrompido; e "Transporte de
+  Carga: Não" mesmo havendo carga.
+  - **Por que o Pré-BDT não aparecia e o BDT direto sim** — duas causas
+    somadas, herança da evolução do código: (a) `sinteticos()` lista
+    `['pre_bdt','avulso']` e a listagem faz `NOT IN sinteticos()`, então
+    `bdt_sem_solicitacao` passa pelo filtro; (b) o Pré-BDT **pendente** nem
+    tem solicitação (`fk_solicitacao` NULL) — ela só nasce na aprovação.
+  - **Decisão (revista com o usuário): manter visível.** O motivo original
+    de esconder cascas era justamente o cadastro parecer quebrado — e isso
+    foi resolvido na raiz. Ocultar tiraria do radar um registro que
+    sustenta o fluxo da Agenda e serve à auditoria. A assimetria com o
+    Pré-BDT fica registrada como deliberada no docblock de
+    `TransporteSolicitanteTipos::BDT_SEM_SOLICITACAO`, com aviso pra não
+    "consertarem" adicionando o tipo a `sinteticos()`.
+  - Aviso de origem no topo do acompanhamento: rótulo de como surgiu, link
+    pra folha do BDT, **quem criou**, e **quem aprovou + quando** (Pré-BDT)
+    ou "sem etapa de aprovação" (BDT direto — quem cria já tem o papel que
+    autoriza; dizer isso evita a leitura de que ficou faltando aprovar).
+  - Carga na casca: badge passa a "Sim" e as fotos aparecem, enriquecendo
+    na LEITURA (as fotos só sobem depois da criação, então copiar o texto
+    separaria descrição das imagens). Mesma guarda anti-duplicação.
+
 - ✅ **Carga declarada no PDF da folha** (2026-07-29) — antes a carga só
   aparecia no PDF como coluna "Declarado" **dentro** das divergências: sem
   divergência registrada o documento não dizia nada sobre a carga, e para
