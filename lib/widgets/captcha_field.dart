@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/captcha_service.dart';
 import '../theme/app_theme.dart';
@@ -150,6 +151,11 @@ class CaptchaFieldState extends State<CaptchaField> {
           autocorrect: false,
           enableSuggestions: false,
           textCapitalization: TextCapitalization.characters,
+          // `textCapitalization` é só uma DICA ao teclado — em teclado
+          // físico, ou quando o app de teclado ignora a dica, o texto vem
+          // minúsculo. O captcha é renderizado em maiúsculas, então
+          // forçamos aqui pra o usuário não errar por causa de caixa.
+          inputFormatters: [_UpperCaseFormatter()],
           decoration: InputDecoration(
             labelText: 'Digite o texto da imagem',
             border: const OutlineInputBorder(),
@@ -253,5 +259,26 @@ class CaptchaFieldState extends State<CaptchaField> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: content,
     );
+  }
+}
+
+/// Força maiúsculas no campo do captcha.
+///
+/// O desafio é gerado e comparado em maiúsculas no backend
+/// (`SimpleCaptchaService`), então digitar minúsculo levaria a uma recusa
+/// que o usuário não entenderia — ele viu a letra maiúscula na imagem.
+/// `TextCapitalization.characters` sozinho não resolve: é apenas uma dica
+/// ao teclado virtual, ignorada por teclado físico e por alguns apps de
+/// teclado.
+class _UpperCaseFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final up = newValue.text.toUpperCase();
+    // `toUpperCase` não muda a quantidade de caracteres nos alfabetos que
+    // o captcha usa, então a seleção/cursor de `newValue` segue válida.
+    return newValue.copyWith(text: up);
   }
 }

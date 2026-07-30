@@ -8,7 +8,7 @@ import '../services/bdt_service.dart';
 import '../services/ocorrencia_service.dart' show OcorrenciaFotoRef;
 import 'foto_documento_thumb.dart';
 
-/// Card "Vai levar carga?" — compartilhado entre o **Pré-BDT** e o
+/// Card "Haverá transporte de carga?" — compartilhado entre o **Pré-BDT** e o
 /// **BDT direto**.
 ///
 /// Extraído do `PreBdtFormPage` (Sprint 11 W+M) em 2026-07-29, quando o BDT
@@ -95,7 +95,7 @@ class CargaFormCard extends StatelessWidget {
               value: temCarga,
               onChanged: enabled ? onTemCargaChanged : null,
               title: const Text(
-                'Vai levar carga?',
+                'Haverá transporte de carga?',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               subtitle: const Text(

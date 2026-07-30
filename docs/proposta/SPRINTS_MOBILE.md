@@ -1121,6 +1121,34 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     vai direto pro form (sem abrir bottom sheet com um único item).
     Rótulo do FAB muda entre "Criar" (com gate) e "Novo Pré-BDT" (sem).
 
+- ✅ **Ajustes finais de UX + solicitante na casca** (2026-07-30)
+  - **"Vai levar carga?" → "Haverá transporte de carga?"** no
+    `CargaFormCard` (as duas telas de uma vez).
+  - **Captcha em maiúsculas**: `textCapitalization.characters` é só uma
+    *dica* ao teclado — teclado físico e alguns apps de teclado ignoram, e
+    o texto chegava minúsculo. O desafio é gerado/comparado em maiúsculas
+    no `SimpleCaptchaService`, então o usuário era recusado por caixa,
+    vendo letra maiúscula na imagem. Novo `_UpperCaseFormatter` força de
+    fato. Vale no login e no esqueci-senha (widget compartilhado).
+  - **CPF com máscara no esqueci-senha**, igual ao login
+    (`FilteringTextInputFormatter.digitsOnly` + `CpfInputFormatter`,
+    hint `000.000.000-00`). O envio já limpava a pontuação.
+  - **Solicitante na casca do BDT direto**: `fk_solicitante` vinha NULL e
+    a lista mostrava "—", enquanto o Pré-BDT trazia o nome. Agora
+    `fk_solicitante` = **condutor** (para quem é a viagem, o nome que faz
+    sentido na lista) e `fk_usuario_cadastro` = **quem registrou** — é o
+    par que preserva a autoria quando um admin abre BDT para outro
+    condutor. Quando é a mesma pessoa, ambas recebem o mesmo id, e isso é
+    necessário: é o que distingue "abri para mim" de "abriram para mim".
+    Novo helper `usuarioIdDoCondutor()` traduz
+    `trnsp_condutores.id` → `usuarios.id` (a designação guarda um,
+    `fk_solicitante` aponta pro outro).
+  - **E-mail do esqueci-senha confirmado**: usa o helper
+    `enviar_email_reset_senha` — o MESMO do
+    `LoginController::forgotPasswordValidate` do web, com o mesmo
+    `Services::email(true)` e `config('Email')`. Assunto, template e link
+    saem idênticos ao fluxo pelo navegador; nada foi reimplementado.
+
 - ✅ **Carga do BDT × carga do Pré-BDT: rótulo por situação** (2026-07-30) —
   **erro de premissa meu**: eu rotulava toda carga guardada em `trnsp_bdt`
   como "declarada no BDT", tratando como um caso só o que são quatro.

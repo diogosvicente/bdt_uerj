@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../formatters/cpf_input_formatter.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/captcha_field.dart';
@@ -179,12 +181,19 @@ class _EsqueciSenhaPageState extends State<EsqueciSenhaPage> {
           controller: _cpfCtrl,
           keyboardType: TextInputType.number,
           enabled: !_enviando,
+          // Mesma máscara do login — o condutor digita CPF nos dois
+          // lugares, não faz sentido um aceitar formatado e o outro não.
+          // O `_criar`/`_enviar` já limpa a pontuação antes de enviar.
+          inputFormatters: <TextInputFormatter>[
+            FilteringTextInputFormatter.digitsOnly,
+            CpfInputFormatter(),
+          ],
           onChanged: (_) {
             if (_cpfError != null) setState(() => _cpfError = null);
           },
           decoration: InputDecoration(
             labelText: 'CPF',
-            hintText: 'Somente números',
+            hintText: '000.000.000-00',
             prefixIcon: const Icon(Icons.badge_outlined),
             border: const OutlineInputBorder(),
             errorText: _cpfError,
