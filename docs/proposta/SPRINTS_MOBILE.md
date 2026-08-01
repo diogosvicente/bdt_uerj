@@ -682,6 +682,39 @@ Não tem "estimativa total" — vai crescendo. Sempre que fizer um
 refino desses, registrar aqui em vez de deixar só no commit
 (regra [[bdt_uerj_registrar_fora_de_escopo]]).
 
+- ✅ **App autenticava em produção mas TUDO dava 401** (2026-08-01) — o
+  primeiro teste real contra `www.e-prefeitura.uerj.br`. Login com sucesso,
+  e a chamada seguinte já voltava `401 INVALID_TOKEN` com o `access_token`
+  recém-emitido.
+  - **O que denunciou**: `bdt/token/refresh` funcionava. Ele é o único
+    endpoint que recebe a credencial no **corpo**; todo o resto usa o header
+    `Authorization`. Tudo que dependia do header falhava, o que não dependia
+    passava. Não era token inválido — era header que não chegava.
+  - **Causa**: o `.htaccess` de **produção** não tinha a regra de repasse.
+    Em dev (Apache + mod_php) o `.htaccess` do repositório repassa, e por
+    isso "funcionava no localhost".
+  - **Detalhe que quase escapou**: a regra existe no `.htaccess` do repo, só
+    que **depois** do front controller, cuja `RewriteRule ... [L]` encerra o
+    processamento. Copiar de lá não teria resolvido — na versão de produção
+    ela precisa vir **antes**, mais um `SetEnvIf` como rede de segurança
+    (módulo diferente, roda antes de qualquer rewrite).
+  - ⚠️ **O `.htaccess` de produção é completamente diferente do versionado**:
+    lá são 11 linhas mínimas; no repo é o padrão do CodeIgniter. E o
+    `deploy.sh` **não** exclui `.htaccess` do espelhamento — se algum dia o
+    mirror pegá-lo, sobrescreve o de produção e derruba o repasse (e o
+    roteamento). Vale excluir explicitamente no `deploy.config`.
+  - **Sonda que ficou**: quando nenhum header chega, o 401 responde
+    `X-Auth-Header: ausente`. Sem credencial válida todo caminho devolve o
+    mesmo 401, então sem isso não havia como checar de fora se a config do
+    servidor já estava valendo. Responde sem autenticação de propósito —
+    fala de transporte HTTP, não de credencial.
+  - **Lição de método**: passei por três hipóteses erradas antes (token
+    velho de dev, foto inexistente, mismatch de chave). O que resolveu foi
+    parar de inspecionar código e **comparar o que funciona com o que
+    falha** — corpo × header. O padrão estava no primeiro log.
+  - Verificado em produção: com `Bearer` a sonda some; sem `Bearer` ela
+    aparece.
+
 - ✅ **Foto de carga do BDT direto se declarava "Pré-BDT mobile"** (2026-07-30)
   — encontrado num teste aleatório: subir imagem de carga num BDT direto
   gravava a legenda `Foto de carga (Pré-BDT mobile)`. Procedência errada num
