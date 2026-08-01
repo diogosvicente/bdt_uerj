@@ -2,59 +2,42 @@
   // Perfis prontos para "Run and Debug" (Ctrl+Shift+D).
   // Selecione um no dropdown e aperte F5.
   //
-  // Diferentes perfis passam APP_ENV via --dart-define, que é lido em
-  // lib/api/api_client.dart e escolhe a baseUrl da API.
+  // Os perfis de desenvolvimento (localhost via adb reverse, emulador em
+  // 10.0.2.2, host WSL na LAN) foram removidos em 2026-07-31 junto com o
+  // switch de APP_ENV no lib/api/api_client.dart: o backend vive em
+  // produção e o app aponta só para lá. Deixar os perfis aqui só faria
+  // alguém escolher um e não entender por que a baseUrl não mudou.
+  //
+  // Se um dia voltar a existir homologação, reintroduza o --dart-define
+  // no api_client.dart PRIMEIRO e depois o perfil correspondente aqui.
   "version": "0.2.0",
   "configurations": [
     {
-      // Backend: Docker do PC via cabo USB.
-      //
-      // O `preLaunchTask` roda `adb reverse tcp:8080 tcp:80` automaticamente
-      // antes do `flutter run` — não precisa mais lembrar do comando toda
-      // vez que reconecta o cabo (a task auto-detecta o único device).
-      "name": "Dev — localhost (USB, adb reverse)",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart",
-      "preLaunchTask": "adb-reverse",
-      "args": [
-        "--dart-define=APP_ENV=localhost"
-      ]
-    },
-    {
-      // Backend: Docker do PC, acessado pelo emulador Android via 10.0.2.2.
-      "name": "Dev — emulator (Android 10.0.2.2)",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart",
-      "args": [
-        "--dart-define=APP_ENV=emulator"
-      ]
-    },
-    {
-      // Backend: WSL na mesma LAN (celular no WiFi do PC).
-      "name": "Dev — wsl (mesma LAN)",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart",
-      "args": [
-        "--dart-define=APP_ENV=wsl"
-      ]
-    },
-    {
       // Backend: produção (www.e-prefeitura.uerj.br).
-      "name": "Prod — produção",
+      "name": "Debug — produção",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart"
     },
     {
-      // Mesmo que "Prod" mas em modo profile (perf + debugging visual).
+      // Mesmo que o de cima, mas em modo profile (perf + debugging visual).
       "name": "Profile — produção",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
       "flutterMode": "profile"
+    },
+    {
+      // Escape hatch do MSEC.5: desliga o certificate pinning para permitir
+      // proxy de inspeção (Charles, mitmproxy). Use só para depurar tráfego;
+      // nunca para distribuir build.
+      "name": "Debug — produção (sem SSL pinning)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=SSL_PINNING=off"
+      ]
     }
   ]
 }

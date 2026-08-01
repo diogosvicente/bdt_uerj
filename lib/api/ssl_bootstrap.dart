@@ -52,10 +52,14 @@ import 'package:http/io_client.dart';
 ///
 /// ## Quando o pin está ativo
 ///
-/// Só quando a base é a de **produção** (HTTPS). Ambientes de dev
-/// (`--dart-define=APP_ENV=localhost|emulator|wsl`) falam HTTP puro, que
-/// nem passa por `SecurityContext`, e proxies de debug continuam
-/// funcionando.
+/// Sempre. Desde 2026-07-31 o `ApiClient` aponta só para produção (HTTPS) —
+/// os ambientes de dev por `--dart-define=APP_ENV=...` foram removidos.
+/// Antes, `localhost`/`emulator`/`wsl` falavam HTTP puro e nem passavam por
+/// `SecurityContext`; hoje toda requisição do app é validada contra a
+/// cadeia pinada.
+///
+/// Consequência prática: proxy de depuração (Charles, mitmproxy) **não**
+/// funciona mais sem desligar o pin — use `--dart-define=SSL_PINNING=off`.
 ///
 /// # Como atualizar o pin
 ///
