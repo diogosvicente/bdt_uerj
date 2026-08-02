@@ -454,7 +454,7 @@ class BackgroundLocationService {
     // funciona neste isolate porque `_onServiceStart` chama
     // `DartPluginRegistrant.ensureInitialized()` + `SslBootstrap.install()`
     // no início — o binding necessário já está de pé.
-    final token = await TokenStorage.read();
+    String? token = await TokenStorage.readAccess();
     final prefs = await SharedPreferences.getInstance();
     final usuarioId = prefs.getInt('usuario_id') ?? 0;
 
@@ -463,9 +463,68 @@ class BackgroundLocationService {
       return;
     }
 
-    final uri = Uri.parse(
-      '${ApiClient.baseUrl.replaceAll(RegExp(r'/+$'), '')}/transporte/api/bdt/localizacao',
-    );
+    // Fix 2026-08-01 — renovação de token DENTRO deste isolate.
+    //
+    // O access token dura 15 minutos. O `ApiClient`, que sabe renovar em
+    // `TOKEN_EXPIRED`, só é usado pelo timer do isolate principal — este
+    // worker postava direto e tratava 401 como falha comum. Numa viagem
+    // real com o celular no bolso, o efeito era:
+    //
+    //   15 min  → token expira
+    //   ~75 min → os pontos passam de `maxAttempts` e são APAGADOS
+    //
+    // Ou seja, o trajeto sumia a partir do minuto 15, sem nenhum aviso —
+    // a notificação seguia ativa o tempo todo. Só não aparecia nos testes
+    // porque, com o app em primeiro plano, o timer principal renovava o
+    // token e regravava no storage, e este worker lia o valor novo.
+    //
+    // `renovado` garante UMA renovação por drenagem: se o refresh também
+    // falhar, não adianta insistir a cada ponto do lote.
+    bool renovado = false;
+
+    Future<bool> renovarToken() async {
+      if (renovado) return false;
+      renovado = true;
+
+      final refresh = await TokenStorage.readRefresh();
+      if (refresh == null || refresh.isEmpty) {
+        _log.info('401 e sem refresh token guardado — mantendo fila');
+        return false;
+      }
+
+      try {
+        final res = await SslBootstrap.client
+            .post(
+              Uri.parse('${_baseUrl()}/transporte/api/bdt/token/refresh'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'refresh_token': refresh}),
+            )
+            .timeout(const Duration(seconds: 10));
+
+        if (res.statusCode != 200) {
+          _log.info('refresh no BG falhou: HTTP ${res.statusCode}');
+          return false;
+        }
+
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final novoAccess = (body['access_token'] ?? '').toString();
+        final novoRefresh = (body['refresh_token'] ?? '').toString();
+        if (novoAccess.isEmpty) {
+          _log.info('refresh no BG sem access_token na resposta');
+          return false;
+        }
+
+        await TokenStorage.writePair(access: novoAccess, refresh: novoRefresh);
+        token = novoAccess;
+        _log.info('token renovado no BG — retomando a drenagem');
+        return true;
+      } catch (e) {
+        _log.info('exceção no refresh do BG: $e');
+        return false;
+      }
+    }
+
+    final uri = Uri.parse('${_baseUrl()}/transporte/api/bdt/localizacao');
 
     for (final p in lote) {
       final body = jsonEncode({
@@ -490,6 +549,25 @@ class BackgroundLocationService {
 
         if (res.statusCode >= 200 && res.statusCode < 300) {
           await queue.markSent(p.id);
+        } else if (res.statusCode == 401) {
+          // Fix 2026-08-01 — 401 NÃO consome tentativa.
+          //
+          // Antes, falha de credencial gastava as 120 tentativas do ponto
+          // e o matava. O ponto não tem culpa da sessão ter expirado: ele
+          // fica na fila esperando a autenticação voltar. Isso protege o
+          // trajeto mesmo no pior caso — condutor mais de 24h sem abrir o
+          // app, com o refresh token já vencido.
+          _log.info('HTTP 401 no ponto ${p.id} — tentando renovar o token');
+
+          if (await renovarToken()) {
+            // Token novo: interrompe o lote para a próxima drenagem (30s)
+            // reenviar tudo já autenticado. Mais simples e seguro do que
+            // retentar aqui no meio da iteração.
+            _log.info('token renovado — lote reenviado na proxima drenagem');
+          } else {
+            _log.info('sem renovar — fila preservada ate a sessao voltar');
+          }
+          break;
         } else {
           _log.info('HTTP ${res.statusCode} (tent ${p.attempts + 1}) body=${_truncar(res.body, 120)}');
           await queue.markFailed(p.id, error: 'HTTP ${res.statusCode}');
@@ -502,6 +580,11 @@ class BackgroundLocationService {
 
     await onProgress();
   }
+
+  /// Base da API sem barra final. Mesma normalização que o envio de
+  /// localização já fazia inline — extraída porque o refresh também precisa.
+  static String _baseUrl() =>
+      ApiClient.baseUrl.replaceAll(RegExp(r'/+$'), '');
 
   static String _truncar(String s, int max) =>
       s.length <= max ? s : '${s.substring(0, max)}…';

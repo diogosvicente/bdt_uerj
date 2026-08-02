@@ -682,6 +682,37 @@ Não tem "estimativa total" — vai crescendo. Sempre que fizer um
 refino desses, registrar aqui em vez de deixar só no commit
 (regra [[bdt_uerj_registrar_fora_de_escopo]]).
 
+- ✅ **GPS em background perdia o trajeto após 15 min** (2026-08-01) —
+  achado ao responder "se eu sair do app durante um trecho, continua
+  rastreando?". Continuava coletando, mas **parava de conseguir enviar** —
+  e depois apagava o que tinha.
+  - **Causa**: o worker de drenagem posta direto com `SslBootstrap.client`
+    e tratava qualquer não-2xx como falha comum, inclusive **401 de token
+    expirado**. O `ApiClient`, que sabe renovar em `TOKEN_EXPIRED`, só é
+    usado pelo timer do isolate principal. Não havia renovação nenhuma no
+    isolate de background.
+  - **Efeito numa viagem real**, celular no bolso: aos 15 min o access
+    token expira; a partir daí todo envio volta 401 e consome uma tentativa
+    do ponto a cada 30 s; por volta dos 75 min os pontos passam de
+    `maxAttempts` (120) e são **apagados**. O trajeto sumia do minuto 15 em
+    diante, **sem aviso** — a notificação persistente seguia ativa.
+  - **Por que não apareceu nos testes**: com o app em primeiro plano, o
+    timer principal renova o token e regrava no storage; o worker então lê
+    o valor novo e tudo funciona. O defeito só existe com o app em
+    background por mais de 15 min — que é exatamente o uso real.
+  - **Dois ajustes**, ambos no `_drainQueue`:
+    1. **Renovação no próprio isolate**: ao receber 401, chama
+       `bdt/token/refresh` com o refresh guardado, grava o par novo e
+       interrompe o lote — a drenagem seguinte (30 s) reenvia tudo já
+       autenticado. Uma renovação por drenagem; insistir a cada ponto não
+       ajudaria.
+    2. **401 não consome tentativa.** O ponto não tem culpa da sessão ter
+       expirado. Isso protege o trajeto mesmo no pior caso: condutor mais
+       de 24 h sem abrir o app, com o refresh token já vencido — a fila
+       espera em vez de se autodestruir.
+  - Extraído `_baseUrl()`, que a URL de localização já montava inline e o
+    refresh passou a precisar.
+
 - ✅ **App autenticava em produção mas TUDO dava 401** (2026-08-01) — o
   primeiro teste real contra `www.e-prefeitura.uerj.br`. Login com sucesso,
   e a chamada seguinte já voltava `401 INVALID_TOKEN` com o `access_token`
