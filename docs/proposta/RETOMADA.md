@@ -17,35 +17,37 @@ e por quê.
 
 | Repo | Branch | HEAD | Situação |
 |---|---|---|---|
-| `bdt_uerj` (Flutter) | `main` | `f6e2538` (+ o commit deste doc) | limpo, sincronizado |
-| `e-prefeitura` (CI4) | `feature/027-mobile-support` | `d051d5a6` | limpo, sincronizado |
+| `bdt_uerj` (Flutter) | `main` | `9924daf` (+ o commit deste doc) | limpo, sincronizado |
+| `e-prefeitura` (CI4) | `development` | `ea173e7c` | limpo, sincronizado |
 
-> ⛔ **BLOQUEIO PARA O PILOTO — produção ainda não tem esta API** (medido em
-> 2026-07-30, por requisição real a `www.e-prefeitura.uerj.br`).
->
-> O app já aponta para produção por padrão (`_productionBase`, e release
-> ignora `--dart-define`). O problema é o outro lado: produção roda um corte
-> **muito anterior** a esta branch. Das 14 rotas que sondei, só **duas**
-> existem lá:
->
-> | Rota | Produção |
-> |---|---|
-> | `transporte/api/login` | existe (400) |
-> | `transporte/api/bdt/dia` | existe (401) |
-> | `captcha/new`, `bdt/pre-bdt/criar`, `bdt/passageiros/marcar-presenca`, `bdt/token/refresh`, `bdt/usuario/foto`, `bdt/seguranca/textos`, `bdt/seguro`, `bdt/ocorrencias/historico`, `bdt/abastecimentos/tipos`, `bdt/divergencias/listar`, `bdt/criar-sem-solicitacao`, `bdt/permissoes-mobile`, `esqueci-senha` | **404** |
->
-> Na prática o condutor **consegue logar** (o app tem retrocompat: lê
-> `access_token ?? token`) e depois falha em quase toda tela. Não adianta
-> distribuir APK antes do deploy.
->
-> Para destravar: mergear esta branch, publicar e rodar `php spark migrate`
-> em produção — incluindo `ConvertTrnspBdtTimestampsBrtToUtc`, que **altera
-> dados históricos** (+3h nas colunas operacionais do BDT).
+> ✅ **Produção está no ar** (2026-08-01). O PR #88 foi mergeado em
+> `development` (`8d7e11f6`), publicado, e as migrations rodaram. As 14
+> rotas mobile que eu sondava como 404 agora respondem. **A branch
+> `feature/027-mobile-support` não é mais o lugar de trabalho** — o que veio
+> depois do merge foi commitado direto em `development`.
 
-As duas branches fecham juntas — a do backend **não** foi mergeada em
-`development` ainda. Antes de rodar o app contra o servidor de dev, confira
-que o backend está nessa branch: já aconteceu de estar em `development`, sem
-nenhum endpoint mobile, e o sintoma foi "o app não faz mais nada".
+**Três coisas mordidas no primeiro contato com produção**, todas resolvidas
+e detalhadas no [SPRINTS_MOBILE.md](SPRINTS_MOBILE.md) — vale conhecer,
+porque nenhuma reproduzia em desenvolvimento:
+
+1. **O header `Authorization` era descartado.** Produção está atrás de
+   openresty e o `.htaccess` de lá não tinha a regra de repasse. Sintoma:
+   login OK e todo o resto 401, enquanto `token/refresh` — único que recebe
+   a credencial no corpo — funcionava. Resolvido no `.htaccess` do servidor.
+2. **O captcha não aparecia**: `Filters.php` de produção estava sem
+   `transporte/api/captcha/*` na lista de exceções de CSRF.
+3. **A foto do condutor vinha errada**: o endpoint pegava o primeiro
+   documento do condutor sem filtrar tipo, e podia devolver a CNH.
+
+> ⚠️ **O `.htaccess` de produção é diferente do versionado** — lá são 11
+> linhas mínimas mais a regra de `Authorization`; no repo é o padrão do
+> CodeIgniter. E o `deploy.sh` **não** o exclui do espelhamento. Se algum
+> dia o mirror pegá-lo, derruba o repasse **e** o roteamento do site.
+> Prevenção de uma linha, no `deploy.config`:
+>
+> ```
+> EXTRA_EXCLUDES="app/Config/App.php app/Config/Database.php .htaccess"
+> ```
 
 > ⚠️ **Git do backend roda por dentro do WSL, sempre.** Pelo Windows, o git
 > reescreve os arquivos em CRLF e trava o checkout. O mobile não tem esse
@@ -116,13 +118,26 @@ Registro para ninguém confundir "entregue" com "testado ponta a ponta":
 - **As telas web que mexi** (folha, PDF, modal Origem, card Solicitante)
   foram conferidas por lint, query em banco e render — não abri as páginas
   autenticadas. Quem validou de fato foi você, pelos prints.
-- **Pinning de certificado — verificado contra produção em 2026-07-30.** As
-  impressões SHA-256 da intermediária (`RNP ICPEdu GR46 OV TLS CA 2025`,
-  `E1:07:47…`) e da raiz (`GlobalSign Root R46`, `4F:A3:12…`) são idênticas
-  às do `assets/certs/rnp_icpedu_chain.pem`, e o `www.e-prefeitura.uerj.br`
-  valida usando **apenas** esse PEM como CA. Falta só o app rodar de fato
-  contra produção. Se aparecer erro de TLS no piloto, o escape hatch é
-  `--dart-define=SSL_PINNING=off` — e aí o problema é a cadeia, não o app.
+- ✅ **Pinning de certificado — validado em campo (2026-08-01).** O app
+  rodou contra `www.e-prefeitura.uerj.br` num celular real e as requisições
+  completaram o handshake TLS. Antes disso, as impressões SHA-256 da
+  intermediária (`RNP ICPEdu GR46 OV TLS CA 2025`, `E1:07:47…`) e da raiz
+  (`GlobalSign Root R46`, `4F:A3:12…`) já batiam com o
+  `assets/certs/rnp_icpedu_chain.pem`. Item encerrado. Se um dia der erro
+  de TLS, o escape hatch é `--dart-define=SSL_PINNING=off`.
+
+- 🟡 **GPS em background por uma viagem inteira — NÃO testado.** É o teste
+  que mais importa e o único cenário sério ainda em aberto. O fix de
+  renovação de token no isolate de background (`9924daf`) foi validado por
+  análise e build, não por uso real.
+  **Como testar**: iniciar um trecho, deixar o celular no bolso com o app em
+  segundo plano por **mais de 20 minutos** (o access token dura 15), e depois
+  conferir se os pontos do intervalo chegaram. Era exatamente aí que o
+  trajeto sumia antes — silenciosamente, com a notificação ativa.
+
+- 🟡 **O APK no celular está desatualizado.** O aparelho tem um build
+  anterior a `3401553` e `9924daf` — ou seja, **sem** o fix do GPS em
+  background. Instalar o build novo antes de qualquer teste de viagem.
 - **Restore de backup com as regras novas (MSEC.9).** As exclusões foram
   verificadas de forma indireta: o `flutter build apk` resolve as
   referências `@xml/...` (referência inexistente quebraria o build) e os
