@@ -304,20 +304,26 @@ class _ValidacaoInicioPageState extends State<ValidacaoInicioPage> {
     );
   }
 
+  /// Linha de presença — SÓ o nome (2026-08-01).
+  ///
+  /// Antes o subtítulo trazia matrícula, CPF e telefone. Saíram por dois
+  /// motivos:
+  ///
+  /// - **Não servem à tarefa.** O condutor marca presença conferindo quem
+  ///   subiu no veículo, e reconhece pelo nome. Matrícula e CPF não ajudam
+  ///   a identificar ninguém no embarque.
+  /// - **É dado pessoal exposto sem necessidade.** A tela fica aberta no
+  ///   painel, à vista de quem passa. CPF de terceiro em tela de trabalho
+  ///   é exposição gratuita, ainda mais num app que roda em campo.
+  ///
+  /// O model `Passageiro` mantém os campos — a API continua entregando, e
+  /// a web usa. Aqui é decisão de exibição, não de payload.
   Widget _rowPassageiro(int idx, Passageiro p) {
     return SwitchListTile(
       contentPadding: EdgeInsets.zero,
       value: p.presente,
       onChanged: (v) => _togglePresenca(idx, v),
       title: Text(p.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(
-        [
-          if (p.matricula != null) 'Mat: ${p.matricula}',
-          if (p.cpf != null) 'CPF: ${p.cpf}',
-          if (p.telefone != null) p.telefone,
-        ].join(' • '),
-        style: const TextStyle(fontSize: 12),
-      ),
       dense: true,
     );
   }
