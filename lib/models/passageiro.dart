@@ -6,6 +6,16 @@
 class Passageiro {
   final int id;
   final String nome;
+
+  /// ⚠️ Desde 2026-08-01 o backend **não envia mais** estes três campos
+  /// (`bdt/passageiros/listar`), por minimização de dados da LGPD: eram
+  /// dado pessoal de terceiro trafegando sem finalidade, já que a UI
+  /// identifica o passageiro pelo nome.
+  ///
+  /// Ficam declarados porque o `fromJson` é tolerante e porque remover
+  /// mudaria a assinatura do construtor sem ganho. Na prática, **hoje
+  /// chegam sempre `null`** — não construa tela contando com eles sem
+  /// antes voltar a enviá-los no servidor.
   final String? matricula;
   final String? telefone;
   final String? cpf;
