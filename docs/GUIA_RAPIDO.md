@@ -4,7 +4,6 @@ Duas ferramentas, uma para cada momento:
 
 - **e-Prefeitura → Transporte** (navegador): pedir, aprovar e organizar viagens.
 - **BDT UERJ** (celular): o condutor registra a viagem enquanto ela acontece.
-
 ---
 
 # Parte 1 — o que você faz
