@@ -55,6 +55,59 @@ class BdtService {
     });
   }
 
+  /// Estado REAL de execução de um trecho, direto do servidor.
+  ///
+  /// Criado em 2026-08-01 para acabar com o "deu erro mas funcionou".
+  ///
+  /// O `ApiClient.post` tem timeout de 10s e, ao estourar, devolve
+  /// `success: false` — indistinguível de uma falha de verdade. Numa rede
+  /// móvel dentro do veículo isso acontece: a requisição CHEGA, o servidor
+  /// processa, e a resposta é que se perde. O app então acusava
+  /// "Falha ao iniciar trecho" para uma operação que deu certo.
+  ///
+  /// Em vez de aumentar o timeout (que reduz a chance mas não elimina), a
+  /// UI passa a PERGUNTAR o que de fato aconteceu antes de culpar alguém.
+  ///
+  /// Retorna `null` quando nem essa consulta foi possível — aí o app
+  /// realmente não sabe, e deve dizer isso ao condutor em vez de afirmar
+  /// falha.
+  static Future<({bool iniciado, bool finalizado})?> estadoExecucaoTrecho({
+    required int bdtId,
+    required int trechoId,
+  }) async {
+    try {
+      final res = await detalhes(bdtId);
+      if (res['success'] != true) return null;
+
+      for (final agenda in (res['agendas'] as List? ?? const [])) {
+        for (final t in ((agenda as Map)['trechos'] as List? ?? const [])) {
+          if (int.tryParse('${(t as Map)['id']}') != trechoId) continue;
+
+          final status = (t['exec_status'] ?? 'pendente').toString();
+          return (
+            iniciado: status == 'em_andamento' || status == 'finalizado',
+            finalizado: status == 'finalizado',
+          );
+        }
+      }
+
+      // Trecho extra ainda não vinculado a agenda entra por outra lista.
+      for (final t in (res['trechos_extras'] as List? ?? const [])) {
+        if (int.tryParse('${(t as Map)['id']}') != trechoId) continue;
+
+        final status = (t['exec_status'] ?? 'pendente').toString();
+        return (
+          iniciado: status == 'em_andamento' || status == 'finalizado',
+          finalizado: status == 'finalizado',
+        );
+      }
+
+      return null; // trecho não encontrado — não dá pra afirmar nada
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Inicia trecho (agendaId opcional => trecho extra).
   ///
   /// Sprint M4 (patch) — [kmInicial] é opcional. Se != null e o BDT

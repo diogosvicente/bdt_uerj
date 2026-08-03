@@ -1515,9 +1515,59 @@ class _BdtPageState extends State<BdtPage> {
                                         );
                                       await _load(bdtId);
                                     } else {
+                                      // Fix 2026-08-01 — antes de acusar
+                                      // falha, PERGUNTA ao servidor o que
+                                      // aconteceu de verdade.
+                                      //
+                                      // `ok == false` também acontece quando
+                                      // o timeout de 10s estoura com a
+                                      // requisição já processada — comum em
+                                      // rede móvel dentro do veículo. O
+                                      // condutor via "Falha ao iniciar" numa
+                                      // operação que deu certo, e o erro
+                                      // falso corrói a confiança no app mais
+                                      // rápido que uma falha de verdade.
+                                      setLocal(() {
+                                        progressMsg = 'Conferindo…';
+                                      });
+
+                                      final estado = await BdtService
+                                          .estadoExecucaoTrecho(
+                                        bdtId: bdtId,
+                                        trechoId: trechoId,
+                                      );
+
+                                      if (!mounted || !sheetOpen) return;
+
+                                      if (estado?.iniciado == true) {
+                                        // Deu certo. Segue o fluxo normal.
+                                        _startTracking(
+                                            bdtId, agendaId, trechoId);
+                                        if (!mounted) return;
+                                        Navigator.pop(ctx);
+                                        ScaffoldMessenger.of(context)
+                                          ..clearSnackBars()
+                                          ..showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Trecho iniciado.'),
+                                            ),
+                                          );
+                                        await _load(bdtId);
+                                        return;
+                                      }
+
                                       setLocal(() {
                                         showProgress = false; // ✅ para o banner
-                                        formError = 'Falha ao iniciar trecho.';
+                                        formError = estado == null
+                                            // Nem a verificação respondeu: o
+                                            // app REALMENTE não sabe. Dizer
+                                            // isso é mais honesto — e evita
+                                            // que o condutor inicie de novo
+                                            // um trecho que já começou.
+                                            ? 'Sem resposta do servidor. Confira '
+                                                'a conexão e recarregue a tela '
+                                                'antes de tentar de novo.'
+                                            : 'Falha ao iniciar trecho.';
                                       });
                                     }
                                   } catch (e) {
@@ -1602,7 +1652,23 @@ class _BdtPageState extends State<BdtPage> {
       horaCtrl.text = '${_two(now.hour)}:${_two(now.minute)}';
     }
 
-    final odoCtrl = TextEditingController(text: _odoChegadaFromTrecho(trecho));
+    // Hodômetro de chegada (2026-08-01).
+    //
+    // Se ainda não houver chegada registrada, começa com o valor da SAÍDA em
+    // vez de vazio. O condutor sempre digita um número >= esse; partir do
+    // zero obriga a lembrar/reconferir o painel inteiro, e é onde nascem os
+    // erros de digitação que depois viram divergência de KM.
+    final odoSaidaStr = _odoSaidaFromTrecho(trecho);
+    final odoChegadaStr = _odoChegadaFromTrecho(trecho);
+    final odoCtrl = TextEditingController(
+      text: odoChegadaStr.isNotEmpty ? odoChegadaStr : odoSaidaStr,
+    );
+
+    // Referência para o alerta de retrocesso mais abaixo. Null quando a
+    // saída não foi informada — aí não há com o que comparar.
+    final double? odoSaidaNum = double.tryParse(
+      odoSaidaStr.replaceAll(',', '.'),
+    );
 
     final odoFocus = FocusNode();
     String? odoError;
@@ -1751,6 +1817,49 @@ class _BdtPageState extends State<BdtPage> {
                                     if (!mounted || !sheetOpen) return;
                                   }
 
+                                  // Alerta de retrocesso (2026-08-01) —
+                                  // hodômetro de chegada MENOR que o de
+                                  // saída. Fisicamente impossível: o veículo
+                                  // não anda para trás no painel. Quase
+                                  // sempre é dígito trocado, e passar batido
+                                  // vira KM negativo no relatório.
+                                  //
+                                  // Alerta, não trava: mesma régua do resto
+                                  // do app ([[bdt_uerj_sem_travas_so_alertas]]).
+                                  // Painel trocado ou hodômetro que "virou"
+                                  // existem, e o condutor na estrada não pode
+                                  // ficar preso a uma validação.
+                                  final double? odoChegadaNum =
+                                      double.tryParse(
+                                    odoCtrl.text.trim().replaceAll(',', '.'),
+                                  );
+                                  if (odoChegadaNum != null &&
+                                      odoSaidaNum != null &&
+                                      odoChegadaNum < odoSaidaNum) {
+                                    final segueMesmoAssim =
+                                        await _confirmDialog(
+                                      title: 'Hodômetro menor que o da saída',
+                                      message:
+                                          'O hodômetro de chegada '
+                                          '(${odoChegadaNum.toStringAsFixed(0)} km) '
+                                          'é menor que o da saída '
+                                          '(${odoSaidaNum.toStringAsFixed(0)} km).\n\n'
+                                          'Isso normalmente indica engano de digitação. '
+                                          'Deseja prosseguir mesmo assim?',
+                                      cancelText: 'Ajustar',
+                                      confirmText: 'Prosseguir assim mesmo',
+                                      icon: Icons.warning_amber_rounded,
+                                      iconColor: Colors.amber.shade800,
+                                    );
+                                    if (!segueMesmoAssim) {
+                                      if (!mounted || !sheetOpen) return;
+                                      FocusScope.of(ctx)
+                                          .requestFocus(odoFocus);
+                                      return;
+                                    }
+                                    if (!mounted || !sheetOpen) return;
+                                  }
+
                                   final odoResumo =
                                       odoCtrl.text.trim().isEmpty
                                           ? '(não informado)'
@@ -1831,9 +1940,45 @@ class _BdtPageState extends State<BdtPage> {
                                         );
                                       await _load(bdtId);
                                     } else {
+                                      // Fix 2026-08-01 — mesma verificação do
+                                      // "Iniciar trecho": timeout de 10s
+                                      // devolve `false` mesmo quando o
+                                      // servidor processou. Confere o estado
+                                      // real antes de acusar falha.
+                                      final estado = await BdtService
+                                          .estadoExecucaoTrecho(
+                                        bdtId: bdtId,
+                                        trechoId: trechoId,
+                                      );
+
+                                      if (!mounted || !sheetOpen) return;
+
+                                      if (estado?.finalizado == true) {
+                                        await _stopTrackingWithDrain(
+                                          bdtId: bdtId,
+                                          trechoId: trechoId,
+                                        );
+                                        if (!mounted || !sheetOpen) return;
+
+                                        Navigator.pop(ctx);
+                                        ScaffoldMessenger.of(context)
+                                          ..clearSnackBars()
+                                          ..showSnackBar(
+                                            const SnackBar(
+                                              content:
+                                                  Text('Trecho finalizado.'),
+                                            ),
+                                          );
+                                        await _load(bdtId);
+                                        return;
+                                      }
+
                                       setLocal(() {
-                                        formError =
-                                            'Falha ao finalizar trecho.';
+                                        formError = estado == null
+                                            ? 'Sem resposta do servidor. Confira '
+                                                'a conexão e recarregue a tela '
+                                                'antes de tentar de novo.'
+                                            : 'Falha ao finalizar trecho.';
                                       });
                                     }
                                   } finally {

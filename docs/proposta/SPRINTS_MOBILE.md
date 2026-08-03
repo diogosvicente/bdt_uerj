@@ -682,6 +682,41 @@ Não tem "estimativa total" — vai crescendo. Sempre que fizer um
 refino desses, registrar aqui em vez de deixar só no commit
 (regra [[bdt_uerj_registrar_fora_de_escopo]]).
 
+- ✅ **"Deu erro mas funcionou" ao iniciar/finalizar trecho** (2026-08-01) —
+  reportado no uso: às vezes aparecia falha na tela e a operação tinha dado
+  certo. Erro falso corrói a confiança no app mais rápido que uma falha de
+  verdade — o condutor deixa de acreditar no que lê e passa a repetir ações.
+  - **Causa**: `ApiClient.post` tem timeout de 10 s e, ao estourar, devolve
+    `success: false` — **indistinguível de falha real**. Em rede móvel dentro
+    do veículo isso acontece: a requisição chega, o servidor processa, e é a
+    *resposta* que se perde.
+  - **Não aumentei o timeout.** Reduziria a frequência sem eliminar a classe
+    do problema, e o app continuaria afirmando algo que não sabe.
+  - **A UI passou a perguntar antes de acusar**: novo
+    `BdtService.estadoExecucaoTrecho()` consulta o estado real do trecho e,
+    se o servidor de fato iniciou/finalizou, o fluxo segue como sucesso.
+  - **Três desfechos em vez de dois** — a distinção que faltava:
+    | Situação | O que o condutor vê |
+    |---|---|
+    | servidor confirma que executou | sucesso normal |
+    | servidor confirma que **não** executou | "Falha ao iniciar/finalizar trecho." |
+    | nem a verificação respondeu | "Sem resposta do servidor. Confira a conexão e recarregue a tela antes de tentar de novo." |
+  - O terceiro caso é o mais importante: quando o app **não sabe**, dizer
+    isso evita que o condutor inicie de novo um trecho que já começou.
+
+- ✅ **Hodômetro de chegada: pré-preenchido e com alerta de retrocesso**
+  (2026-08-01) — o campo abria vazio, obrigando a redigitar um número que o
+  app já tinha. Agora começa com o **hodômetro da saída** quando ainda não há
+  chegada registrada: o condutor sempre digita algo maior que aquilo, e
+  partir do zero é onde nascem os erros de digitação que viram divergência
+  de KM.
+  - **Alerta se a chegada for menor que a saída**, no padrão da casa
+    ("Ajustar" / "Prosseguir assim mesmo"): é fisicamente impossível e quase
+    sempre dígito trocado, mas **não trava**
+    ([[bdt_uerj_sem_travas_so_alertas]]). Painel trocado e hodômetro que
+    "virou" existem, e o condutor na estrada não pode ficar preso a uma
+    validação.
+
 - ✅ **GPS em background perdia o trajeto após 15 min** (2026-08-01) —
   achado ao responder "se eu sair do app durante um trecho, continua
   rastreando?". Continuava coletando, mas **parava de conseguir enviar** —
