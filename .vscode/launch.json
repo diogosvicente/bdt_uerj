@@ -2,14 +2,13 @@
   // Perfis prontos para "Run and Debug" (Ctrl+Shift+D).
   // Selecione um no dropdown e aperte F5.
   //
-  // Os perfis de desenvolvimento (localhost via adb reverse, emulador em
-  // 10.0.2.2, host WSL na LAN) foram removidos em 2026-07-31 junto com o
-  // switch de APP_ENV no lib/api/api_client.dart: o backend vive em
-  // produção e o app aponta só para lá. Deixar os perfis aqui só faria
-  // alguém escolher um e não entender por que a baseUrl não mudou.
+  // O switch de ambiente voltou em 2026-08-04, junto com o
+  // `--dart-define=API_BASE_URL` no lib/api/api_client.dart, para permitir
+  // desenvolver contra o backend local rodando no Docker.
   //
-  // Se um dia voltar a existir homologação, reintroduza o --dart-define
-  // no api_client.dart PRIMEIRO e depois o perfil correspondente aqui.
+  // REGRA: produção é o PADRÃO. Sem `--dart-define`, o app aponta para
+  // www.e-prefeitura.uerj.br. Só o comando de build desvia — o código nunca
+  // fica commitado apontando para a máquina de alguém.
   "version": "0.2.0",
   "configurations": [
     {
@@ -20,7 +19,36 @@
       "program": "lib/main.dart"
     },
     {
-      // Mesmo que o de cima, mas em modo profile (perf + debugging visual).
+      // Backend: LOCAL, visto de dentro do EMULADOR.
+      //
+      // 10.0.2.2 é o alias que o emulador Android cria para a máquina host.
+      // `localhost` aqui seria o próprio emulador — não o seu Apache.
+      //
+      // Requer: Docker do e-prefeitura no ar (porta 80).
+      "name": "Debug — localhost (emulador)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=API_BASE_URL=http://10.0.2.2/e-prefeitura"
+      ]
+    },
+    {
+      // Backend: LOCAL, para APARELHO FÍSICO via USB.
+      //
+      // Exige rodar ANTES (uma vez por conexão do aparelho):
+      //     adb reverse tcp:80 tcp:80
+      // Isso faz o `localhost` do aparelho apontar para a porta 80 do PC.
+      "name": "Debug — localhost (aparelho USB, adb reverse)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=API_BASE_URL=http://localhost/e-prefeitura"
+      ]
+    },
+    {
+      // Mesmo que o primeiro, mas em modo profile (perf + debugging visual).
       "name": "Profile — produção",
       "request": "launch",
       "type": "dart",

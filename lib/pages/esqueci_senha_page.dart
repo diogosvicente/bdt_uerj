@@ -179,7 +179,10 @@ class _EsqueciSenhaPageState extends State<EsqueciSenhaPage> {
         ],
         TextField(
           controller: _cpfCtrl,
-          keyboardType: TextInputType.number,
+          // `phone` em vez de `number` — mesma razão do login_page: garante o
+          // teclado de discagem (numérico) em vez do normal com fileira de
+          // dígitos. O CPF é só número; o formatter abaixo filtra o resto.
+          keyboardType: TextInputType.phone,
           enabled: !_enviando,
           // Mesma máscara do login — o condutor digita CPF nos dois
           // lugares, não faz sentido um aceitar formatado e o outro não.

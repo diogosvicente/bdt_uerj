@@ -4,4 +4,13 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Permite HTTP puro (cleartext) SOMENTE em builds de debug.
+         Desde a API 28 o Android bloqueia cleartext por padrão, então o app
+         não conseguiria falar com o backend local em `http://10.0.2.2/...`
+         e a falha aparece como erro de rede genérico, difícil de diagnosticar.
+
+         Fica neste manifesto (src/debug) de propósito: o build de RELEASE
+         não recebe este atributo e continua recusando HTTP, como deve. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

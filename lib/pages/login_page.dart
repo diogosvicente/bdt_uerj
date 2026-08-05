@@ -294,7 +294,13 @@ class _LoginPageState extends State<LoginPage> {
                         // CAMPO CPF
                         TextField(
                           controller: cpfController,
-                          keyboardType: TextInputType.number,
+                          // `phone` (TYPE_CLASS_PHONE) e não `number`: o
+                          // `number` vira, em vários teclados Android, o
+                          // teclado normal com uma fileira de dígitos — o
+                          // `phone` abre o teclado de discagem, numérico de
+                          // verdade. O CPF é só dígitos (o formatter abaixo
+                          // já descarta o resto), então não há perda.
+                          keyboardType: TextInputType.phone,
                           textInputAction: TextInputAction.next,
                           inputFormatters: <TextInputFormatter>[
                             FilteringTextInputFormatter.digitsOnly,
