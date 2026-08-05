@@ -5,9 +5,45 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/token_storage.dart';
+import 'pii_sanitizer.dart';
 import 'ssl_bootstrap.dart';
 
 class ApiClient {
+  // ==========================================================================
+  // Sprint 028 de segurança — item A7-mobile (2026-08-05)
+  //
+  // Este arquivo imprimia o corpo de TODA requisição e resposta cru. No login
+  // isso significava CPF e senha em texto puro no logcat, mais os tokens de
+  // acesso e refresh na resposta.
+  //
+  // Dois problemas independentes, e os dois precisavam de correção:
+  //
+  //   1) `debugPrint` NÃO é removido em release. O nome engana — ele se chama
+  //      assim porque estrangula a taxa de saída para não perder linhas, não
+  //      porque só rode em debug. Um APK de produção gravava a senha do
+  //      condutor a cada login. → resolvido por `_log`, que checa kDebugMode.
+  //
+  //   2) Mesmo em debug o log não devia trazer PII: durante teste contra a
+  //      base real são CPFs de pessoas de verdade na tela de quem
+  //      desenvolve. → resolvido pelo `PiiSanitizer`, espelho da política do
+  //      backend (`app/Libraries/PiiSanitizer.php`).
+  //
+  // Quem tem acesso ao logcat: qualquer um com depuração USB no aparelho,
+  // relatórios de bug do Android e ferramentas de diagnóstico do fabricante.
+  // Desde a API 16 um app comum não lê o log de outro — o que reduz, mas não
+  // elimina, porque a senha é reutilizável (diferente de um token de 15 min).
+  // ==========================================================================
+
+  /// Log de diagnóstico. Silencioso em release, ao contrário de `debugPrint`.
+  ///
+  /// Use para QUALQUER coisa derivada de tráfego. Para mensagens fixas que
+  /// precisam sobreviver em produção existe o `Logger` de `utils/logger.dart`,
+  /// que escreve em release de propósito — mas ele recebe `String`, então
+  /// nunca passe payload para lá sem sanitizar.
+  static void _log(String msg) {
+    if (kDebugMode) debugPrint(msg);
+  }
+
   // ==========================================================================
   // Endereço da API — SEMPRE produção.
   //
@@ -32,9 +68,31 @@ class ApiClient {
   // ==========================================================================
   static const String _productionBase = "https://www.e-prefeitura.uerj.br";
 
-  /// Endereço base da API. Constante — não depende de build mode nem de
-  /// `--dart-define`.
-  static String get baseUrl => _productionBase;
+  /// Sobrescrita por BUILD (2026-08-04), reintroduzida como o comentário
+  /// acima previa — para apontar o app a um backend local durante o
+  /// desenvolvimento:
+  ///
+  ///     flutter run --dart-define=API_BASE_URL=http://10.0.2.2/e-prefeitura
+  ///
+  /// Vazio (o padrão) = produção. A constante de produção continua sendo a
+  /// única coisa escrita no código, então **não há como commitar o app
+  /// apontando para a máquina de alguém** — o desvio existe só no comando
+  /// de build de quem está desenvolvendo.
+  ///
+  /// ⚠️ No EMULADOR, `localhost` é o próprio emulador. O host onde roda o
+  /// Apache é **10.0.2.2** (alias que o emulador cria para a máquina).
+  /// Usar `http://localhost/...` aqui não alcança o seu backend.
+  static const String _overrideBase = String.fromEnvironment('API_BASE_URL');
+
+  /// Endereço base da API. Produção por padrão; `--dart-define=API_BASE_URL`
+  /// desvia para outro host em tempo de build.
+  static String get baseUrl =>
+      _overrideBase.isNotEmpty ? _overrideBase : _productionBase;
+
+  /// True quando o app está falando com um backend que não é o de produção.
+  /// Útil para exibir um aviso na UI e evitar o clássico "testei achando que
+  /// era produção".
+  static bool get usandoBaseCustomizada => _overrideBase.isNotEmpty;
 
   /// Helper: junta base + endpoint com segurança (evita // e / sobrando).
   static Uri _buildUri(String endpoint) {
@@ -80,15 +138,17 @@ class ApiClient {
       final token = await TokenStorage.readAccess();
       resp = await _doPost(endpoint, data, token);
     } on TimeoutException {
-      debugPrint("⏰ Timeout na requisição para $endpoint");
+      _log("⏰ Timeout na requisição para $endpoint");
       return {
         "success": false,
         "status": "TIMEOUT",
         "message": "Timeout na requisição.",
       };
     } catch (e, st) {
-      debugPrint("❌ Exceção HTTP em $endpoint: $e");
-      debugPrint("$st");
+      // A7-mobile — a mensagem de exceção pode ecoar trecho do corpo, e o
+      // stack trace inteiro em release é exposição de informação sem ganho.
+      _log("❌ Exceção HTTP em $endpoint: $e");
+      _log("$st");
       return {
         "success": false,
         "status": "EXCEPTION",
@@ -103,7 +163,7 @@ class ApiClient {
     if (isExpired && !isRetry && !_isRefreshCall(endpoint)) {
       final refreshOk = await refreshTokens();
       if (refreshOk) {
-        debugPrint("🔄 Retry após refresh: $endpoint");
+        _log("🔄 Retry após refresh: $endpoint");
         return post(endpoint, data, isRetry: true);
       }
       // refresh falhou → devolve a resposta 401 original; caller
@@ -121,8 +181,10 @@ class ApiClient {
   ) async {
     final uri = _buildUri(endpoint);
 
-    debugPrint("➡️ POST $uri");
-    debugPrint("📦 Body: $data");
+    _log("➡️ POST $uri");
+    // A7-mobile — `data` carrega cpf/senha no login. `sanitize` devolve uma
+    // CÓPIA tratada; o `data` original segue intacto para a requisição.
+    _log("📦 Body: ${PiiSanitizer.sanitize(data)}");
 
     // MSEC.5 — `SslBootstrap.client` aplica certificate pinning em
     // produção (só confia na cadeia da RNP). Ver `ssl_bootstrap.dart`.
@@ -141,7 +203,10 @@ class ApiClient {
     final rawBody = res.body;
     final body = rawBody.trim();
 
-    debugPrint("⬅️ Response ${res.statusCode}: $body");
+    // A7-mobile — a resposta do login traz access_token/refresh_token, e a do
+    // perfil traz e-mail. `sanitizeJson` decodifica, trata e reserializa;
+    // quando não é JSON (página de erro do Apache), trunca.
+    _log("⬅️ Response ${res.statusCode}: ${PiiSanitizer.sanitizeJson(body)}");
 
     final decoded = _tryDecodeJsonMap(body);
     if (decoded != null) {
@@ -183,7 +248,7 @@ class ApiClient {
       final token = await TokenStorage.readAccess();
       final uri = _buildUri(endpoint);
 
-      debugPrint("➡️ POST-multipart $uri (${fileBytes.length} bytes)");
+      _log("➡️ POST-multipart $uri (${fileBytes.length} bytes)");
 
       final req = http.MultipartRequest('POST', uri);
       if (token != null && token.isNotEmpty) {
@@ -205,7 +270,9 @@ class ApiClient {
       final res = await http.Response.fromStream(streamed);
 
       final body = res.body.trim();
-      debugPrint("⬅️ Response ${res.statusCode}: ${body.substring(0, body.length > 200 ? 200 : body.length)}");
+      // A7-mobile — antes truncava em 200 chars "no escuro"; truncar não é
+      // sanitizar (um token cabe folgado em 200 caracteres).
+      _log("⬅️ Response ${res.statusCode}: ${PiiSanitizer.sanitizeJson(body)}");
 
       final decoded = _tryDecodeJsonMap(body);
       if (decoded != null) {
@@ -228,7 +295,7 @@ class ApiClient {
         "message": "Timeout no upload da foto.",
       };
     } catch (e, st) {
-      debugPrint("❌ Exceção HTTP multipart em $endpoint: $e\n$st");
+      _log("❌ Exceção HTTP multipart em $endpoint: $e\n$st");
       return {
         "success": false,
         "status": "EXCEPTION",
@@ -263,10 +330,10 @@ class ApiClient {
           .timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) return res.bodyBytes;
-      debugPrint("postForBytes $endpoint: http=${res.statusCode}");
+      _log("postForBytes $endpoint: http=${res.statusCode}");
       return null;
     } catch (e) {
-      debugPrint("❌ postForBytes $endpoint exception: $e");
+      _log("❌ postForBytes $endpoint exception: $e");
       return null;
     }
   }
@@ -285,7 +352,7 @@ class ApiClient {
       try {
         final refresh = await TokenStorage.readRefresh();
         if (refresh == null || refresh.isEmpty) {
-          debugPrint("🔒 refresh: sem refresh token no storage");
+          _log("🔒 refresh: sem refresh token no storage");
           completer.complete(false);
           return;
         }
@@ -306,15 +373,15 @@ class ApiClient {
               access: newAccess,
               refresh: newRefresh,
             );
-            debugPrint("🔓 refresh OK — novo par gravado");
+            _log("🔓 refresh OK — novo par gravado");
             completer.complete(true);
             return;
           }
         }
-        debugPrint("🔒 refresh FALHOU — status=${res['status']}");
+        _log("🔒 refresh FALHOU — status=${res['status']}");
         completer.complete(false);
       } catch (e) {
-        debugPrint("🔒 refresh exception: $e");
+        _log("🔒 refresh exception: $e");
         completer.complete(false);
       } finally {
         _refreshInFlight = null;
