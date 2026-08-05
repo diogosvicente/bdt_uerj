@@ -667,6 +667,57 @@ reais em campo.
 > muda comportamento web); novos endpoints `token/refresh` e
 > `token/revogar` são novos.
 
+### Adendo — ✅ **A7-mobile: para de logar CPF, senha e tokens** (2026-08-05)
+
+Item da **sprint 028 de segurança do `e-prefeitura`**
+(`feature/028-sprint-seguranca-controle-acesso`), registrado aqui porque a
+correção é 100% no app. Ver `docs/seguranca/plano-sprints-seguranca.md` lá,
+Sprint 6, item A7-mobile.
+
+**O achado.** O `api_client.dart` imprimia o corpo de toda requisição e
+resposta cru. No login isso era:
+
+```
+📦 Body: {cpf: 12192209738, senha: Teste@123456, …}
+⬅️ Response 200: { "access_token": "7257322185f7…", "refresh_token": "…" }
+```
+
+CPF e senha em texto puro no logcat, mais os dois tokens.
+
+**Por que passava despercebido.** `debugPrint` **não é removido em release** —
+o nome engana; ele estrangula a taxa de saída para não perder linhas, não o
+build. Um APK de produção no celular do condutor gravava a senha dele a cada
+login. Quem alcança: qualquer um com depuração USB, relatórios de bug do
+Android e ferramentas de diagnóstico do fabricante. Desde a API 16 um app
+comum não lê o log de outro — o que reduz, mas não elimina, e a senha é
+reutilizável (diferente de um token de 15 min).
+
+**Correção.**
+- `lib/utils/pii_sanitizer.dart` (novo) — espelho Dart de
+  `app/Libraries/PiiSanitizer.php`, **mesma** lista de campos. Redige
+  credenciais, mascara contato/identificação.
+- `Logger.debug()` (novo, em `lib/utils/logger.dart`) — guarda `kDebugMode`
+  explícita. O resto da classe continua escrevendo em release de propósito;
+  o `.debug` é para o que vem de tráfego.
+- `lib/api/api_client.dart` — passa a usar `Logger('API-HTTP')` + `.debug()`
+  nos 16 pontos de log, com `PiiSanitizer` nos 3 que carregam payload. Antes
+  usava `debugPrint` solto, contra o **§4.9** do `ARCHITECTURE.md`.
+- `test/pii_sanitizer_test.dart` (novo) — 10 casos com os payloads reais.
+
+**Validado em execução** no emulador contra backend local: `senha:
+[REDACTED]`, `cpf: *******9738`, três tokens redigidos, e o app íntegro
+depois (`permissoes-mobile`, `bdt/dia`, `pre-bdt/meus-pendentes`, foto,
+alertas — todos 200).
+
+**Como foi descoberto — vale como método.** Não veio de auditoria de código:
+apareceu no log enquanto se testava **outra coisa** (o item A8, que remove
+`email`/`cpf` da resposta de login). O A8 tinha passado na análise estática e
+teria sido commitado sem que ninguém olhasse o log. *O defeito não estava no
+que mudou, estava ao lado.*
+
+**Não impacta a web.** Mudança exclusivamente no repo `bdt_uerj`, sem tocar
+em endpoint, contrato ou rota — regra [[bdt_uerj_mobile_nao_quebra_web]] (§0).
+
 ---
 
 ## Sprint MUX 🎨 — Refinos UX pós-piloto (rolling) — 🟢 em andamento

@@ -126,7 +126,8 @@ lib/
 │   └── cpf_input_formatter.dart
 │
 ├── utils/                     Helpers puros (log, formatação, etc.)
-│   ├── logger.dart            Log unificado (dev.log + print, com tag)
+│   ├── logger.dart            Log unificado (dev.log + print, com tag) — `.info` escreve em release; `.debug` só em debug
+│   ├── pii_sanitizer.dart     Redige/mascara PII antes de qualquer log (espelho do PiiSanitizer.php do e-Prefeitura)
 │   └── date_fmt.dart          Helpers de data/hora
 │
 ├── theme/                     Design tokens
@@ -561,6 +562,9 @@ class Logger {
     if (st != null && kDebugMode) _emit('  st: ${st.toString().split("\n").take(3).join(" | ")}');
   }
 
+  /// Diagnóstico que só existe em debug — ver "Payload nunca vai para .info" abaixo.
+  void debug(String msg) { if (kDebugMode) _emit(msg); }
+
   void _emit(String msg) {
     developer.log(msg, name: tag);
     // ignore: avoid_print
@@ -568,6 +572,40 @@ class Logger {
   }
 }
 ```
+
+**⚠️ Payload nunca vai para `.info` — use `.debug` + `PiiSanitizer`**
+
+`info`/`warn`/`error` escrevem **em release também**, e isso é proposital: o
+app não tem trace remoto. Mas vale para *mensagens de fluxo*, não para dado
+vindo da rede.
+
+Sprint 028 de segurança, item **A7-mobile**: o `api_client` imprimia o corpo
+de toda requisição e resposta cru — **CPF e senha em texto puro no logcat** de
+aparelhos de produção, mais `access_token`/`refresh_token`.
+
+Duas armadilhas que essa correção expôs, e que continuam valendo:
+
+1. **`debugPrint` não protege nada.** Apesar do nome, ele **não** é removido em
+   release — só estrangula a taxa de saída para não perder linhas. A guarda
+   tem que ser `kDebugMode`, explícita. É o que o `.debug` faz.
+2. **Debug também não é lugar de PII.** Testando contra a base real, são CPFs
+   de pessoas de verdade na tela de quem desenvolve. Sanitize antes.
+
+```dart
+// ❌ vaza em produção
+_log.info("Body: $data");
+
+// ✅
+_log.debug("Body: ${PiiSanitizer.sanitize(data)}");        // Map
+_log.debug("Resposta: ${PiiSanitizer.sanitizeJson(body)}"); // String JSON
+```
+
+O `PiiSanitizer` (`lib/utils/pii_sanitizer.dart`) **redige** credenciais
+(`senha`, `token`, `access_token`…) e **mascara** contato/identificação
+(`cpf`, `email`, `telefone1`…), mantendo os 4 últimos caracteres. As listas
+são idênticas às de `app/Libraries/PiiSanitizer.php` no e-Prefeitura, de
+propósito: divergir criaria um campo protegido de um lado e vazando do outro.
+Ao mexer numa, mexa na outra.
 
 **Uso:**
 ```dart
@@ -726,15 +764,17 @@ Fora do escopo atual (app é Android-first). Se um dia compilar iOS, adicionar `
 ## 8. Testes
 
 ### Estado atual
-- Só o smoke test default (`test/widget_test.dart`) — apenas confirma que o app monta sem crash.
-- Cobertura de teste é **baixa** de propósito nesta fase (MVP em iteração rápida).
+- `test/widget_test.dart` — smoke default: confirma que o app monta sem crash.
+- `test/pii_sanitizer_test.dart` — 10 casos cobrindo `PiiSanitizer` (sprint 028, A7-mobile). Os payloads são os **reais**, copiados do logcat no teste que revelou o vazamento; se alguém reabrir o buraco, quebra aqui.
+- Cobertura ainda é **baixa** de propósito nesta fase (MVP em iteração rápida).
 
 ### Onde vale investir teste unitário
-Priorize regras **DOMAIN** puras — elas testam sem plugin, sem HTTP, sem device.
+Priorize regras **DOMAIN** puras e helpers de `utils/` — testam sem plugin, sem HTTP, sem device.
 
 - `LocationOutlierFilter` — casos: accuracy alta, velocidade impossível, teleporte, reset.
 - Parsers de `Model.fromJson` — testar tipos toleráveis (int vs string, chave ausente).
 - `DateFmt` — bordas (hora com segundos, hora sem data, etc.).
+- `PiiSanitizer` — **já coberto**. Ao acrescentar campo à lista, acrescente o caso aqui: é regra de segurança, não dá para confiar em revisão visual.
 
 Services **API**/**STORAGE**/**PLATFORM** exigem mock que hoje não é rentável; deixar para quando estabilizar.
 

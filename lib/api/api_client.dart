@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/token_storage.dart';
-import 'pii_sanitizer.dart';
+import '../utils/logger.dart';
+import '../utils/pii_sanitizer.dart';
 import 'ssl_bootstrap.dart';
 
 class ApiClient {
@@ -21,7 +21,8 @@ class ApiClient {
   //   1) `debugPrint` NÃO é removido em release. O nome engana — ele se chama
   //      assim porque estrangula a taxa de saída para não perder linhas, não
   //      porque só rode em debug. Um APK de produção gravava a senha do
-  //      condutor a cada login. → resolvido por `_log`, que checa kDebugMode.
+  //      condutor a cada login. → resolvido por `Logger.debug`, que checa
+  //      kDebugMode.
   //
   //   2) Mesmo em debug o log não devia trazer PII: durante teste contra a
   //      base real são CPFs de pessoas de verdade na tela de quem
@@ -34,15 +35,11 @@ class ApiClient {
   // elimina, porque a senha é reutilizável (diferente de um token de 15 min).
   // ==========================================================================
 
-  /// Log de diagnóstico. Silencioso em release, ao contrário de `debugPrint`.
+  /// ARCHITECTURE §4.9 — nunca `print`/`debugPrint` solto.
   ///
-  /// Use para QUALQUER coisa derivada de tráfego. Para mensagens fixas que
-  /// precisam sobreviver em produção existe o `Logger` de `utils/logger.dart`,
-  /// que escreve em release de propósito — mas ele recebe `String`, então
-  /// nunca passe payload para lá sem sanitizar.
-  static void _log(String msg) {
-    if (kDebugMode) debugPrint(msg);
-  }
+  /// Tudo aqui é derivado de tráfego, então usa `.debug()` (some em release)
+  /// e nunca `.info()`. Ver `utils/logger.dart`.
+  static const _log = Logger('API-HTTP');
 
   // ==========================================================================
   // Endereço da API — SEMPRE produção.
@@ -138,7 +135,7 @@ class ApiClient {
       final token = await TokenStorage.readAccess();
       resp = await _doPost(endpoint, data, token);
     } on TimeoutException {
-      _log("⏰ Timeout na requisição para $endpoint");
+      _log.debug("⏰ Timeout na requisição para $endpoint");
       return {
         "success": false,
         "status": "TIMEOUT",
@@ -147,8 +144,8 @@ class ApiClient {
     } catch (e, st) {
       // A7-mobile — a mensagem de exceção pode ecoar trecho do corpo, e o
       // stack trace inteiro em release é exposição de informação sem ganho.
-      _log("❌ Exceção HTTP em $endpoint: $e");
-      _log("$st");
+      _log.debug("❌ Exceção HTTP em $endpoint: $e");
+      _log.debug("$st");
       return {
         "success": false,
         "status": "EXCEPTION",
@@ -163,7 +160,7 @@ class ApiClient {
     if (isExpired && !isRetry && !_isRefreshCall(endpoint)) {
       final refreshOk = await refreshTokens();
       if (refreshOk) {
-        _log("🔄 Retry após refresh: $endpoint");
+        _log.debug("🔄 Retry após refresh: $endpoint");
         return post(endpoint, data, isRetry: true);
       }
       // refresh falhou → devolve a resposta 401 original; caller
@@ -181,10 +178,10 @@ class ApiClient {
   ) async {
     final uri = _buildUri(endpoint);
 
-    _log("➡️ POST $uri");
+    _log.debug("➡️ POST $uri");
     // A7-mobile — `data` carrega cpf/senha no login. `sanitize` devolve uma
     // CÓPIA tratada; o `data` original segue intacto para a requisição.
-    _log("📦 Body: ${PiiSanitizer.sanitize(data)}");
+    _log.debug("📦 Body: ${PiiSanitizer.sanitize(data)}");
 
     // MSEC.5 — `SslBootstrap.client` aplica certificate pinning em
     // produção (só confia na cadeia da RNP). Ver `ssl_bootstrap.dart`.
@@ -206,7 +203,7 @@ class ApiClient {
     // A7-mobile — a resposta do login traz access_token/refresh_token, e a do
     // perfil traz e-mail. `sanitizeJson` decodifica, trata e reserializa;
     // quando não é JSON (página de erro do Apache), trunca.
-    _log("⬅️ Response ${res.statusCode}: ${PiiSanitizer.sanitizeJson(body)}");
+    _log.debug("⬅️ Response ${res.statusCode}: ${PiiSanitizer.sanitizeJson(body)}");
 
     final decoded = _tryDecodeJsonMap(body);
     if (decoded != null) {
@@ -248,7 +245,7 @@ class ApiClient {
       final token = await TokenStorage.readAccess();
       final uri = _buildUri(endpoint);
 
-      _log("➡️ POST-multipart $uri (${fileBytes.length} bytes)");
+      _log.debug("➡️ POST-multipart $uri (${fileBytes.length} bytes)");
 
       final req = http.MultipartRequest('POST', uri);
       if (token != null && token.isNotEmpty) {
@@ -272,7 +269,7 @@ class ApiClient {
       final body = res.body.trim();
       // A7-mobile — antes truncava em 200 chars "no escuro"; truncar não é
       // sanitizar (um token cabe folgado em 200 caracteres).
-      _log("⬅️ Response ${res.statusCode}: ${PiiSanitizer.sanitizeJson(body)}");
+      _log.debug("⬅️ Response ${res.statusCode}: ${PiiSanitizer.sanitizeJson(body)}");
 
       final decoded = _tryDecodeJsonMap(body);
       if (decoded != null) {
@@ -295,7 +292,7 @@ class ApiClient {
         "message": "Timeout no upload da foto.",
       };
     } catch (e, st) {
-      _log("❌ Exceção HTTP multipart em $endpoint: $e\n$st");
+      _log.debug("❌ Exceção HTTP multipart em $endpoint: $e\n$st");
       return {
         "success": false,
         "status": "EXCEPTION",
@@ -330,10 +327,10 @@ class ApiClient {
           .timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) return res.bodyBytes;
-      _log("postForBytes $endpoint: http=${res.statusCode}");
+      _log.debug("postForBytes $endpoint: http=${res.statusCode}");
       return null;
     } catch (e) {
-      _log("❌ postForBytes $endpoint exception: $e");
+      _log.debug("❌ postForBytes $endpoint exception: $e");
       return null;
     }
   }
@@ -352,7 +349,7 @@ class ApiClient {
       try {
         final refresh = await TokenStorage.readRefresh();
         if (refresh == null || refresh.isEmpty) {
-          _log("🔒 refresh: sem refresh token no storage");
+          _log.debug("🔒 refresh: sem refresh token no storage");
           completer.complete(false);
           return;
         }
@@ -373,15 +370,15 @@ class ApiClient {
               access: newAccess,
               refresh: newRefresh,
             );
-            _log("🔓 refresh OK — novo par gravado");
+            _log.debug("🔓 refresh OK — novo par gravado");
             completer.complete(true);
             return;
           }
         }
-        _log("🔒 refresh FALHOU — status=${res['status']}");
+        _log.debug("🔒 refresh FALHOU — status=${res['status']}");
         completer.complete(false);
       } catch (e) {
-        _log("🔒 refresh exception: $e");
+        _log.debug("🔒 refresh exception: $e");
         completer.complete(false);
       } finally {
         _refreshInFlight = null;

@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bdt_uerj/api/pii_sanitizer.dart';
+import 'package:bdt_uerj/utils/pii_sanitizer.dart';
 
 /// Sprint 028 de segurança — item **A7-mobile**.
 ///

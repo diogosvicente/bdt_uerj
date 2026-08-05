@@ -31,7 +31,28 @@ class Logger {
   const Logger(this.tag);
 
   /// Mensagem informativa (fluxo normal — start/success/estado).
+  ///
+  /// ⚠️ Escreve **em release também** (ver doc da classe). Nunca passe aqui
+  /// nada derivado de payload de rede sem sanitizar — use [debug].
   void info(String msg) => _emit(msg);
+
+  /// Diagnóstico que **só existe em debug**.
+  ///
+  /// Sprint 028 de segurança, item A7-mobile (2026-08-05). Existe porque o
+  /// resto desta classe escreve em release de propósito — decisão correta
+  /// para mensagens de fluxo, e errada para qualquer coisa derivada de
+  /// tráfego: o `api_client` imprimia CPF, senha e tokens no logcat de
+  /// aparelhos de produção.
+  ///
+  /// Note que **`debugPrint` não resolveria**: apesar do nome, ele não é
+  /// removido em release — só estrangula a taxa de saída para não perder
+  /// linhas. A guarda tem que ser `kDebugMode`, explícita.
+  ///
+  /// Mesmo em debug, sanitize antes: durante teste contra a base real são
+  /// CPFs de pessoas de verdade. Use `PiiSanitizer` (`utils/pii_sanitizer.dart`).
+  void debug(String msg) {
+    if (kDebugMode) _emit(msg);
+  }
 
   /// Condição inesperada mas recuperável (ex.: HTTP 4xx, cache miss).
   void warn(String msg) => _emit('WARN: $msg');
