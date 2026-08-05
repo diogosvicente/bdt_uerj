@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ícone adaptativo (Android 8.0 / API 26+).
+
+  O launcher aplica a máscara do fabricante (círculo, squircle, gota…) sobre
+  estas duas camadas. Só os 66% centrais são garantidamente visíveis — por isso
+  o ic_launcher_foreground.png foi gerado com a logomarca ocupando 60% da tela,
+  centralizada, com o resto transparente.
+
+  Fundo branco de propósito: a logomarca da UERJ é azul e laranja sobre
+  transparência; num launcher de tema escuro o texto azul sumiria.
+
+  Sem <monochrome>: os ícones temáticos do Android 13+ usam só o canal alfa,
+  e o texto circular da logomarca viraria um borrão ilegível em silhueta.
+  Sem essa tag, o Android simplesmente mantém o ícone colorido.
+
+  Os PNGs em mipmap-*/ic_launcher.png continuam servindo o Android 7.x
+  (minSdk = 24), que não conhece adaptive icons.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

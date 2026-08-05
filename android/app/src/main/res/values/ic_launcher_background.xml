@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cor de fundo do ícone adaptativo (ver mipmap-anydpi-v26/ic_launcher.xml).
+
+  Branco porque a logomarca da UERJ vem com fundo transparente e usa azul
+  (#0055A5 aprox.) no texto e laranja na tocha — sobre fundo escuro o texto
+  desapareceria.
+-->
+<resources>
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>
