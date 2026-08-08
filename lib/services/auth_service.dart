@@ -226,9 +226,7 @@ class AuthService {
 
     // Desliga "manter conectado" — senão, ao voltar pra tela de login,
     // o auto-redirect da LoginPage tenta reautenticar sem token e o
-    // usuário fica preso num loop. As credenciais salvas ("lembrar senha")
-    // NÃO são apagadas: o usuário provavelmente vai querer entrar de novo
-    // com o mesmo CPF/senha.
+    // usuário fica preso num loop.
     await prefs.remove('login_manter_conectado');
   }
 

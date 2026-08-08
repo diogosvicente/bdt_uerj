@@ -27,7 +27,6 @@ class _LoginPageState extends State<LoginPage> {
 
   bool loading = false;
   bool _obscurePassword = true;
-  bool _lembrarSenha = false;
   bool _manterConectado = false;
 
   /// Evita processar 2× (initState + didChangeDependencies).
@@ -52,13 +51,7 @@ class _LoginPageState extends State<LoginPage> {
   /// houver token, valida o token contra o backend e vai direto pra /home
   /// sem mostrar a tela.
   Future<void> _bootstrap() async {
-    _lembrarSenha = await CredentialsStorage.getLembrarSenha();
     _manterConectado = await CredentialsStorage.getManterConectado();
-
-    if (_lembrarSenha) {
-      cpfController.text = (await CredentialsStorage.getCpf()) ?? '';
-      senhaController.text = (await CredentialsStorage.getSenha()) ?? '';
-    }
 
     if (_manterConectado) {
       // MSEC.1 — token lido do secure storage, não mais SharedPreferences.
@@ -79,19 +72,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _persistPreferences() async {
-    await CredentialsStorage.setFlags(
-      lembrarSenha: _lembrarSenha,
-      manterConectado: _manterConectado,
-    );
-
-    if (_lembrarSenha) {
-      // grava CPF sem máscara para reduzir ambiguidade
-      final rawCpf = cpfController.text.replaceAll(RegExp(r'\D'), '');
-      await CredentialsStorage.setCpf(rawCpf);
-      await CredentialsStorage.setSenha(senhaController.text);
-    } else {
-      await CredentialsStorage.clear();
-    }
+    await CredentialsStorage.setManterConectado(_manterConectado);
   }
 
   @override
@@ -349,24 +330,10 @@ class _LoginPageState extends State<LoginPage> {
 
                         const SizedBox(height: 8),
 
-                        // OPÇÕES: lembrar senha + manter conectado
+                        // OPÇÃO: manter conectado
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            CheckboxListTile(
-                              value: _lembrarSenha,
-                              onChanged: (v) => setState(
-                                () => _lembrarSenha = v ?? false,
-                              ),
-                              controlAffinity: ListTileControlAffinity.leading,
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                              title: const Text("Lembrar senha"),
-                              subtitle: const Text(
-                                "Preenche CPF e senha automaticamente na próxima vez.",
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            ),
                             CheckboxListTile(
                               value: _manterConectado,
                               onChanged: (v) => setState(
