@@ -1041,13 +1041,18 @@ class _BdtPageState extends State<BdtPage> {
     final bool precisaKmInicial =
         estadoKm != null && estadoKm.precisaPerguntarKmInicial;
 
+    // W18 (ajuste pós-teste): mostra o PREVISTO, não a hora atual.
+    //
+    // Antes caía em `DateTime.now()` quando não havia previsão, o que fazia o
+    // campo parecer "a hora que vai ser gravada" — e não é: quem grava é o
+    // servidor, ao iniciar. Sem previsão, fica em branco mesmo; um traço é
+    // mais honesto do que um horário inventado no relógio do aparelho.
     final horaCtrl = TextEditingController(
-      text: _fmtTimeOnly(trecho['inicio_real'] ?? trecho['datahora_saida']),
+      text: _fmtTimeOnly(trecho['datahora_saida']),
     );
 
     if (horaCtrl.text.trim().isEmpty) {
-      final now = DateTime.now();
-      horaCtrl.text = '${_two(now.hour)}:${_two(now.minute)}';
+      horaCtrl.text = '—';
     }
 
     final odoCtrl = TextEditingController(text: _odoSaidaFromTrecho(trecho));
@@ -1252,15 +1257,21 @@ class _BdtPageState extends State<BdtPage> {
 
                   Row(
                     children: [
+                      // W18 (ajuste pós-teste): campo de REFERÊNCIA, não de
+                      // entrada. Desde o item 5 quem carimba o horário é o
+                      // servidor, no momento de iniciar — a hora escolhida
+                      // aqui era enviada e DESCARTADA. Deixar o relógio
+                      // clicável prometia um controle que não existe.
                       Expanded(
                         child: TextField(
                           controller: horaCtrl,
                           readOnly: true,
-                          onTap: isBusyThis ? null : () => _pickHm(horaCtrl),
+                          enabled: false,
                           decoration: const InputDecoration(
-                            labelText: 'Hora saída (HH:MM)',
+                            labelText: 'Saída prevista',
                             border: OutlineInputBorder(),
-                            suffixIcon: Icon(Icons.schedule),
+                            helperText: 'A hora real é registrada ao iniciar',
+                            helperMaxLines: 2,
                           ),
                         ),
                       ),
@@ -1409,8 +1420,11 @@ class _BdtPageState extends State<BdtPage> {
                                   final confirmed = await _confirmDialog(
                                     title: 'Iniciar trecho?',
                                     message:
+                                        // W18: não repete mais "Hora de saída:
+                                        // HH:MM" — aquilo era o previsto e dava
+                                        // a entender que seria o gravado.
                                         'Tem certeza que deseja iniciar este trecho?\n\n'
-                                        'Hora de saída: ${horaCtrl.text.trim()}\n'
+                                        'A hora de saída será registrada agora, pelo sistema.\n'
                                         'Hodômetro: $odoResumo',
                                     cancelText: 'Não',
                                     confirmText: 'Sim, iniciar',
@@ -1465,19 +1479,24 @@ class _BdtPageState extends State<BdtPage> {
                                             'Salvando dados do trecho…';
                                       });
 
+                                      // W18 (ajuste pós-teste): `datahora_saida`
+                                      // saiu do payload — o servidor a descarta
+                                      // desde o item 5, e mandá-la só mantinha
+                                      // viva a ideia de que a hora vinha daqui.
+                                      //
+                                      // A chamada agora só acontece se houver
+                                      // hodômetro. Sem isso ela ia com o corpo
+                                      // praticamente vazio e, se falhasse, o
+                                      // condutor via "hora/hodômetro não foram
+                                      // salvos" para um dado que nem existia.
                                       final odoTrim = odoCtrl.text.trim();
-                                      final okExec =
-                                          await BdtService.atualizarTrechoExecucao(
-                                        bdtId: bdtId,
-                                        trechoId: trechoId,
-                                        data: {
-                                          "datahora_saida": _apiDateTimeFromHm(
-                                            horaCtrl.text.trim(),
-                                          ),
-                                          if (odoTrim.isNotEmpty)
-                                            "odometro_saida": odoTrim,
-                                        },
-                                      );
+                                      final okExec = odoTrim.isEmpty
+                                          ? true
+                                          : await BdtService.atualizarTrechoExecucao(
+                                              bdtId: bdtId,
+                                              trechoId: trechoId,
+                                              data: {"odometro_saida": odoTrim},
+                                            );
 
                                       if (!mounted || !sheetOpen) return;
 
@@ -1643,13 +1662,14 @@ class _BdtPageState extends State<BdtPage> {
       return;
     }
 
+    // W18 (ajuste pós-teste): o PREVISTO, não o relógio do aparelho.
+    // Ver o comentário gêmeo em `_openIniciarTrechoSheet`.
     final horaCtrl = TextEditingController(
-      text: _fmtTimeOnly(trecho['fim_real'] ?? trecho['datahora_chegada']),
+      text: _fmtTimeOnly(trecho['datahora_chegada']),
     );
 
     if (horaCtrl.text.trim().isEmpty) {
-      final now = DateTime.now();
-      horaCtrl.text = '${_two(now.hour)}:${_two(now.minute)}';
+      horaCtrl.text = '—';
     }
 
     // Hodômetro de chegada (2026-08-01).
@@ -1733,15 +1753,19 @@ class _BdtPageState extends State<BdtPage> {
 
                   Row(
                     children: [
+                      // W18 (ajuste pós-teste): referência, não entrada —
+                      // mesmo motivo do sheet de "Iniciar trecho". Quem
+                      // carimba a chegada é o servidor, ao finalizar.
                       Expanded(
                         child: TextField(
                           controller: horaCtrl,
                           readOnly: true,
-                          onTap: () => _pickHm(horaCtrl),
+                          enabled: false,
                           decoration: const InputDecoration(
-                            labelText: 'Hora chegada (HH:MM)',
+                            labelText: 'Chegada prevista',
                             border: OutlineInputBorder(),
-                            suffixIcon: Icon(Icons.schedule),
+                            helperText: 'A hora real é registrada ao finalizar',
+                            helperMaxLines: 2,
                           ),
                         ),
                       ),
@@ -1867,8 +1891,9 @@ class _BdtPageState extends State<BdtPage> {
                                   final confirmed = await _confirmDialog(
                                     title: 'Finalizar trecho?',
                                     message:
+                                        // W18: ver o gêmeo em "Iniciar trecho?".
                                         'Tem certeza que deseja finalizar este trecho?\n\n'
-                                        'Hora de chegada: ${horaCtrl.text.trim()}\n'
+                                        'A hora de chegada será registrada agora, pelo sistema.\n'
                                         'Hodômetro: $odoResumo',
                                     cancelText: 'Não',
                                     confirmText: 'Sim, finalizar',
@@ -1889,20 +1914,20 @@ class _BdtPageState extends State<BdtPage> {
                                     if (ok) {
                                       final odoChegadaTrim =
                                           odoCtrl.text.trim();
-                                      final okExec =
-                                          await BdtService.atualizarTrechoExecucao(
-                                        bdtId: bdtId,
-                                        trechoId: trechoId,
-                                        data: {
-                                          "datahora_chegada":
-                                              _apiDateTimeFromHm(
-                                                horaCtrl.text.trim(),
-                                              ),
-                                          if (odoChegadaTrim.isNotEmpty)
-                                            "odometro_chegada":
-                                                odoChegadaTrim,
-                                        },
-                                      );
+                                      // W18 (ajuste pós-teste): `datahora_chegada`
+                                      // saiu do payload (o servidor descarta) e
+                                      // a chamada só acontece se houver
+                                      // hodômetro. Ver o gêmeo em "Iniciar".
+                                      final okExec = odoChegadaTrim.isEmpty
+                                          ? true
+                                          : await BdtService.atualizarTrechoExecucao(
+                                              bdtId: bdtId,
+                                              trechoId: trechoId,
+                                              data: {
+                                                "odometro_chegada":
+                                                    odoChegadaTrim,
+                                              },
+                                            );
 
                                       if (!mounted || !sheetOpen) return;
 
