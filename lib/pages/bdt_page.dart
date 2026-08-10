@@ -1031,15 +1031,17 @@ class _BdtPageState extends State<BdtPage> {
       return;
     }
 
-    // Sprint MUX (2026-07-22) — antes de abrir o sheet, consulta se o
-    // BDT precisa que a KM inicial seja informada (mesma lógica do
-    // dialog KM inicial que existia, agora inline). Falha de rede →
-    // não pergunta (pula) — não bloqueia o condutor por um GET
-    // secundário; a KM pode ser preenchida depois pela web.
+    // O estado da KM continua sendo consultado, mas NÃO para pedir nada: só
+    // para conferir o hodômetro contra a KM inicial que o BDT já tiver.
+    //
+    // 2026-08-10 — o campo "KM inicial do BDT" saiu daqui. Iniciar trecho pede
+    // só o hodômetro. O condutor tinha dois campos numéricos pedindo, na
+    // prática, a mesma leitura do mesmo mostrador, e no primeiro trecho os
+    // dois valores coincidem — dava para errar um e não o outro.
+    //
+    // Quando o BDT ainda não tem `km_inicial`, quem preenche é a web.
     final estadoKm = await BdtService.obterEstadoKm(bdtId);
     if (!mounted) return;
-    final bool precisaKmInicial =
-        estadoKm != null && estadoKm.precisaPerguntarKmInicial;
 
     // W18 (ajuste pós-teste): mostra o PREVISTO, não a hora atual.
     //
@@ -1056,19 +1058,10 @@ class _BdtPageState extends State<BdtPage> {
     }
 
     final odoCtrl = TextEditingController(text: _odoSaidaFromTrecho(trecho));
-    final kmInicialCtrl = TextEditingController();
 
     final odoFocus = FocusNode();
-    final kmInicialFocus = FocusNode();
     String? odoError;
-    String? kmInicialError;
     String? formError;
-
-    // Sprint MUX — escape hatch pro caso do condutor realmente não
-    // saber a KM inicial (equivalente ao botão "Pular" do dialog
-    // antigo). Sem esse flag, campo vazio bloqueia o iniciar-trecho
-    // — pra não passar batido silenciosamente.
-    bool pulouKmInicial = false;
 
     // ✅ NOVO: banner de progresso destacado
     bool showProgress = false;
@@ -1194,66 +1187,6 @@ class _BdtPageState extends State<BdtPage> {
                     const SizedBox(height: 12),
                   ],
 
-                  if (precisaKmInicial) ...[
-                    // Sprint MUX (2026-07-22) — campo inline, substitui
-                    // o dialog KM inicial que abria em cima do sheet
-                    // (ANR em Pixel c/ teclado numérico). Obrigatório:
-                    // vazio bloqueia o "Iniciar" pra não passar batido.
-                    // Se o condutor realmente não sabe, "Pular" libera.
-                    TextField(
-                      controller: kmInicialCtrl,
-                      focusNode: kmInicialFocus,
-                      enabled: !isBusyThis && !pulouKmInicial,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
-                      onChanged: (_) {
-                        if (kmInicialError != null || formError != null) {
-                          setLocal(() {
-                            kmInicialError = null;
-                            formError = null;
-                          });
-                        }
-                      },
-                      decoration: InputDecoration(
-                        labelText: pulouKmInicial
-                            ? 'KM inicial do BDT (pulada)'
-                            : 'KM inicial do BDT',
-                        helperText: pulouKmInicial
-                            ? 'Você optou por pular. Preencha depois pela web.'
-                            : 'Hodômetro no início do BDT (primeiro trecho)',
-                        border: const OutlineInputBorder(),
-                        suffixText: 'km',
-                        errorText: kmInicialError,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: isBusyThis
-                            ? null
-                            : () {
-                                setLocal(() {
-                                  pulouKmInicial = !pulouKmInicial;
-                                  kmInicialError = null;
-                                  if (pulouKmInicial) {
-                                    kmInicialCtrl.clear();
-                                  }
-                                });
-                              },
-                        icon: Icon(
-                          pulouKmInicial
-                              ? Icons.check_box
-                              : Icons.check_box_outline_blank,
-                          size: 18,
-                        ),
-                        label: const Text('Pular KM inicial (não sei o valor)'),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
 
                   Row(
                     children: [
@@ -1349,44 +1282,21 @@ class _BdtPageState extends State<BdtPage> {
                                     if (!mounted || !sheetOpen) return;
                                   }
 
-                                  // Sprint MUX — bloqueia iniciar se o BDT
-                                  // precisa da KM inicial, o campo apareceu
-                                  // e ficou vazio (nem digitou nem pulou).
-                                  if (precisaKmInicial &&
-                                      !pulouKmInicial &&
-                                      kmInicialCtrl.text.trim().isEmpty) {
-                                    setLocal(() {
-                                      kmInicialError =
-                                          'Informe a KM inicial ou toque em "Pular".';
-                                    });
-                                    FocusScope.of(ctx)
-                                        .requestFocus(kmInicialFocus);
-                                    return;
-                                  }
-
-                                  // Sprint MUX (2026-07-22) — alerta se o
-                                  // odômetro de saída ficou menor que a KM
-                                  // inicial do BDT. Só alerta, permite
+                                  // Alerta se o hodômetro de saída ficou menor
+                                  // que a KM inicial do BDT. Só alerta, permite
                                   // prosseguir (mesma filosofia do checkup:
-                                  // "quase tudo aqui é informativo"). KM
-                                  // inicial efetiva = valor recém-digitado
-                                  // OU o já persistido (se o campo nem
-                                  // apareceu). Se pulou, não valida.
+                                  // "quase tudo aqui é informativo").
+                                  //
+                                  // A KM inicial vem sempre do que já está
+                                  // gravado — desde 2026-08-10 este sheet não
+                                  // pergunta mais por ela. Se o BDT ainda não
+                                  // tiver, não há o que comparar e a conferência
+                                  // simplesmente não acontece.
                                   final odoValor = double.tryParse(
                                     odoCtrl.text.trim().replaceAll(',', '.'),
                                   );
-                                  double? kmInicialEfetivo;
-                                  if (precisaKmInicial) {
-                                    if (!pulouKmInicial) {
-                                      kmInicialEfetivo = double.tryParse(
-                                        kmInicialCtrl.text
-                                            .trim()
-                                            .replaceAll(',', '.'),
-                                      );
-                                    }
-                                  } else {
-                                    kmInicialEfetivo = estadoKm?.kmInicial;
-                                  }
+                                  final double? kmInicialEfetivo =
+                                      estadoKm?.kmInicial;
                                   if (odoValor != null &&
                                       kmInicialEfetivo != null &&
                                       odoValor < kmInicialEfetivo) {
@@ -1433,26 +1343,6 @@ class _BdtPageState extends State<BdtPage> {
 
                                   if (!mounted || !sheetOpen) return;
 
-                                  // Sprint MUX (2026-07-22) — KM inicial
-                                  // veio do campo inline no próprio sheet
-                                  // (não mais de um dialog aninhado). Só
-                                  // envia se o campo apareceu (bdt sem
-                                  // km_inicial ainda) E o usuário digitou
-                                  // algo. Vazio ⇒ null ⇒ backend não
-                                  // sobrescreve.
-                                  double? kmInicialSend;
-                                  if (precisaKmInicial) {
-                                    final rawKm = kmInicialCtrl.text.trim();
-                                    if (rawKm.isNotEmpty) {
-                                      final parsed = double.tryParse(
-                                        rawKm.replaceAll(',', '.'),
-                                      );
-                                      if (parsed != null && parsed > 0) {
-                                        kmInicialSend = parsed;
-                                      }
-                                    }
-                                  }
-
                                   // ✅ NOVO: mostra banner de progresso IMEDIATAMENTE
                                   setLocal(() {
                                     showProgress = true;
@@ -1468,7 +1358,10 @@ class _BdtPageState extends State<BdtPage> {
                                           ? agendaId
                                           : null,
                                       trechoId: trechoId,
-                                      kmInicial: kmInicialSend,
+                                      // `null` de propósito: iniciar trecho não
+                                      // grava mais KM inicial. O backend só
+                                      // sobrescreve quando recebe valor.
+                                      kmInicial: null,
                                     );
 
                                     if (!mounted || !sheetOpen) return;
@@ -1636,9 +1529,7 @@ class _BdtPageState extends State<BdtPage> {
     await Future.delayed(const Duration(milliseconds: 350));
     horaCtrl.dispose();
     odoCtrl.dispose();
-    kmInicialCtrl.dispose();
     odoFocus.dispose();
-    kmInicialFocus.dispose();
   }
 
   Future<void> _openFinalizarTrechoSheet({
