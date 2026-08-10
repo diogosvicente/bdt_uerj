@@ -22,10 +22,25 @@ class SignaturePad extends StatefulWidget {
   final double height;
   final Future<void> Function(String svg)? onConfirmed;
 
+  /// Mensagem de erro sob o painel — mesmo papel do `errorText` de um
+  /// `TextField`, para a assinatura seguir o padrão de required inline dos
+  /// outros forms do BDT.
+  final String? errorText;
+
+  /// Chamado quando o usuário confirma com o painel VAZIO.
+  ///
+  /// Antes de 2026-08-10 esse caso caía num `return` mudo: a pessoa tocava
+  /// "Confirmar assinatura" e não acontecia nada — nem envio, nem aviso. O
+  /// campo de nome ao lado já apontava o erro inline; a assinatura, que é o
+  /// objeto da tela, era a única coisa que falhava em silêncio.
+  final VoidCallback? onEmptyConfirm;
+
   const SignaturePad({
     super.key,
     this.height = 220,
     this.onConfirmed,
+    this.errorText,
+    this.onEmptyConfirm,
   });
 
   @override
@@ -63,9 +78,25 @@ class SignaturePadState extends State<SignaturePad> {
   void clear() => _ctrl.clear();
 
   Future<void> _handleConfirm() async {
-    if (widget.onConfirmed == null || _ctrl.isEmpty || _enviando) return;
+    if (widget.onConfirmed == null || _enviando) return;
+
+    // Painel vazio agora AVISA em vez de retornar calado.
+    if (_ctrl.isEmpty) {
+      widget.onEmptyConfirm?.call();
+
+      return;
+    }
+
     final svg = _ctrl.toRawSVG();
-    if (svg == null) return;
+
+    // `toRawSVG()` devolver null com o painel não-vazio não deveria acontecer,
+    // mas se acontecer o usuário precisa saber — antes isso também era um
+    // `return` mudo.
+    if (svg == null) {
+      widget.onEmptyConfirm?.call();
+
+      return;
+    }
     setState(() => _enviando = true);
     try {
       await widget.onConfirmed!(svg);
@@ -83,7 +114,14 @@ class SignaturePadState extends State<SignaturePad> {
           height: widget.height,
           decoration: BoxDecoration(
             color: Colors.white,
-            border: Border.all(color: Colors.black26),
+            // Borda vermelha quando há erro, como o `OutlineInputBorder` de um
+            // `TextField` em estado de erro faz.
+            border: Border.all(
+              color: widget.errorText != null
+                  ? Theme.of(context).colorScheme.error
+                  : Colors.black26,
+              width: widget.errorText != null ? 2 : 1,
+            ),
             borderRadius: BorderRadius.circular(12),
           ),
           clipBehavior: Clip.antiAlias,
@@ -92,6 +130,22 @@ class SignaturePadState extends State<SignaturePad> {
             backgroundColor: Colors.white,
           ),
         ),
+
+        // Mesma posição, cor e tamanho do `errorText` de um `TextField`.
+        if (widget.errorText != null) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Text(
+              widget.errorText!,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+
         const SizedBox(height: 8),
         Row(
           children: [

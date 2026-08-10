@@ -54,6 +54,13 @@ class _AssinaturaMarcoPageState extends State<AssinaturaMarcoPage> {
   /// Erro específico do campo Nome (required inline).
   String? _nomeError;
 
+  /// Erro do painel de assinatura (required inline).
+  ///
+  /// A assinatura é o objeto desta tela e era a única coisa que falhava em
+  /// silêncio: confirmar com o painel vazio caía num `return` mudo dentro do
+  /// `SignaturePad`, sem envio e sem aviso.
+  String? _assinaturaError;
+
   bool _busy = false;
 
   /// Nome do condutor logado, lido da sessão.
@@ -130,6 +137,7 @@ class _AssinaturaMarcoPageState extends State<AssinaturaMarcoPage> {
     setState(() {
       _formError = null;
       _nomeError = null;
+      _assinaturaError = null;
     });
 
     final nome = _nomeCtrl.text.trim();
@@ -315,6 +323,19 @@ class _AssinaturaMarcoPageState extends State<AssinaturaMarcoPage> {
                   SignaturePad(
                     key: _signatureKey,
                     height: 240,
+                    errorText: _assinaturaError,
+                    onEmptyConfirm: () {
+                      // Valida o nome JUNTO: com os dois campos vazios, mostrar
+                      // um erro de cada vez faria a pessoa preencher, tocar de
+                      // novo e só então descobrir o segundo.
+                      setState(() {
+                        _assinaturaError =
+                            'Assine no espaço acima antes de confirmar.';
+                        _nomeError = _nomeCtrl.text.trim().isEmpty
+                            ? 'Informe o nome do signatário.'
+                            : null;
+                      });
+                    },
                     onConfirmed: (svg) => _enviar(svg, args),
                   ),
                 ],
