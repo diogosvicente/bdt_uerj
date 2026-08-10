@@ -87,7 +87,7 @@ class _BdtPageState extends State<BdtPage> {
               ListTile(
                 leading: const Icon(Icons.playlist_add_check),
                 title: const Text("Validar início"),
-                subtitle: const Text("Marcos + presença de passageiros"),
+                subtitle: const Text("Registros + presença de passageiros"),
                 onTap: () {
                   Navigator.pop(ctx);
                   Navigator.pushNamed(context, "/validacao/inicio", arguments: bdtId);
