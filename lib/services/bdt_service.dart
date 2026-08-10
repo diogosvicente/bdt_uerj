@@ -377,14 +377,25 @@ class BdtService {
   // Marcos válidos no backend: partida | apresentacao | embarque_passageiro
   // ==========================================================
 
-  /// Marcos válidos aceitos pelo backend (BdtJornadaService::ORDEM).
-  /// Ordem cronológica — o backend recusa registro fora de ordem.
+  /// Marcos válidos aceitos pelo backend (BdtJornadaService::MARCOS).
+  ///
+  /// Os quatro primeiros têm ordem cronológica obrigatória — o backend recusa
+  /// registro fora de sequência. O `fim` fica FORA dessa corrente de
+  /// propósito: a reunião pediu que o encerramento pudesse ser registrado sem
+  /// depender dos anteriores.
+  ///
+  /// A tela de validação (2026-08-10) mostra só `partida` e `fim`, este último
+  /// rotulado "Retorno". Os outros três continuam aqui porque BDT antigo pode
+  /// tê-los, e o estado da jornada devolvido pelo backend segue trazendo os
+  /// cinco.
   static const List<String> marcosValidos = <String>[
     "partida",
     "apresentacao",
     "embarque_passageiro",
     // Sprint 5 W+M — 4º marco: saída efetiva do veículo (após embarque).
     "hora_saida",
+    // W18 — encerramento da jornada. Sem ordem obrigatória.
+    "fim",
   ];
 
   /// Registra um marco da jornada. O backend grava origem="mobile"

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../services/bdt_service.dart';
 import '../utils/logger.dart';
 import '../widgets/app_scaffold.dart';
@@ -54,6 +55,65 @@ class _AssinaturaMarcoPageState extends State<AssinaturaMarcoPage> {
   String? _nomeError;
 
   bool _busy = false;
+
+  /// Nome do condutor logado, lido da sessão.
+  ///
+  /// Quem assina é o condutor na esmagadora maioria das vezes, e ele estava
+  /// digitando o próprio nome inteiro a cada marco — no celular, muitas vezes
+  /// em pé ao lado do veículo. O nome já está na sessão desde o login.
+  String _nomeLogado = '';
+
+  /// `true` quando quem assina NÃO é o condutor logado.
+  ///
+  /// Enquanto for `false` o campo fica travado com o nome da sessão, o que
+  /// também evita erro de digitação no próprio nome — a assinatura é registro
+  /// de quem esteve lá.
+  bool _outroSignatario = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarNomeLogado();
+  }
+
+  Future<void> _carregarNomeLogado() async {
+    final nome = await AuthService.getNomeLogado();
+
+    if (!mounted) return;
+
+    setState(() {
+      _nomeLogado = nome;
+
+      // Só preenche se o usuário ainda não digitou nada: `initState` dispara
+      // uma vez, mas a leitura é assíncrona e não pode atropelar quem foi
+      // mais rápido que o disco.
+      if (!_outroSignatario && _nomeCtrl.text.trim().isEmpty) {
+        _nomeCtrl.text = nome;
+      }
+    });
+  }
+
+  /// Alterna entre "sou eu" e "é outra pessoa".
+  void _alternarSignatario(bool outro) {
+    setState(() {
+      _outroSignatario = outro;
+      _nomeError = null;
+
+      if (outro) {
+        // Limpa para a pessoa digitar, em vez de deixar o nome do condutor
+        // como rascunho a ser apagado.
+        _nomeCtrl.clear();
+        _tipo = 'passageiro';
+      } else {
+        _nomeCtrl.text = _nomeLogado;
+        _tipo = 'condutor';
+      }
+    });
+
+    if (outro) {
+      FocusScope.of(context).requestFocus(_nomeFocus);
+    }
+  }
 
   @override
   void dispose() {
@@ -154,11 +214,38 @@ class _AssinaturaMarcoPageState extends State<AssinaturaMarcoPage> {
                     'Signatário',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
+
+                  // Quem assina é o condutor quase sempre. O checkbox é a
+                  // exceção, não o caminho comum — por isso vem marcado como
+                  // "sou eu" e o campo nasce preenchido e travado.
+                  CheckboxListTile(
+                    value: _outroSignatario,
+                    onChanged: _busy ? null : (v) => _alternarSignatario(v ?? false),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('Outra pessoa vai assinar'),
+                    subtitle: _outroSignatario
+                        ? null
+                        : Text(
+                            _nomeLogado.isEmpty ? 'Carregando…' : _nomeLogado,
+                            style: const TextStyle(fontSize: 12, color: Colors.black54),
+                          ),
+                  ),
+
+                  const SizedBox(height: 8),
                   TextField(
                     controller: _nomeCtrl,
                     focusNode: _nomeFocus,
-                    enabled: !_busy,
+                    // Travado no nome da sessão enquanto for o condutor: a
+                    // assinatura é registro de quem esteve lá, não campo livre.
+                    //
+                    // O `_nomeLogado.isEmpty` destrava o campo quando a sessão
+                    // não trouxe o nome — o backend pode não ter devolvido
+                    // `usuario.nome` no login. Sem esta condição o campo ficaria
+                    // vazio E desabilitado, e ninguém conseguiria assinar.
+                    enabled: !_busy && (_outroSignatario || _nomeLogado.isEmpty),
                     textCapitalization: TextCapitalization.words,
                     onChanged: (_) {
                       if (_nomeError != null) {
@@ -169,6 +256,11 @@ class _AssinaturaMarcoPageState extends State<AssinaturaMarcoPage> {
                       labelText: 'Nome completo *',
                       border: const OutlineInputBorder(),
                       errorText: _nomeError,
+                      helperText: _outroSignatario
+                          ? null
+                          : (_nomeLogado.isEmpty
+                              ? 'Não foi possível ler seu nome da sessão — digite'
+                              : 'Você, pelo cadastro'),
                     ),
                   ),
                   const SizedBox(height: 12),

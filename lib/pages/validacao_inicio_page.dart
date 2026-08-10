@@ -13,9 +13,12 @@ import 'assinatura_marco_page.dart';
 /// Reúne o fluxo do condutor no momento em que ele encontra os
 /// passageiros:
 ///
-/// 1. **Marcos da jornada** (partida → apresentacao → embarque_passageiro).
-///    Cada marco abre a `AssinaturaMarcoPage` com painel de assinatura
-///    touch. Depois de registrado, mostra data/hora + autor.
+/// 1. **Registros** — Partida e Retorno. Cada um abre a
+///    `AssinaturaMarcoPage` com painel de assinatura touch. Depois de
+///    registrado, mostra data/hora + autor.
+///
+///    Eram cinco até 2026-08-10 ("Marcos da jornada"). Ficaram dois, os
+///    mesmos que a folha impressa passou a mostrar no W18.
 ///
 /// 2. **Lista de passageiros previstos** com switch de "presente" para
 ///    cada. Um botão "Salvar presenças" faz bulk update.
@@ -127,7 +130,7 @@ class _ValidacaoInicioPageState extends State<ValidacaoInicioPage> {
   Widget build(BuildContext context) {
     return AppScaffold(
       title: 'Validar início',
-      subtitle: 'Marcos + passageiros',
+      subtitle: 'Registros + passageiros',
       onRefresh: _load,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -143,13 +146,22 @@ class _ValidacaoInicioPageState extends State<ValidacaoInicioPage> {
   }
 
   Widget _cardMarcos() {
-    // Ordem cronológica alinhada com BdtJornadaService::ORDEM do backend.
-    // Sprint 5 W+M: 4º marco `hora_saida` (saída efetiva após embarque).
+    // Só dois registros, alinhados com o que a folha impressa passou a mostrar
+    // no W18: Partida e Retorno.
+    //
+    // `apresentacao`, `embarque_passageiro` e `hora_saida` saíram da tela por
+    // decisão de 2026-08-10. Eles continuam existindo no backend — BDT antigo
+    // que já os tem segue exibindo no PDF —, mas deixam de ser coletados daqui
+    // pra frente. Consequência aceita na decisão: em BDT novo, o campo
+    // "Apresentar-se às __h__min" e a tabela de marcos do complemento ficam
+    // vazios.
+    //
+    // "Retorno" é o marco `fim` do backend (BdtJornadaService::MARCO_FIM,
+    // rotulado lá como "Fim da jornada"). Não existe marco `retorno`: na web o
+    // Retorno impresso é derivado do último trecho, não assinado.
     const rows = [
-      ('partida',             'Partida'),
-      ('apresentacao',        'Apresentação'),
-      ('embarque_passageiro', 'Embarque do passageiro'),
-      ('hora_saida',          'Hora de saída'),
+      ('partida', 'Partida'),
+      ('fim',     'Retorno'),
     ];
     final marcos = (_estadoMarcos?['marcos'] as Map?) ?? const {};
 
@@ -161,7 +173,7 @@ class _ValidacaoInicioPageState extends State<ValidacaoInicioPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Marcos da jornada',
+            const Text('Registros',
                 style: TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             for (final r in rows) _rowMarco(r.$1, r.$2, marcos[r.$1]),
