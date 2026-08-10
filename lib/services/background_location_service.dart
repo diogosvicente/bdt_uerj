@@ -38,6 +38,24 @@ import 'token_storage.dart';
 ///   - app em background;
 ///   - app recolhido na home;
 ///   - **sem conexão de dados** (novo em M2).
+///
+/// ## O `@pragma` na CLASSE não é redundante
+///
+/// `_onServiceStart` e `_iosOnBackground` já são anotados, mas anotar só o
+/// método não basta: em AOT o tree-shaking descarta os metadados da classe, e
+/// o lado nativo não tem por onde alcançar o método estático. O log dizia:
+///
+/// ```
+/// E DartVM: To access '...::BackgroundLocationService' from native code,
+///           it must be annotated.
+/// ```
+///
+/// Repare que a mensagem nomeia a CLASSE, não o método.
+///
+/// O efeito só existe em release e profile — em debug a VM mantém tudo, então
+/// o rastreamento funciona no emulador e falha no APK que vai para o condutor.
+/// Achado em 2026-08-10, no logcat, enquanto se investigava outra coisa.
+@pragma('vm:entry-point')
 class BackgroundLocationService {
   static const String _notifChannelId = 'bdt_uerj_gps_channel';
   static const String _notifChannelName = 'BDT UERJ — GPS';
