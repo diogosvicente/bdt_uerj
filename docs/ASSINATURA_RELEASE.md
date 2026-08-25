@@ -117,6 +117,25 @@ Android. Se existir, o time decide entre reaproveitar ou criar um só para o
 BDT (o Google recomenda uma chave por app). Se não existir, este é o primeiro,
 e o cuidado de guarda descrito abaixo passa a valer para a UERJ inteira.
 
+## A impressao digital da chave
+
+Gerada em 25/08/2026. Guardada aqui porque e' publica (esta' dentro de todo APK
+assinado) e porque e' o que permite descobrir, depois, que um build saiu com a
+chave errada:
+
+```
+DN     : CN=UERJ, OU=DGTI, O=Universidade do Estado do Rio de Janeiro,
+         L=Rio de Janeiro, ST=RJ, C=BR
+SHA-256: 0f:ba:d9:bd:a5:47:74:fe:84:10:66:24:b6:c1:71:b2:
+         4d:10:92:5e:0e:7c:f6:08:9a:bb:f3:5e:bf:32:01:95
+```
+
+Se um APK futuro mostrar outra coisa, ele nao e' atualizacao deste: os
+aparelhos vao recusar instalar por cima.
+
+Para referencia, a chave de debug que assinava antes tinha
+`CN=Android Debug, O=Android, C=US` e SHA-256 comecando em `886b9c63`.
+
 ## O aviso que importa
 
 Perder o `.jks` ou a senha impede publicar atualização do app **para sempre**.
