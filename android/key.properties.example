@@ -1,0 +1,21 @@
+# Modelo do android/key.properties. COPIE para `key.properties` e preencha.
+#
+# O arquivo real NAO vai para o repositorio: ele carrega as senhas do
+# keystore. O .gitignore do Flutter ja barra `key.properties`, `*.jks` e
+# `*.keystore`; confira antes de commitar.
+#
+# O passo a passo esta em docs/ASSINATURA_RELEASE.md. Em uma linha:
+#   keytool -genkeypair -v -keystore <caminho>/bdt-uerj-release.jks \
+#           -keyalg RSA -keysize 2048 -validity 10000 -alias bdt-uerj
+#
+# Perder este arquivo, ou o .jks, impede publicar atualizacao do app: o
+# Android so aceita atualizacao assinada com a MESMA chave. Guarde os dois
+# fora da maquina, em lugar de onde a equipe consiga recuperar.
+
+storePassword=SENHA_DO_KEYSTORE
+keyPassword=SENHA_DA_CHAVE
+keyAlias=bdt-uerj
+
+# Caminho do .jks. Absoluto e o mais seguro; relativo resolve a partir de
+# android/app/, que nao e onde a maioria espera.
+storeFile=C:/caminho/para/bdt-uerj-release.jks

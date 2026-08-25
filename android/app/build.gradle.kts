@@ -1,3 +1,31 @@
+import java.io.FileInputStream
+import java.util.Properties
+
+/*
+ * A chave de assinatura do release, lida de android/key.properties.
+ *
+ * O arquivo NAO esta no repositorio, e nao pode estar: ele carrega as senhas
+ * do keystore. O .gitignore do Flutter ja barra key.properties, *.jks e
+ * *.keystore. Ver android/key.properties.example para o formato.
+ *
+ * Sem o arquivo, o build NAO quebra: cai para a chave de debug, para que
+ * `flutter run --release` continue funcionando em maquina que nao tem a
+ * chave. O aviso abaixo existe porque essa queda e silenciosa por natureza, e
+ * um APK de debug distribuido parece igual a um assinado de verdade.
+ */
+val arquivoChave = rootProject.file("key.properties")
+val temChave = arquivoChave.exists()
+val propsChave = Properties()
+
+if (temChave) {
+    FileInputStream(arquivoChave).use { propsChave.load(it) }
+} else {
+    logger.warn(
+        "AVISO: android/key.properties nao encontrado. O release sera assinado " +
+        "com a CHAVE DE DEBUG, que e publica. Nao distribua este APK."
+    )
+}
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -34,11 +62,27 @@ android {
         multiDexEnabled = true
     }
 
+    signingConfigs {
+        // So existe quando ha key.properties. Criar sempre exigiria valores
+        // que nao temos, e o build quebraria em quem nao tem a chave.
+        if (temChave) {
+            create("release") {
+                keyAlias = propsChave.getProperty("keyAlias")
+                keyPassword = propsChave.getProperty("keyPassword")
+                storeFile = propsChave.getProperty("storeFile")?.let { file(it) }
+                storePassword = propsChave.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (temChave) {
+                signingConfigs.getByName("release")
+            } else {
+                // Ver a nota no topo do arquivo: queda consciente, com aviso.
+                signingConfigs.getByName("debug")
+            }
         }
     }
 
