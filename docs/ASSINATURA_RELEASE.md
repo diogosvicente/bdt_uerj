@@ -23,14 +23,20 @@ de rodar o comando. O `keytool` vem com o JDK.
 
 ```
 keytool -genkeypair -v \
-  -keystore C:/caminho/seguro/bdt-uerj-release.jks \
-  -storetype JKS \
+  -keystore C:/Users/<voce>/dev/keystores/bdt-uerj-release.jks \
+  -storetype PKCS12 \
   -keyalg RSA -keysize 2048 -validity 10000 \
-  -alias bdt-uerj
+  -alias bdt-uerj \
+  -dname "CN=UERJ, OU=DGTI, O=Universidade do Estado do Rio de Janeiro, L=Rio de Janeiro, ST=RJ, C=BR"
 ```
 
-Ele pergunta a senha e alguns dados de identificação (nome, unidade,
-localidade). Esses dados aparecem no certificado; use os da UERJ.
+Ele vai pedir só a senha, duas vezes. Os dados de identificação vão no `-dname`
+para não virarem seis perguntas em sequência; ajuste se a unidade for outra.
+
+**PKCS12 e não JKS.** O JKS é formato proprietário e o próprio keytool avisa
+para migrar. O PKCS12 também simplifica: nele a senha da chave é a mesma do
+keystore, então é **uma senha só** para guardar, e as duas linhas de senha do
+`key.properties` recebem o mesmo valor.
 
 O `-validity 10000` são cerca de 27 anos. Não é exagero: uma chave que expira
 impede publicar atualização, e trocar de chave depois é pior do que parece

@@ -12,8 +12,10 @@
 # Android so aceita atualizacao assinada com a MESMA chave. Guarde os dois
 # fora da maquina, em lugar de onde a equipe consiga recuperar.
 
+# Com keystore PKCS12, as duas senhas sao a MESMA: o formato nao guarda uma
+# senha separada por chave. Repita o mesmo valor nas duas linhas.
 storePassword=SENHA_DO_KEYSTORE
-keyPassword=SENHA_DA_CHAVE
+keyPassword=SENHA_DO_KEYSTORE
 keyAlias=bdt-uerj
 
 # Caminho do .jks. Absoluto e o mais seguro; relativo resolve a partir de
