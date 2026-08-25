@@ -71,14 +71,45 @@ CHAVE DE DEBUG, que e publica. Nao distribua este APK.
 A queda existe para `flutter run --release` continuar funcionando em máquina
 sem a chave. Se esse aviso aparecer num build de distribuição, o APK não serve.
 
-Para confirmar pelo próprio arquivo:
+Para confirmar pelo próprio arquivo, use o **apksigner**, e não o
+`keytool`. O `keytool -printcert -jarfile` só lê assinatura v1 (JAR), e o
+Flutter assina em v2: nesse arquivo ele responde "não é um arquivo jar
+assinado", que parece defeito e não é.
 
 ```
-keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk
+%SDK%/build-tools/<versao>/apksigner verify -v --print-certs   build/app/outputs/flutter-apk/app-release.apk
 ```
 
-O `Owner`/`Issuer` deve mostrar os dados que você digitou, e não
-`CN=Android Debug, O=Android, C=US`.
+O caminho do SDK está em `android/local.properties`, na linha `sdk.dir`.
+
+Procure a linha `certificate DN`. Hoje, sem a chave, ela sai assim:
+
+```
+Verified using v2 scheme (APK Signature Scheme v2): true
+V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug
+```
+
+Depois da chave, tem que mostrar os dados que você digitou no `keytool`.
+
+## Não é certificado de autoridade certificadora
+
+A assinatura de app Android é **autoassinada**. O `keytool` cria a chave e o
+certificado ali mesmo, e os dados de identificação que ele pergunta são texto
+que você digita: não vêm de ninguém, não são conferidos por ninguém.
+
+Certificado da ICP-Brasil, e-CNPJ, ou o certificado TLS do domínio da UERJ são
+outra coisa e não servem aqui. O Android não valida cadeia de autoridade em
+assinatura de app: ele guarda o certificado da primeira instalação e exige que
+a atualização traga exatamente o mesmo.
+
+E usar um certificado de autoridade seria pior do que inútil: eles **expiram**
+em um a três anos, e chave expirada impede publicar atualização. É por isso que
+o comando acima usa `-validity 10000`.
+
+Vale perguntar ao DGTI se já existe um keystore institucional de aplicativos
+Android. Se existir, o time decide entre reaproveitar ou criar um só para o
+BDT (o Google recomenda uma chave por app). Se não existir, este é o primeiro,
+e o cuidado de guarda descrito abaixo passa a valer para a UERJ inteira.
 
 ## O aviso que importa
 
