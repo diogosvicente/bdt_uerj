@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show TlsException;
 
 import 'package:http/http.dart' as http;
 
@@ -91,6 +92,19 @@ class ApiClient {
   /// era produção".
   static bool get usandoBaseCustomizada => _overrideBase.isNotEmpty;
 
+  /// Mensagem de quando o handshake TLS recusa o certificado do servidor
+  /// (status `TLS_ERROR`).
+  ///
+  /// Até a 1.0.0 essa falha caía no "Falha de rede/HTTP." genérico, que
+  /// parece falta de internet. Foi assim que o app parou de conectar, para
+  /// todo mundo, quando o servidor trocou de autoridade certificadora em
+  /// 30/10/2026 (ver `SslBootstrap`). No aparelho, as causas são duas: data e
+  /// hora erradas (o certificado parece vencido ou ainda não válido) ou um
+  /// app que não conhece a autoridade que assina o certificado do servidor.
+  static const String mensagemFalhaTls =
+      'Não foi possível conectar com segurança ao servidor. Confira a data e '
+      'a hora do celular. Se estiverem certas, atualize o aplicativo.';
+
   /// Helper: junta base + endpoint com segurança (evita // e / sobrando).
   static Uri _buildUri(String endpoint) {
     final cleanBase = baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -140,6 +154,15 @@ class ApiClient {
         "success": false,
         "status": "TIMEOUT",
         "message": "Timeout na requisição.",
+      };
+    } on TlsException catch (e) {
+      // Certificado recusado no handshake: nada da requisição saiu do
+      // aparelho. Não é falta de rede (ver [mensagemFalhaTls]).
+      _log.debug("🔒 TLS recusado em $endpoint: $e");
+      return {
+        "success": false,
+        "status": "TLS_ERROR",
+        "message": mensagemFalhaTls,
       };
     } catch (e, st) {
       // A7-mobile — a mensagem de exceção pode ecoar trecho do corpo, e o
@@ -290,6 +313,13 @@ class ApiClient {
         "success": false,
         "status": "TIMEOUT",
         "message": "Timeout no upload da foto.",
+      };
+    } on TlsException catch (e) {
+      _log.debug("🔒 TLS recusado no upload $endpoint: $e");
+      return {
+        "success": false,
+        "status": "TLS_ERROR",
+        "message": mensagemFalhaTls,
       };
     } catch (e, st) {
       _log.debug("❌ Exceção HTTP multipart em $endpoint: $e\n$st");

@@ -500,6 +500,11 @@ reais em campo.
   - Escape hatch `--dart-define=SSL_PINNING=off` cobre o cenário
     remanescente (RNP migrar de CA sem aviso).
   - Verificado com openssl: produção OK, CA de fora recusada.
+  - **04/11/2026, o servidor trocou de autoridade:** o último certificado
+    da RNP venceu em 30/10/2026 e o servidor passou à Let's Encrypt. A
+    1.0.0 parou de conectar para todo mundo; a 1.0.1 acrescenta as raízes
+    da Let's Encrypt ao pin. Detalhes no registro completo da MSEC.5,
+    abaixo.
 
 - ✅ **MSEC.8 — "Esqueci minha senha" no app** (2026-07-28) — o condutor
   não tinha como recuperar acesso pelo celular; dependia de alguém
@@ -1965,6 +1970,25 @@ Os 13 itens Web+Mobile precisam de implementação parcial no app. O esforço j�
     Intermediária da RNP vale até **19/11/2030**, raiz GlobalSign R46 até
     2046 — sem risco de expiração próxima. Procedimento de atualização do
     pin documentado no cabeçalho de `ssl_bootstrap.dart`.
+  - **04/11/2026, o servidor trocou de autoridade, e o app parou de
+    conectar.** O risco não era a intermediária vencer, e sim o servidor
+    deixar a RNP: o último certificado dela venceu em 30/10/2026, e o
+    servidor passou a usar um da Let's Encrypt (emitido em 21/09/2026),
+    sem aviso. A 1.0.0 recusava toda conexão no handshake, e o login
+    mostrava "Falha de rede/HTTP.", como se faltasse internet.
+    - A 1.0.1 soma `assets/certs/lets_encrypt_isrg.pem` à cadeia da RNP:
+      ISRG Root X1 (fecha a cadeia de hoje), ISRG Root X2 (para
+      certificado com chave ECDSA) e a Root YR assinada pela X1 (para o
+      servidor que mandar só a intermediária). Só raízes, porque a
+      Let's Encrypt renova a cada ~60 dias e troca de intermediária.
+    - Certificado recusado ganhou mensagem própria
+      (`ApiClient.mensagemFalhaTls`, status `TLS_ERROR`): pede para
+      conferir a data e a hora do celular e, se estiverem certas, atualizar
+      o app.
+    - Verificado pelo handshake no Dart do próprio Flutter, sem enviar
+      requisição: a cadeia antiga recusa (`CERTIFICATE_VERIFY_FAILED`), a
+      nova conecta. Testes em `test/ssl_pinning_test.dart` e
+      `test/api_client_tls_test.dart`.
 
 - ✅ **PreBdtFormPage — erros inline (veículo + trechos)** (2026-07-26)
   — os SnackBars "Escolha um veículo." e "Trecho N: preencha origem e

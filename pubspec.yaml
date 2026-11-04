@@ -113,9 +113,12 @@ flutter:
   #   - images/a_dot_ham.jpeg
   - assets/images/logomarca-uerj.png
   - assets/images/LOGO_PREFEITURA.png
-  # CA da RNP ICPEdu (assinante do cert do e-prefeitura.uerj.br)
-  # + GlobalSign Root R46 como fallback para Androids antigos
+  # Cadeias aceitas pelo pin do TLS (SslBootstrap), uma por autoridade:
+  # a RNP ICPEdu + GlobalSign Root R46 (assinava o certificado do
+  # e-prefeitura.uerj.br até 30/10/2026) e as raízes da Let's Encrypt
+  # (assina desde então).
   - assets/certs/rnp_icpedu_chain.pem
+  - assets/certs/lets_encrypt_isrg.pem
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

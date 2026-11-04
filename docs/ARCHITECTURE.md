@@ -91,7 +91,7 @@ vez de mudar o filtro de `bdt/pre-bdt/listar` que a web já usa.
 lib/
 ├── api/                       Cliente HTTP e bootstrap de SSL
 │   ├── api_client.dart        Wrapper de `http.post` + baseUrl por ambiente
-│   └── ssl_bootstrap.dart     Instala a CA da RNP ICPEdu (obrigatório antes de qualquer HTTPS)
+│   └── ssl_bootstrap.dart     Pin do TLS: RNP e Let's Encrypt (obrigatório antes de qualquer HTTPS)
 │
 ├── models/                    DTOs tipados — a linguagem dos objetos de domínio
 │   └── bdt_resumo.dart
@@ -766,6 +766,8 @@ Fora do escopo atual (app é Android-first). Se um dia compilar iOS, adicionar `
 ### Estado atual
 - `test/widget_test.dart` — smoke default: confirma que o app monta sem crash.
 - `test/pii_sanitizer_test.dart` — 10 casos cobrindo `PiiSanitizer` (sprint 028, A7-mobile). Os payloads são os **reais**, copiados do logcat no teste que revelou o vazamento; se alguém reabrir o buraco, quebra aqui.
+- `test/ssl_pinning_test.dart`: o pin carrega a RNP e a Let's Encrypt (confere o subject de cada certificado). Nasceu do incidente de 30/10/2026 (ver "SSL" no §9).
+- `test/api_client_tls_test.dart`: certificado recusado no handshake dá a mensagem própria (`TLS_ERROR`), e não o "Falha de rede/HTTP." da falta de rede. Usa o `SslBootstrap.setClientForTesting` com um `MockClient`.
 - Cobertura ainda é **baixa** de propósito nesta fase (MVP em iteração rápida).
 
 ### Onde vale investir teste unitário
@@ -813,9 +815,11 @@ adb devices                            # lista devices disponíveis
 adb reverse tcp:8080 tcp:80            # tunneling USB para testar contra Docker local
 ```
 
-### SSL — CA da RNP
+### SSL: o pin do TLS (RNP e Let's Encrypt)
 
-O app confia em `https://www.e-prefeitura.uerj.br` via CA custom (RNP ICPEdu). O certificado está em `assets/certs/rnp_icpedu_chain.pem` e é injetado no `SecurityContext.defaultContext` pelo `SslBootstrap.install()` no `main()`.
+O app só confia, para `https://www.e-prefeitura.uerj.br`, nas cadeias de `assets/certs/` (MSEC.5): `rnp_icpedu_chain.pem` (RNP ICPEdu e GlobalSign Root R46) e `lets_encrypt_isrg.pem` (ISRG Root X1, ISRG Root X2 e a Root YR assinada pela X1). O `SslBootstrap.install()` no `main()` carrega as duas; o `SslBootstrap.client` usa só elas, e elas também entram no `SecurityContext.defaultContext`, para os plugins.
+
+Em 30/10/2026 venceu o último certificado da RNP e o servidor passou à Let's Encrypt, sem aviso. A 1.0.0, que só confiava na RNP, recusava toda conexão no handshake, e o login mostrava "Falha de rede/HTTP.". A 1.0.1 acrescentou a Let's Encrypt e a mensagem própria para certificado recusado (`ApiClient.mensagemFalhaTls`). Para trocar de autoridade de novo, ou conferir um arquivo contra o servidor com o `openssl`, ver o cabeçalho de `lib/api/ssl_bootstrap.dart`: a versão nova do app tem de sair **antes** da troca no servidor.
 
 **Importante:** cada isolate Dart tem seu próprio `SecurityContext.defaultContext`. Se você criar isolate novo (background service, etc.), **chame `SslBootstrap.install()` também lá**. Já feito em `BackgroundLocationService._onServiceStart`.
 
