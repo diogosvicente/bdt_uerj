@@ -49,6 +49,14 @@ class CaptchaFieldState extends State<CaptchaField> {
   /// Token atual do desafio, ou null se o captcha está desligado / não carregou.
   String? get token => _challenge?.token;
 
+  /// True quando há imagem na tela, e o texto dela tem de ir no envio.
+  ///
+  /// False com o captcha desligado pelo backend, ainda carregando ou com a
+  /// imagem que não veio. Nesses casos a tela envia sem captcha e o backend
+  /// decide: se ele exigir, a resposta CAPTCHA_ERROR faz a tela pedir a
+  /// imagem de novo e avisar.
+  bool get temDesafio => _challenge?.isPresent == true;
+
   /// True se o backend disse que o captcha está desligado — nesse caso a UI
   /// não precisa mostrar nada e o LoginPage pode pular a validação.
   bool get isDisabledByServer =>
@@ -106,6 +114,9 @@ class CaptchaFieldState extends State<CaptchaField> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        // Sem o desafio antigo: o token dele já foi gasto ou venceu, e a
+        // tela não pode mandá-lo de novo como se a imagem estivesse aqui.
+        _challenge = null;
         _error = e;
         _loading = false;
       });
@@ -229,7 +240,9 @@ class CaptchaFieldState extends State<CaptchaField> {
     } else if (_error != null) {
       content = const Center(
         child: Text(
-          'Erro ao carregar captcha — toque no 🔄',
+          'Não foi possível carregar a imagem. Toque no botão ao lado para '
+          'tentar de novo.',
+          textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12, color: Colors.red),
         ),
       );

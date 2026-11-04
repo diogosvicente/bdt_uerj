@@ -768,6 +768,7 @@ Fora do escopo atual (app é Android-first). Se um dia compilar iOS, adicionar `
 - `test/pii_sanitizer_test.dart` — 10 casos cobrindo `PiiSanitizer` (sprint 028, A7-mobile). Os payloads são os **reais**, copiados do logcat no teste que revelou o vazamento; se alguém reabrir o buraco, quebra aqui.
 - `test/ssl_pinning_test.dart`: o pin carrega a RNP e a Let's Encrypt (confere o subject de cada certificado). Nasceu do incidente de 30/10/2026 (ver "SSL" no §9).
 - `test/api_client_tls_test.dart`: certificado recusado no handshake dá a mensagem própria (`TLS_ERROR`), e não o "Falha de rede/HTTP." da falta de rede. Usa o `SslBootstrap.setClientForTesting` com um `MockClient`.
+- `test/captcha_que_nao_carrega_test.dart`: a imagem do captcha que não carrega aparece como falha, com o botão de tentar de novo, e a recusa do backend por falta de captcha aparece na tela (login e "Esqueci minha senha"). O backend é um `MockClient`, pelo mesmo gancho.
 - Cobertura ainda é **baixa** de propósito nesta fase (MVP em iteração rápida).
 
 ### Onde vale investir teste unitário

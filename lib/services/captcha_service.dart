@@ -25,22 +25,39 @@ class CaptchaChallenge {
   bool get isPresent => enabled && token != null && imageBytes != null;
 }
 
+/// A imagem do captcha não veio: sem rede, certificado recusado, erro do
+/// servidor ou resposta incompleta. [mensagem] é a do `ApiClient`, quando há.
+class CaptchaIndisponivelException implements Exception {
+  final String? mensagem;
+
+  const CaptchaIndisponivelException([this.mensagem]);
+
+  @override
+  String toString() =>
+      'CaptchaIndisponivelException: ${mensagem ?? 'sem detalhe'}';
+}
+
 class CaptchaService {
   /// Solicita um novo desafio ao backend.
   ///
   /// Retorna:
-  /// - `CaptchaChallenge(enabled: false)` se o backend estiver com o captcha
-  ///   desligado (env MOBILE_LOGIN_CAPTCHA_ENABLED=false), ou se a chamada
-  ///   falhar de forma que valha a pena permitir login mesmo assim.
+  /// - `CaptchaChallenge(enabled: false)` se o backend responder que o
+  ///   captcha está desligado (env MOBILE_LOGIN_CAPTCHA_ENABLED=false).
   /// - `CaptchaChallenge(enabled: true, token, imageBytes)` no caso normal.
   ///
-  /// Nunca lança — em caso de falha total, devolve enabled=false. O
-  /// AuthApiController::login ainda vai proteger validando o token.
+  /// Lança [CaptchaIndisponivelException] em qualquer outra resposta: sem
+  /// rede, certificado recusado, erro do servidor, resposta incompleta. O
+  /// `CaptchaField` mostra a falha, com o botão de tentar de novo.
+  ///
+  /// Até a 1.0.0 essas falhas viravam `enabled: false`, e a tela escondia o
+  /// captcha como se o backend o tivesse desligado. O login ia sem captcha,
+  /// o backend (com o captcha ligado) recusava, e o aviso era desenhado
+  /// dentro da caixa escondida: a tela voltava sem dizer nada.
   static Future<CaptchaChallenge> fetchNew() async {
     final res = await ApiClient.post('transporte/api/captcha/new', const {});
 
     if (res['success'] != true) {
-      return const CaptchaChallenge(enabled: false);
+      throw CaptchaIndisponivelException(res['message']?.toString());
     }
 
     final enabled = res['enabled'] == true;
@@ -51,14 +68,16 @@ class CaptchaService {
     final token = res['captcha_token']?.toString();
     final b64 = res['image_base64']?.toString();
     if (token == null || token.isEmpty || b64 == null || b64.isEmpty) {
-      return const CaptchaChallenge(enabled: false);
+      throw const CaptchaIndisponivelException(
+        'Resposta do captcha sem imagem.',
+      );
     }
 
     Uint8List bytes;
     try {
       bytes = base64Decode(b64);
-    } catch (_) {
-      return const CaptchaChallenge(enabled: false);
+    } on FormatException {
+      throw const CaptchaIndisponivelException('Imagem do captcha inválida.');
     }
 
     final ttl = int.tryParse((res['ttl_seconds'] ?? 180).toString()) ?? 180;

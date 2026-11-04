@@ -78,11 +78,11 @@ class _EsqueciSenhaPageState extends State<EsqueciSenhaPage> {
       return;
     }
 
-    // Captcha só é exigido se o backend disse que está ligado.
+    // Captcha: o texto só é exigido quando há imagem na tela (mesma regra do
+    // login). Sem imagem, o envio vai sem ele e o backend decide.
     final captchaState = _captchaKey.currentState;
-    final captchaAtivo =
-        captchaState != null && !captchaState.isDisabledByServer;
-    if (captchaAtivo && _captchaCtrl.text.trim().isEmpty) {
+    final temDesafio = captchaState?.temDesafio ?? false;
+    if (temDesafio && _captchaCtrl.text.trim().isEmpty) {
       setState(() => _formError = 'Digite o texto do captcha.');
       return;
     }
@@ -91,8 +91,8 @@ class _EsqueciSenhaPageState extends State<EsqueciSenhaPage> {
 
     final r = await AuthService.esqueciSenha(
       cpf,
-      captchaToken: captchaState?.token,
-      captcha: captchaAtivo ? _captchaCtrl.text.trim() : null,
+      captchaToken: temDesafio ? captchaState!.token : null,
+      captcha: temDesafio ? _captchaCtrl.text.trim() : null,
     );
 
     if (!mounted) return;
@@ -110,6 +110,18 @@ class _EsqueciSenhaPageState extends State<EsqueciSenhaPage> {
 
     // O state pode ter sido remontado durante o await.
     final captchaAtual = _captchaKey.currentState;
+
+    if (r.captchaError && !temDesafio) {
+      // O backend exige o captcha, e a imagem não tinha carregado: o aviso
+      // vai no formulário, porque a caixa do captcha está mostrando a falha
+      // ou recarregando (ver o login).
+      setState(
+        () => _formError = 'Para continuar, digite também o texto da imagem.',
+      );
+      _captchaCtrl.clear();
+      captchaAtual?.reload();
+      return;
+    }
 
     if (r.captchaError) {
       captchaAtual?.showError(r.message);

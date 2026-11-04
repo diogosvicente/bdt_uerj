@@ -136,11 +136,14 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    // captcha: só valida se o backend estiver com o desafio ativo
+    // captcha: o texto só é exigido quando há imagem na tela. Sem imagem (o
+    // backend desligou o captcha, ou a imagem não carregou), o login vai sem
+    // ele e o backend decide; se ele exigir, a resposta CAPTCHA_ERROR pede a
+    // imagem de novo e avisa (abaixo).
     final captchaState = _captchaKey.currentState;
-    final captchaAtivo = captchaState != null && !captchaState.isDisabledByServer;
+    final temDesafio = captchaState?.temDesafio ?? false;
 
-    if (captchaAtivo && captchaController.text.trim().isEmpty) {
+    if (temDesafio && captchaController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Digite o texto do captcha."),
@@ -154,8 +157,8 @@ class _LoginPageState extends State<LoginPage> {
     final result = await AuthService.login(
       rawCpf,
       senha,
-      captchaToken: captchaState?.token,
-      captcha: captchaAtivo ? captchaController.text.trim() : null,
+      captchaToken: temDesafio ? captchaState!.token : null,
+      captcha: temDesafio ? captchaController.text.trim() : null,
       // MSEC.4 — se marcou "Manter conectado", refresh token dura 30d;
       // caso contrário 24h. O access sempre é 15min e roda no ApiClient.
       manterConectado: _manterConectado,
@@ -181,6 +184,23 @@ class _LoginPageState extends State<LoginPage> {
       // botão "Entrar" até zerar. Snackbar longo (não vai sumir sozinho
       // — o timer decide) com contagem regressiva.
       _iniciarThrottle(result.retryAfterSeconds, result.message);
+      return;
+    }
+
+    if (result.captchaError && !temDesafio) {
+      // O backend exige o captcha, e não havia imagem na tela (ela não
+      // carregou). O aviso não pode ir para dentro do CaptchaField, que está
+      // mostrando a falha ou recarregando: vai num SnackBar, e a imagem é
+      // pedida de novo. Até a 1.0.0 ele ia para a caixa escondida, e a tela
+      // voltava sem dizer nada.
+      captchaController.clear();
+      // ignore: discarded_futures
+      captchaStateAtual?.reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Para entrar, digite também o texto da imagem.'),
+        ),
+      );
       return;
     }
 
