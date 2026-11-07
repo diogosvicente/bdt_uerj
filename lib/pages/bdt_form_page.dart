@@ -312,8 +312,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final isEdit = existing != null;
     final id = isEdit ? (int.tryParse(existing['id'].toString()) ?? 0) : 0;
 
+    // 1.0.2: o campo mostra a hora local; o que vai para a API é o instante em
+    // UTC com o "Z" (a hora crua do servidor voltava sem fuso e adiantava 3 horas).
+    String dataHoraApi = DateFmt.paraApiIsoUtc(existing?['data_hora']) ?? '';
     final dataHoraCtrl = TextEditingController(
-      text: (existing?['data_hora'] ?? '').toString(),
+      text: DateFmt.dataHoraBr(dataHoraApi),
     );
     final odoCtrl = TextEditingController(
       text: (existing?['odometro_km'] ?? '').toString(),
@@ -482,10 +485,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       enabled: !busy,
                       onTap: () async {
                         final picked = await _pickDateTimeString(
-                          initial: dataHoraCtrl.text,
+                          initial: dataHoraApi,
                         );
                         if (picked != null) {
-                          dataHoraCtrl.text = picked;
+                          dataHoraApi = picked;
+                          dataHoraCtrl.text = DateFmt.dataHoraBr(picked);
                           if (errData != null) setLocal(() => errData = null);
                         }
                       },
@@ -760,7 +764,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                               String? eTipo;
                               String? eLitros;
                               String? eValor;
-                              if (dataHoraCtrl.text.trim().isEmpty) {
+                              if (dataHoraApi.isEmpty) {
                                 eData = "Informe a data/hora.";
                               }
                               if (tipo == null || tipo!.trim().isEmpty) {
@@ -797,7 +801,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                                   .arguments as int;
 
                               final data = <String, dynamic>{
-                                "data_hora": dataHoraCtrl.text.trim(),
+                                "data_hora": dataHoraApi,
                                 "tipo_combustivel": tipo,
                                 "odometro_km": _normDecimal(odoCtrl.text),
                                 "litros": _normDecimal(litrosCtrl.text),
@@ -945,11 +949,17 @@ class _BdtFormPageState extends State<BdtFormPage> {
     final isEdit = existing != null;
     final id = isEdit ? (int.tryParse(existing['id'].toString()) ?? 0) : 0;
 
+    // 1.0.2: os campos mostram a hora local; o que vai para a API é o instante
+    // em UTC com o "Z" (a hora crua do servidor voltava sem fuso e adiantava 3
+    // horas a cada edição).
+    String inicioApi =
+        DateFmt.paraApiIsoUtc(existing?['data_hora_inicio']) ?? '';
+    String fimApi = DateFmt.paraApiIsoUtc(existing?['data_hora_fim']) ?? '';
     final inicioCtrl = TextEditingController(
-      text: (existing?['data_hora_inicio'] ?? '').toString(),
+      text: DateFmt.dataHoraBr(inicioApi),
     );
     final fimCtrl = TextEditingController(
-      text: (existing?['data_hora_fim'] ?? '').toString(),
+      text: DateFmt.dataHoraBr(fimApi),
     );
     final odoCtrl = TextEditingController(
       text: (existing?['odometro_km'] ?? '').toString(),
@@ -1091,10 +1101,11 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       enabled: !busy,
                       onTap: () async {
                         final picked = await _pickDateTimeString(
-                          initial: inicioCtrl.text,
+                          initial: inicioApi,
                         );
                         if (picked != null) {
-                          inicioCtrl.text = picked;
+                          inicioApi = picked;
+                          inicioCtrl.text = DateFmt.dataHoraBr(picked);
                           if (errInicio != null) {
                             setLocal(() => errInicio = null);
                           }
@@ -1114,9 +1125,12 @@ class _BdtFormPageState extends State<BdtFormPage> {
                       enabled: !busy,
                       onTap: () async {
                         final picked = await _pickDateTimeString(
-                          initial: fimCtrl.text,
+                          initial: fimApi,
                         );
-                        if (picked != null) fimCtrl.text = picked;
+                        if (picked != null) {
+                          fimApi = picked;
+                          fimCtrl.text = DateFmt.dataHoraBr(picked);
+                        }
                       },
                       decoration: const InputDecoration(
                         labelText: "Fim (data/hora)",
@@ -1242,7 +1256,7 @@ class _BdtFormPageState extends State<BdtFormPage> {
                           : () async {
                               String? eIni;
                               String? eDesc;
-                              if (inicioCtrl.text.trim().isEmpty) {
+                              if (inicioApi.isEmpty) {
                                 eIni = "Informe o início da manutenção.";
                               }
                               if (descCtrl.text.trim().isEmpty) {
@@ -1264,8 +1278,8 @@ class _BdtFormPageState extends State<BdtFormPage> {
                                   .arguments as int;
 
                               final data = <String, dynamic>{
-                                "data_hora_inicio": inicioCtrl.text.trim(),
-                                "data_hora_fim": fimCtrl.text.trim(),
+                                "data_hora_inicio": inicioApi,
+                                "data_hora_fim": fimApi,
                                 "odometro_km": _normDecimal(odoCtrl.text),
                                 "descricao": descCtrl.text.trim(),
                                 "houve_gasto": houveGasto,

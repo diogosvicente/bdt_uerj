@@ -3,10 +3,10 @@
 /// Antes desses helpers, `_two(int)` / `_fmtDt(v)` / `_fmtTimeOnly(v)`
 /// estavam duplicados em várias pages. Ver `docs/ARCHITECTURE.md` §4.11.
 ///
-/// # Convenção de fuso (Sprint MSEC.TZ)
+/// # Convenção de fuso (Sprint MSEC.TZ; no servidor, 053 D33 e D47)
 ///
-/// - Backend grava/emite datetimes em UTC no formato `Y-m-d H:i:s` (sem
-///   sufixo Z, herdando o formato nu do MariaDB).
+/// - Backend emite datetimes em UTC no formato `Y-m-d H:i:s` (sem sufixo Z).
+///   Ele guarda a hora de Brasília e converte na saída da API.
 /// - Mobile envia datetimes em ISO UTC com `Z` explícito (via [apiIsoUtc]).
 ///   O backend aceita ambos os formatos (helper `api_parse_datetime_utc`).
 /// - Todo helper de LEITURA aqui interpreta naive `Y-m-d H:i:s` como UTC
@@ -44,6 +44,22 @@ class DateFmt {
     final u = d.toUtc();
     return '${u.year}-${two(u.month)}-${two(u.day)}T'
         '${two(u.hour)}:${two(u.minute)}:${two(u.second)}Z';
+  }
+
+  /// Valor vindo da API (sem fuso = UTC, ou com Z/offset) → o mesmo instante
+  /// em ISO UTC com `Z`, o formato que se manda de volta sem ambiguidade.
+  /// Vazio ou inválido → null.
+  ///
+  ///     DateFmt.paraApiIsoUtc('2026-11-06 17:30:00') → "2026-11-06T17:30:00Z"
+  ///
+  /// 1.0.2: o formulário de edição guardava a hora crua do servidor e a
+  /// devolvia sem fuso; o servidor a lia como hora de Brasília, e cada edição
+  /// adiantava 3 horas.
+  static String? paraApiIsoUtc(dynamic raw) {
+    final s = (raw ?? '').toString().trim();
+    if (s.isEmpty) return null;
+    final dt = _parseApiAsLocal(s);
+    return dt == null ? null : apiIsoUtc(dt);
   }
 
   /// Parser interno: string vinda da API → DateTime NO FUSO LOCAL do device.
