@@ -287,8 +287,12 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
             ),
             const SizedBox(height: 4),
             Text(
+              // A frase é sobre quem está usando o aplicativo, e não sobre o
+              // condutor escolhido: a antiga ("Você não é condutor cadastrado")
+              // ficava embaixo da escolha e parecia dizer que o motorista
+              // escolhido não estava cadastrado.
               semSouEu
-                  ? 'Você não é condutor cadastrado — escolha o condutor.'
+                  ? 'Você não tem cadastro de condutor: o BDT fica com o condutor que você escolher abaixo.'
                   : 'Padrão: "Para mim" (você mesmo).',
               style: theme.textTheme.bodySmall,
             ),
@@ -677,7 +681,7 @@ class _CriarBdtPageState extends State<CriarBdtPage> {
       setState(() {
         _condutorError = _modo == _ModoCondutor.outro
             ? 'Selecione um condutor.'
-            : 'Você não é condutor — escolha "Outro" e selecione.';
+            : 'Você não tem cadastro de condutor: escolha "Outro" e selecione quem vai dirigir.';
       });
       return;
     }
