@@ -771,6 +771,12 @@ Fora do escopo atual (app é Android-first). Se um dia compilar iOS, adicionar `
 - `test/captcha_que_nao_carrega_test.dart`: a imagem do captcha que não carrega aparece como falha, com o botão de tentar de novo, e a recusa do backend por falta de captcha aparece na tela (login e "Esqueci minha senha"). O backend é um `MockClient`, pelo mesmo gancho.
 - Cobertura ainda é **baixa** de propósito nesta fase (MVP em iteração rápida).
 
+### Testes no emulador (`integration_test/`)
+- `integration_test/t053_test.dart`: os itens do aplicativo no roteiro de testes da 053 do e-prefeitura (o B3, o H4, o H5 e o G7): o login, os BDTs do dia, os passageiros, a Partida assinada, a ocorrência, o abastecimento, a edição sem mexer na data e o Encerrar, na tela, como o condutor faria.
+- Rodam **pelo testador de tela do e-prefeitura** (`tests/e2e/lib/aplicativo.js`, lá), e não sozinhos: ele liga o emulador, passa o CPF e os BDTs da rodada pela ponte (`integration_test/apoio/ponte.dart`, `--dart-define=E2E_PONTE`), aponta o app para a cópia de teste (`--dart-define=API_BASE_URL=http://10.0.2.2/<pasta>`) e confere depois a folha, o PDF e o banco. Sem a ponte, o teste para na primeira linha, avisando.
+- `integration_test/apoio/passos.dart`: as ações na tela (esperar, tocar, digitar, assinar, voltar), com a pausa e a velocidade do painel do testador antes de cada uma, e a conferência de que o toque chega ao alvo (o teclado, que encolhe a tela, já escondeu botão).
+- O teste troca o cliente HTTP compartilhado por um que larga a conexão ociosa em 3 s (`SslBootstrap.setClientForTesting`): o Apache local fecha a conexão em 5 s, e o cliente do app a guarda por 15 s; quem a reaproveita no instante do fechamento recebe "Falha de rede/HTTP." ao acaso.
+
 ### Onde vale investir teste unitário
 Priorize regras **DOMAIN** puras e helpers de `utils/` — testam sem plugin, sem HTTP, sem device.
 
