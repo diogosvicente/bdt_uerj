@@ -1,9 +1,11 @@
 // Os itens do aplicativo no roteiro de testes da 053 do e-prefeitura
 // (docs/transporte/reuniao-2026-mes_10-dia_28/053-testes.md, lá no e-prefeitura):
-// o B3, o H4, o H5 e o G7. Rodam no emulador, contra a cópia de teste do
+// o S3, o B3, o H4, o H5 e o G7. Rodam no emulador, contra a cópia de teste do
 // e-prefeitura, pelo testador de tela de lá (tests/e2e/lib/aplicativo.js), que
 // sobe o emulador, passa os parâmetros pela ponte e depois confere na folha,
-// no PDF e no banco o que o aplicativo gravou.
+// no PDF e no banco o que o aplicativo gravou. O S3 (13/11/2026) é a parte da
+// tela do item de segurança: a API recusando o BDT de outro condutor, o
+// testador confere lá, com o token do mesmo login.
 //
 // Cada item roda sozinho, num `flutter test --plain-name "<item> ·"`, com o
 // Motorista do aplicativo ([T-053]) e um BDT só dele, que o seeder da 053 cria
@@ -29,6 +31,35 @@ import 'apoio/ponte.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('S3 · o login, os BDTs do dia e os passageiros abrem; o BDT de outro condutor não aparece', (t) async {
+    final p = Passos(t);
+    final par = await entrar(p);
+    final bdts = Map<String, dynamic>.from(par['bdts'] as Map);
+    final outro = par['outro'] as Map;
+
+    // Os BDTs do dia: os quatro do Motorista do aplicativo, e nenhum de outro condutor.
+    for (final b in bdts.values) {
+      await p.esperar(find.text((b as Map)['titulo'] as String), oQue: 'o ${b['titulo']} nos BDTs do dia');
+    }
+    expect(find.text(outro['titulo'] as String), findsNothing,
+        reason: 'o ${outro['titulo']}, do [T-053] Motorista, não pode aparecer nos BDTs do dia do Motorista do aplicativo');
+
+    // Os passageiros do W abrem, sem marcar nada (o G7 é quem marca a presença).
+    final w = bdts['W'] as Map;
+    await abrirBdt(p, w['titulo'] as String);
+    await p.tocar(find.text('Ações'));
+    await p.tocar(find.text('Validar início'));
+    await p.esperar(find.text('Passageiros previstos'));
+    await p.esperar(find.text('0/2'), oQue: 'a contagem 0/2 dos passageiros');
+    await p.esperar(find.text('[T-053] Passageira do aplicativo'));
+    await p.esperar(find.text('[T-053] Passageiro do aplicativo'));
+
+    await Ponte.resultado({
+      'bdts': [for (final b in bdts.values) (b as Map)['titulo']],
+      'passageiros': 2,
+    });
+  });
 
   testWidgets('B3 · o Encerrar do aplicativo encerra o BDT (C12)', (t) async {
     final p = Passos(t);
