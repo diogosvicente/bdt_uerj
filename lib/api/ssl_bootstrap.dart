@@ -110,6 +110,24 @@ class SslBootstrap {
     'assets/certs/lets_encrypt_isrg.pem',
   ];
 
+  /// Por quanto tempo a conexão ociosa fica guardada para a próxima
+  /// requisição.
+  ///
+  /// O padrão do `HttpClient` do Dart é 15 s, e o Apache fecha a conexão
+  /// ociosa em 5 s (o `KeepAliveTimeout` padrão dele). Quem reaproveitava a
+  /// conexão no instante em que o servidor a fechava recebia "Falha de
+  /// rede/HTTP.", ao acaso, sem nada de errado com a rede (achado nos testes
+  /// de tela da 053 do e-prefeitura, em 12/11/2026). Com 3 s, o app larga a
+  /// conexão antes do servidor; o preço é refazer o handshake de vez em
+  /// quando, depois de uma pausa.
+  static const Duration ociosaAte = Duration(seconds: 3);
+
+  /// O `HttpClient` do app, com o [ociosaAte]: o mesmo com o pin (o contexto
+  /// dele) e sem.
+  @visibleForTesting
+  static HttpClient novoHttpClient([SecurityContext? contexto]) =>
+      HttpClient(context: contexto)..idleTimeout = ociosaAte;
+
   /// `--dart-define=SSL_PINNING=off` desliga o pin (escape hatch de
   /// build; ver doc da classe).
   static const String _pinningFlag = String.fromEnvironment(
@@ -200,14 +218,14 @@ class SslBootstrap {
       if (pinningEnabled && _pems == null) {
         debugPrint('⚠️ SslBootstrap.client antes do install() — '
             'client sem pin (não cacheado)');
-        return http.Client();
+        return IOClient(novoHttpClient());
       }
 
-      _client = http.Client();
+      _client = IOClient(novoHttpClient());
       return _client!;
     }
 
-    final inner = HttpClient(context: ctx)
+    final inner = novoHttpClient(ctx)
       // Explícito por documentação: com `withTrustedRoots: false`, um
       // certificado fora das cadeias pinadas já é recusado pelo handshake.
       // Este callback só seria chamado nesse caso — e recusamos de novo.

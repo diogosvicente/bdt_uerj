@@ -11,11 +11,8 @@
 // Motorista do aplicativo ([T-053]) e um BDT só dele, que o seeder da 053 cria
 // de novo a cada rodada (as letras W, Y, Z e J do resumo do seeder).
 
-import 'dart:io' show HttpClient;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/io_client.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:signature/signature.dart';
@@ -233,12 +230,11 @@ Future<Map<String, dynamic>> entrar(Passos p) async {
   await UsuarioFotoStorage.clear();
   await (await SharedPreferences.getInstance()).clear();
 
-  // O cliente HTTP do aplicativo guarda a conexão ociosa por 15 s, e o Apache
-  // do e-prefeitura local a fecha em 5 s (o KeepAliveTimeout): quem reaproveita
-  // a conexão no instante em que o servidor a fecha recebe "Falha de
-  // rede/HTTP.", ao acaso. No teste, o cliente larga a conexão em 3 s, antes do
-  // servidor; o resto (o pin, os endereços, as chamadas) é o do aplicativo.
-  SslBootstrap.setClientForTesting(IOClient(HttpClient()..idleTimeout = const Duration(seconds: 3)));
+  // O cliente HTTP é o do aplicativo, sem troca: desde 13/11/2026 ele larga a
+  // conexão ociosa em 3 s (SslBootstrap.ociosaAte), antes dos 5 s do Apache.
+  // Até então o teste trocava o cliente para fugir do "Falha de rede/HTTP." ao
+  // acaso, que era um defeito do aplicativo.
+  SslBootstrap.setClientForTesting(null);
 
   p.anotar('abrindo o aplicativo');
   await app.main();

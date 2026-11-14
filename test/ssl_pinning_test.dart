@@ -43,6 +43,22 @@ void main() {
     // E o contexto do pin aceita os arquivos: um PEM estragado lançaria aqui.
     expect(SslBootstrap.pinnedContext, isNotNull);
   });
+
+  // O app larga a conexão ociosa antes do servidor (o Apache a fecha em 5 s):
+  // com os 15 s do padrão do Dart, a requisição que caía na conexão que o
+  // servidor acabava de fechar dava "Falha de rede/HTTP.", ao acaso.
+  test('a conexão ociosa sai antes dos 5 s do servidor, com o pin e sem', () async {
+    await SslBootstrap.install();
+
+    for (final cliente in [
+      SslBootstrap.novoHttpClient(SslBootstrap.pinnedContext),
+      SslBootstrap.novoHttpClient(),
+    ]) {
+      expect(cliente.idleTimeout, SslBootstrap.ociosaAte);
+      expect(cliente.idleTimeout < const Duration(seconds: 5), isTrue);
+      cliente.close(force: true);
+    }
+  });
 }
 
 /// Os certificados (DER) de um texto PEM.
