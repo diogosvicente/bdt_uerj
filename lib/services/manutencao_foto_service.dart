@@ -1,9 +1,9 @@
 import 'foto_documento_client.dart';
 
-/// Sprint 18 W+M — fotos de vistoria de uma manutenção (Antes / Depois).
+/// Sprint 18 W+M — fotos de uma manutenção (Antes / Depois).
 ///
 /// A discriminação por fase é feita pelo `doc_tipo` no backend
-/// (`FOTO_VISTORIA_ANTES` / `FOTO_VISTORIA_DEPOIS`), não por texto. O
+/// (`FOTO_MANUTENCAO_ANTES` / `FOTO_MANUTENCAO_DEPOIS`), não por texto. O
 /// mobile envia `fase=antes|depois` e o backend rota pra
 /// `salvarAntes/salvarDepois` do `ManutencaoFotoService`.
 class ManutencaoFotoService {

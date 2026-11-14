@@ -1202,11 +1202,13 @@ class _BdtFormPageState extends State<BdtFormPage> {
                     ),
                     const SizedBox(height: 14),
 
-                    // Sprint 18 W+M — Fotos de vistoria (Antes / Depois).
+                    // Sprint 18 W+M — Fotos da manutenção (Antes / Depois).
                     // 2 chips fixos — a discriminação vive no fk_tipo do
-                    // backend (FOTO_VISTORIA_ANTES/DEPOIS), não em texto.
+                    // backend (FOTO_MANUTENCAO_ANTES/DEPOIS), não em texto.
+                    // "Vistoria" saiu do título em 14/11/2026 (053, D50):
+                    // nem toda manutenção é uma vistoria.
                     FotosBdtSection(
-                      titulo: 'Fotos de vistoria',
+                      titulo: 'Fotos da manutenção',
                       busy: busy,
                       chips: const [
                         FotoTipoChip(
